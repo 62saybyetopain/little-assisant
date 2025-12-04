@@ -1,5 +1,5 @@
 /**
- * settings.js - 系統設定頁面控制器(v2.4 Rescue)
+ * settings.js - 系統設定頁面控制器(v2.6 Rescue)
  * 職責：
  * 1. 管理設定頁面的標籤頁切換與 UI 狀態
  * 2. 串接 AppDataManager 進行 CRUD (評估動作、肌群標籤)
@@ -17,6 +17,7 @@
  * (v2.4.1 Fix)
  * 修正重點：
  * 修正模板 Modal 中「系統關聯」讀取肌群標籤資料結構錯誤的問題 (.data vs Array)
+ * v2.6[新增] 處理 P2P 同步操作
  */
 
 // 定義身體部位
@@ -84,6 +85,8 @@ const SettingsApp = {
     document.getElementById('muscle-search')?.addEventListener('input', (e) => this.renderMuscleList(e.target.value));
     document.getElementById('template-search')?.addEventListener('input', (e) => this.renderTemplateList(e.target.value));
     // 6. 預設顯示第一個分頁
+    const urlParams = new URLSearchParams(window.location.search);
+    const tab = urlParams.get('tab') || 'assessment';
     this.switchTab('assessment');
   },
 
@@ -107,6 +110,14 @@ const SettingsApp = {
     if (tabId === 'template') this.loadTemplateList();
     if (tabId === 'bodypart') this.renderBodyPartList();
     if (tabId === 'system') this.updateStorageInfo();
+    
+    if (tabId === 'sync') {
+        if (window.AppSyncManager) {
+            window.AppSyncManager.init();
+        } else {
+            console.warn('AppSyncManager not loaded');
+        }
+    }
   },
 
   // === 評估動作功能 ===
@@ -266,7 +277,7 @@ const SettingsApp = {
     this.renderCheckboxes('tpl-bodyparts', 'tpl-part');
     
     // 2. 渲染關聯資料 (動態撈取)
-    // [FIX] 修正資料結構讀取問題：相容直接回傳陣列或包含 .data 的物件
+    // 相容直接回傳陣列或包含 .data 的物件
     const muscleTags = window.AppTagManager.getTagsByCategory('muscleGroup');
     const displayTags = Array.isArray(muscleTags) ? muscleTags : (muscleTags.data || []);
 
@@ -339,7 +350,7 @@ const SettingsApp = {
 
     // 3. 渲染並勾選關聯資料
     // 肌群
-    // [FIX] 修正資料結構讀取問題：相容直接回傳陣列或包含 .data 的物件
+    // 相容直接回傳陣列或包含 .data 的物件
     const muscleTags = window.AppTagManager.getTagsByCategory('muscleGroup');
     const muscles = Array.isArray(muscleTags) ? muscleTags : (muscleTags.data || []);
     
@@ -764,6 +775,21 @@ window.showAddTemplateModal = () => SettingsApp.showAddTemplateModal();
 window.saveTemplate = (e) => SettingsApp.saveTemplate(e);
 window.showEditTemplateModal = (id) => SettingsApp.showEditTemplateModal(id);
 window.updateTemplate = (e) => SettingsApp.updateTemplate(e);
+
+window.copyId = () => {
+  const el = document.getElementById('p2p-my-id');
+  el.select();
+  document.execCommand('copy');
+  SettingsApp.showToast('ID 已複製', 'success');
+};
+window.connectToPeer = () => {
+  const targetId = document.getElementById('p2p-target-id').value.trim();
+  if (!targetId) return alert('請輸入對方 ID');
+  window.AppSyncManager.connectTo(targetId);
+};
+window.pushSync = () => {
+  window.AppSyncManager.pushFullSync();
+};
 
 document.addEventListener('DOMContentLoaded', () => {
   SettingsApp.init();

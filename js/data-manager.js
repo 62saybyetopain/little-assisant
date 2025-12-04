@@ -685,28 +685,31 @@ exportAssessmentsToCSV() {
           return { success: false, error: e.message };
       }
   }
-  importData(jsonData) {
+  importData(jsonData, options = { source: 'local' }) {
     try {
       if (!jsonData.version || (!jsonData.customerIndex && !jsonData.customers)) {
         return { success: false, error: '無效的備份檔案格式' };
       }
 
+      // 匯入前先清空，避免 ID 衝突或殘留資料
       localStorage.clear();
 
-      if (jsonData.tags) this.storage.save('tags', jsonData.tags);
-      if (jsonData.assessmentActions) this.storage.save('assessmentActions', jsonData.assessmentActions);
-      if (jsonData.customerIndex) this.storage.save('customerIndex', jsonData.customerIndex);
-      if (jsonData.appSettings) this.storage.save('appSettings', jsonData.appSettings);
+      // [修改重點] 將 options 參數傳遞給每一個 save 呼叫
+      if (jsonData.tags) this.storage.save('tags', jsonData.tags, options);
+      if (jsonData.assessmentActions) this.storage.save('assessmentActions', jsonData.assessmentActions, options);
+      if (jsonData.customerIndex) this.storage.save('customerIndex', jsonData.customerIndex, options);
+      if (jsonData.appSettings) this.storage.save('appSettings', jsonData.appSettings, options);
       
       if (jsonData.customerDetails) {
         Object.keys(jsonData.customerDetails).forEach(key => {
-          this.storage.save(key, jsonData.customerDetails[key]);
+          this.storage.save(key, jsonData.customerDetails[key], options);
         });
       }
 
+      // 處理舊版資料結構
       if (jsonData.customers && !jsonData.customerIndex) {
          console.warn('Importing legacy data...');
-         this.storage.save('customers', jsonData.customers);
+         this.storage.save('customers', jsonData.customers, options);
       }
 
       return { success: true };

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>顧客列表 - 客戶管理系統</title>
+  <title>客戶檔案管理系統</title>
   <link rel="stylesheet" href="styles/main.css">
   <link rel="stylesheet" href="styles/components.css">
   <style>
@@ -264,6 +264,7 @@
     </div>
   </div>
 
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <script src="js/storage.js"></script>
   <script src="js/customer-manager.js"></script>
   <script src="js/data-manager.js"></script>
@@ -385,7 +386,7 @@
           name: { required: true, maxLength: 50 },
           // 根據您的需求，以下改為選填
           nickname: { required: false, maxLength: 20 },
-          phoneLastThree: { required: false, pattern: /^\d{3}$/, patternMessage: '需為3位數字' }
+          phoneLastThree: { required: false, pattern: /^(\d{3})?$/, patternMessage: '需為3位數字' }
         });
 
         validator.onSubmit = () => {
