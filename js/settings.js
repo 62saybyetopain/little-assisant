@@ -98,20 +98,48 @@ function sortTagsByBodyPart(tags) {
     return a.name.localeCompare(b.name);
   });
 }
-const COLOR_OPTIONS = [
-  { color: '#7e22ce', hint: '頭頸 (穩定肌)' }, { color: '#e9d5ff', hint: '頭頸 (相位肌)' },
-  { color: '#3730a3', hint: '肩部 (穩定肌)' }, { color: '#a5b4fc', hint: '肩部 (相位肌)' },
-  { color: '#0f766e', hint: '上背 (穩定肌)' }, { color: '#5eead4', hint: '上背 (相位肌)' },
-  { color: '#1d4ed8', hint: '手臂 (穩定肌)' }, { color: '#93c5fd', hint: '手臂 (相位肌)' },
-  { color: '#15803d', hint: '胸腹 (穩定肌)' }, { color: '#86efac', hint: '胸腹 (相位肌)' },
-  { color: '#b45309', hint: '腰部 (穩定肌)' }, { color: '#fcd34d', hint: '腰部 (相位肌)' },
-  { color: '#be123c', hint: '臀部 (穩定肌)' }, { color: '#fda4af', hint: '臀部 (相位肌)' },
-  { color: '#78350f', hint: '大腿 (穩定肌)' }, { color: '#d6d3d1', hint: '大腿 (相位肌)' },
-  { color: '#334155', hint: '小腿 (穩定肌)' }, { color: '#94a3b8', hint: '小腿 (相位肌)' },
-  { color: '#000000', hint: '特殊/其他' }
+const COLOR_DEF_MAP = [
+  { hex: '#7e22ce', family: 'purple', type: 'stabilizer', name: '頭頸 (穩定肌)' },
+  { hex: '#e9d5ff', family: 'purple', type: 'phasic', name: '頭頸 (相位肌)' },
+  { hex: '#3730a3', family: 'indigo', type: 'stabilizer', name: '肩部 (穩定肌)' },
+  { hex: '#a5b4fc', family: 'indigo', type: 'phasic', name: '肩部 (相位肌)' },
+  { hex: '#0f766e', family: 'teal', type: 'stabilizer', name: '上背 (穩定肌)' },
+  { hex: '#5eead4', family: 'teal', type: 'phasic', name: '上背 (相位肌)' },
+  { hex: '#1d4ed8', family: 'blue', type: 'stabilizer', name: '手臂 (穩定肌)' },
+  { hex: '#93c5fd', family: 'blue', type: 'phasic', name: '手臂 (相位肌)' },
+  { hex: '#15803d', family: 'green', type: 'stabilizer', name: '胸腹 (穩定肌)' },
+  { hex: '#86efac', family: 'green', type: 'phasic', name: '胸腹 (相位肌)' },
+  { hex: '#b45309', family: 'amber', type: 'stabilizer', name: '腰部 (穩定肌)' },
+  { hex: '#fcd34d', family: 'amber', type: 'phasic', name: '腰部 (相位肌)' },
+  { hex: '#be123c', family: 'rose', type: 'stabilizer', name: '臀部 (穩定肌)' },
+  { hex: '#fda4af', family: 'rose', type: 'phasic', name: '臀部 (相位肌)' },
+  { hex: '#78350f', family: 'stone', type: 'stabilizer', name: '大腿 (穩定肌)' },
+  { hex: '#d6d3d1', family: 'stone', type: 'phasic', name: '大腿 (相位肌)' },
+  { hex: '#334155', family: 'slate', type: 'stabilizer', name: '小腿 (穩定肌)' },
+  { hex: '#94a3b8', family: 'slate', type: 'phasic', name: '小腿 (相位肌)' },
+  { hex: '#0891b2', family: 'cyan', type: 'stabilizer', name: '踝部 (穩定肌)' },
+  { hex: '#67e8f9', family: 'cyan', type: 'phasic', name: '踝部 (相位肌)' },
+  { hex: '#c2410c', family: 'orange', type: 'stabilizer', name: '足部 (穩定肌)' },
+  { hex: '#fdba74', family: 'orange', type: 'phasic', name: '足部 (相位肌)' }, 
+  { hex: '#000000', family: 'other', type: 'other', name: '特殊/其他' },
 ];
 
-const COLORS_DEF = COLOR_OPTIONS.map(o => o.color);
+const COLOR_OPTIONS = COLOR_DEF_MAP.map(c => ({ color: c.hex, hint: c.name }));
+const COLORS_DEF = COLOR_DEF_MAP.map(c => c.hex);
+
+const BODY_COLOR_MAP = {
+  'head': 'purple', 'neck': 'purple',
+  'shoulder': 'indigo',
+  'upper-back': 'teal',
+  'chest': 'green', 'abdomen': 'green',
+  'arm': 'blue',
+  'lower-back': 'amber',
+  'hip': 'rose',
+  'leg': 'stone', 'knee': 'stone',
+  'calf': 'slate', 
+  'ankle': 'cyan', 
+  'foot': 'orange' 
+};
 
 const SettingsApp = {
   state: {
@@ -547,6 +575,12 @@ const SettingsApp = {
         cb.checked = parts.includes(cb.value);
     });
 
+    const colorDef = COLOR_DEF_MAP.find(c => c.hex === tag.color);
+    const type = colorDef ? colorDef.type : 'other';
+    // 勾選對應的 Radio
+    const radio = document.querySelector(`input[name="edit-muscle-type"][value="${type}"]`);
+    if (radio) radio.checked = true;
+
     // 渲染並選中顏色
     const palette = document.getElementById('edit-color-palette');
     palette.innerHTML = COLOR_OPTIONS.map(opt => `
@@ -555,7 +589,13 @@ const SettingsApp = {
            title="${opt.hint}"
            onclick="SettingsApp.selectEditColor('${opt.color}', this)"></div>
     `).join('');
+
     document.getElementById('edit-muscle-color').value = tag.color;
+    const textEl = document.getElementById('edit-selected-color-name');
+    if (textEl) {
+        textEl.textContent = colorDef ? colorDef.name : '自訂顏色';
+        textEl.style.color = tag.color;
+    }
 
     this.openModal('modal-edit-muscle');
   },
@@ -564,6 +604,13 @@ const SettingsApp = {
     document.getElementById('edit-muscle-color').value = color;
     document.querySelectorAll('#edit-color-palette .color-option').forEach(d => d.classList.remove('selected'));
     el.classList.add('selected');
+
+    const def = COLOR_DEF_MAP.find(c => c.hex === color);
+    const textEl = document.getElementById('edit-selected-color-name');
+    if (textEl) {
+        textEl.textContent = def ? def.name : '自訂顏色';
+        textEl.style.color = color;
+    }
   },
 
   updateMuscleTag(e) {
@@ -616,9 +663,13 @@ const SettingsApp = {
   renderCheckboxes(containerId, name) {
     const el = document.getElementById(containerId);
     if (el) {
+      // 判斷是新增還是編輯模式 (根據 name)
+      const mode = name === 'muscle-part' ? "'add'" : (name === 'edit-muscle-part' ? "'edit'" : "null");
+      const eventHandler = (mode !== "null" && containerId.includes('muscle')) ? `onchange="autoSelectColor(${mode})"` : "";
+
       el.innerHTML = SIMPLIFIED_BODY_PARTS.map(p => `
         <label class="checkbox-item">
-          <input type="checkbox" name="${name}" value="${p.id}"> ${p.name}
+          <input type="checkbox" name="${name}" value="${p.id}" ${eventHandler}> ${p.name}
         </label>
       `).join('');
     }
@@ -641,6 +692,13 @@ const SettingsApp = {
     document.getElementById('muscle-color').value = color;
     document.querySelectorAll('.color-option').forEach(d => d.classList.remove('selected'));
     el.classList.add('selected');
+    
+    const def = COLOR_DEF_MAP.find(c => c.hex === color);
+    const textEl = document.getElementById('add-selected-color-name');
+    if (textEl) {
+        textEl.textContent = def ? def.name : '自訂顏色';
+        textEl.style.color = color;
+    }
   },
 
   renderBodyPartList() {
@@ -822,8 +880,50 @@ const SettingsApp = {
   }
 };
 
-// 3. 全域綁定與啟動
+// 全域綁定與啟動
 window.SettingsApp = SettingsApp;
+
+// 自動選色邏輯 (全域函式，供 HTML onchange 呼叫)
+window.autoSelectColor = (mode) => {
+  // mode: 'add' or 'edit'
+  const prefix = mode === 'add' ? '' : 'edit-';
+  
+  // 1. 取得目前選中的部位 (取第一個)
+  // 注意：name 分別為 'muscle-part' 或 'edit-muscle-part'
+  const partName = mode === 'add' ? 'muscle-part' : 'edit-muscle-part';
+  const checkedParts = Array.from(document.querySelectorAll(`input[name="${partName}"]:checked`)).map(cb => cb.value);
+  const mainPart = checkedParts.length > 0 ? checkedParts[0] : null;
+
+  // 2. 取得目前選中的屬性
+  const typeName = mode === 'add' ? 'muscle-type' : 'edit-muscle-type';
+  const type = document.querySelector(`input[name="${typeName}"]:checked`)?.value || 'other';
+
+  if (!mainPart) return;
+
+  // 3. 查表找色系
+  const family = BODY_COLOR_MAP[mainPart] || 'other';
+
+  // 4. 根據 色系 + 屬性 找到對應的顏色定義
+  let targetColor = COLOR_DEF_MAP.find(c => c.family === family && c.type === type);
+  if (!targetColor && type !== 'other') {
+      targetColor = COLOR_DEF_MAP.find(c => c.family === family);
+  }
+
+  if (targetColor) {
+    // 5. 呼叫 SettingsApp 的選色方法更新 UI
+    const paletteId = mode === 'add' ? 'color-palette' : 'edit-color-palette';
+    // 透過 CSS 選擇器找到對應的色塊元素
+    const paletteItem = document.querySelector(`#${paletteId} .color-option[style*="${targetColor.hex}"]`);
+    
+    if (paletteItem) {
+        if (mode === 'add') {
+            SettingsApp.selectColor(targetColor.hex, paletteItem);
+        } else {
+            SettingsApp.selectEditColor(targetColor.hex, paletteItem);
+        }
+    }
+  }
+};
 
 // 綁定 HTML onclick 會用到的函式到 window
 window.switchTab = (id) => SettingsApp.switchTab(id);

@@ -1,12 +1,11 @@
 /**
  * ================================================================
- * Data Manager - 資料管理核心模組 (v2.3)
+ * Data Manager - 資料管理核心模組 (v2.4 Refactored)
  * ================================================================
  * 職責：
  * 1. 統一管理 Tag, Record, Assessment 的 CRUD
  * 2. 提供資料初始化 (Seed Data)
- * 3. 與 AppStorage 和 AppCustomerManager 對接
- * * 全域實例：window.appDataManager
+ * 3. 透過依賴注入與 AppStorage 和 CustomerManager 對接
  */
 
 const DATA_MANAGER_CONFIG = {
@@ -14,7 +13,8 @@ const DATA_MANAGER_CONFIG = {
   keys: {
     muscleTags: 'tags', 
     assessmentActions: 'assessmentActions',
-    tempRecord: 'tempServiceRecord'
+    tempRecord: 'tempServiceRecord',
+    serviceTemplates: 'serviceTemplates'
   }
 };
 
@@ -27,7 +27,6 @@ class TagManager {
     if (!window.AppStorage) throw new Error('AppStorage not initialized');
     this.storage = window.AppStorage;
     this.key = DATA_MANAGER_CONFIG.keys.muscleTags;
-    
     this.initDefaultTags();
   }
 
@@ -63,10 +62,12 @@ class TagManager {
     const allTags = this.storage.load(this.key) || [];
     return allTags.filter(t => t.category === category);
   }
-getTagById(tagId) {
+
+  getTagById(tagId) {
     const allTags = this.storage.load(this.key) || [];
     return allTags.find(t => t.id === tagId);
   }
+
   getMuscleTagsByBodyParts(bodyParts) {
     const allTags = this.storage.load(this.key) || [];
     const relevant = allTags.filter(tag => 
@@ -80,15 +81,11 @@ getTagById(tagId) {
       data: relevant.sort((a, b) => b.usageCount - a.usageCount)
     };
   }
-addTag(category, tagData) {
+
+  addTag(category, tagData) {
     try {
       const allTags = this.storage.load(this.key) || [];
-      
-      if (!tagData.name) {
-        return { success: false, errors: ['標籤名稱為必填'] };
-      }
-      
-      // 檢查重複
+      if (!tagData.name) return { success: false, errors: ['標籤名稱為必填'] };
       if (allTags.some(t => t.name === tagData.name && t.category === category)) {
           return { success: false, errors: ['標籤名稱已存在'] };
       }
@@ -108,20 +105,18 @@ addTag(category, tagData) {
 
       allTags.push(newTag);
       this.storage.save(this.key, allTags);
-      
       return { success: true, tag: newTag };
     } catch (error) {
       return { success: false, errors: [error.message] };
     }
   }
+
   updateTag(tagId, updates) {
     try {
       const allTags = this.storage.load(this.key) || [];
       const index = allTags.findIndex(t => t.id === tagId);
       
-      if (index === -1) {
-        return { success: false, error: '標籤不存在' };
-      }
+      if (index === -1) return { success: false, error: '標籤不存在' };
 
       if (updates.name && updates.name !== allTags[index].name) {
         if (allTags.some(t => t.name === updates.name && t.category === allTags[index].category && t.id !== tagId)) {
@@ -129,15 +124,9 @@ addTag(category, tagData) {
         }
       }
 
-      const updatedTag = {
-        ...allTags[index],
-        ...updates,
-        updatedAt: new Date().toISOString()
-      };
-
+      const updatedTag = { ...allTags[index], ...updates, updatedAt: new Date().toISOString() };
       allTags[index] = updatedTag;
       this.storage.save(this.key, allTags);
-      
       return { success: true, tag: updatedTag };
     } catch (error) {
       return { success: false, errors: [error.message] };
@@ -148,13 +137,10 @@ addTag(category, tagData) {
     try {
       const allTags = this.storage.load(this.key) || [];
       const tag = allTags.find(t => t.id === tagId);
-
       if (!tag) return { success: false, error: '標籤不存在' };
-      //if (!tag.isCustom) return { success: false, error: '預設標籤不可刪除' };
 
       const newTags = allTags.filter(t => t.id !== tagId);
       this.storage.save(this.key, newTags);
-
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
@@ -191,18 +177,14 @@ class AssessmentManager {
   }
 
   getActionsByBodyPart(bodyPart) {
-const allActions = this.storage.load(this.key) || [];
+    const allActions = this.storage.load(this.key) || [];
     const normalizedPart = bodyPart.replace(/^(left|right)-/, '');
-    
-    // ✅ 支援多部位匹配 (如果動作關聯多個部位)
-    return allActions
-      .filter(action => {
+    return allActions.filter(action => {
           if (Array.isArray(action.bodyPart)) {
               return action.bodyPart.includes(normalizedPart) || action.bodyPart.includes(bodyPart);
           }
           return action.bodyPart === normalizedPart || action.bodyPart === bodyPart;
-      })
-      .sort((a, b) => a.order - b.order);
+      }).sort((a, b) => a.order - b.order);
   }
 
   getAllActions() {
@@ -217,10 +199,7 @@ const allActions = this.storage.load(this.key) || [];
   addAction(actionData) {
     try {
       const allActions = this.getAllActions();
-      
-      if (!actionData.name || !actionData.bodyPart) {
-        return { success: false, errors: ['名稱與部位為必填'] };
-      }
+      if (!actionData.name || !actionData.bodyPart) return { success: false, errors: ['名稱與部位為必填'] };
 
       const newAction = {
         id: `act_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
@@ -232,7 +211,6 @@ const allActions = this.storage.load(this.key) || [];
 
       allActions.push(newAction);
       this.storage.save(this.key, allActions);
-      
       return { success: true, action: newAction };
     } catch (error) {
       return { success: false, errors: [error.message] };
@@ -243,12 +221,10 @@ const allActions = this.storage.load(this.key) || [];
       try {
         const allActions = this.getAllActions();
         const index = allActions.findIndex(a => a.id === actionId);
-
         if (index === -1) return { success: false, error: '動作不存在' };
         
         const updatedAction = { ...allActions[index], ...updates };
         allActions[index] = updatedAction;
-        
         this.storage.save(this.key, allActions);
         return { success: true, action: updatedAction };
       } catch (error) {
@@ -260,12 +236,10 @@ const allActions = this.storage.load(this.key) || [];
     try {
       const allActions = this.getAllActions();
       const action = allActions.find(a => a.id === actionId);
-
       if (!action) return { success: false, error: '動作不存在' };
       
       const newActions = allActions.filter(a => a.id !== actionId);
       this.storage.save(this.key, newActions);
-
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
@@ -274,21 +248,26 @@ const allActions = this.storage.load(this.key) || [];
 }
 
 // ================================================================
-// 3. RecordManager - 服務紀錄管理
+// 3. RecordManager - 服務紀錄管理 (重構：依賴注入版)
 // ================================================================
 
 class RecordManager {
-  constructor() {
+  /**
+   * 建構子現在強制要求傳入 customerManager 實例
+   * 移除所有 "等待/重試" 邏輯
+   */
+  constructor(customerManager) {
     this.storage = window.AppStorage;
     this.tempKey = DATA_MANAGER_CONFIG.keys.tempRecord;
+    
+    if (!customerManager) {
+      console.error('❌ Critical: RecordManager requires a CustomerManager instance.');
+    }
+    this.customerManager = customerManager;
   }
 
   saveTempRecord(customerId, data) {
-    const temp = {
-      customerId,
-      ...data,
-      savedAt: new Date().toISOString()
-    };
+    const temp = { customerId, ...data, savedAt: new Date().toISOString() };
     this.storage.save(this.tempKey, temp);
     return Promise.resolve({ success: true });
   }
@@ -312,13 +291,14 @@ class RecordManager {
   }
 
   getRecords(customerId) {
+    // 直接使用注入的實例
+    if (!this.customerManager) return [];
+    
     try {
-      const customer = window.AppCustomerManager.getCustomerById(customerId);
-      
+      const customer = this.customerManager.getCustomerById(customerId);
       if (!customer || !customer.serviceRecords) {
         return [];
       }
-
       return customer.serviceRecords.sort((a, b) => 
         new Date(b.createdAt) - new Date(a.createdAt)
       );
@@ -332,18 +312,12 @@ class RecordManager {
     const records = this.getRecords(customerId);
     
     if (records.length === 0) {
-      return {
-        totalServices: 0,
-        lastServiceDate: null,
-        avgInterval: null,
-        daysSinceLastService: null
-      };
+      return { totalServices: 0, lastServiceDate: null, avgInterval: null, daysSinceLastService: null };
     }
 
     const lastRecord = records[0];
     const lastDate = new Date(lastRecord.date || lastRecord.createdAt);
     const today = new Date();
-    
     const diffTime = Math.abs(today - lastDate);
     const daysSince = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
@@ -351,13 +325,11 @@ class RecordManager {
     if (records.length > 1) {
       const recentRecords = records.slice(0, 5);
       let totalDaysDiff = 0;
-      
       for (let i = 0; i < recentRecords.length - 1; i++) {
         const d1 = new Date(recentRecords[i].date || recentRecords[i].createdAt);
         const d2 = new Date(recentRecords[i+1].date || recentRecords[i+1].createdAt);
         totalDaysDiff += (d1 - d2) / (1000 * 60 * 60 * 24);
       }
-      
       avgInterval = Math.round(totalDaysDiff / (recentRecords.length - 1));
     }
 
@@ -369,116 +341,107 @@ class RecordManager {
     };
   }
 
-  saveRecord(recordData) {
+  // --- 寫入方法 (已移除 Retry 機制，改為直接調用) ---
+
+  async saveRecord(recordData) {
     try {
-      if (!window.AppCustomerManager) {
-        throw new Error('AppCustomerManager not initialized');
-      }
-
+      if (!this.customerManager) throw new Error('CustomerManager not linked.');
+      
       const customerId = recordData.customerId;
-      const customer = window.AppCustomerManager.getCustomerById(customerId);
+      const customer = this.customerManager.getCustomerById(customerId);
 
-      if (!customer) {
-        return Promise.resolve({ success: false, error: '顧客不存在' });
-      }
-
+      if (!customer) return { success: false, error: '顧客不存在 (ID無效)' };
       if (!customer.serviceRecords) customer.serviceRecords = [];
 
+      // 處理紀錄 (新增或更新)
       if (recordData.recordId) {
         const index = customer.serviceRecords.findIndex(r => r.id === recordData.recordId);
-        
         if (index !== -1) {
-          customer.serviceRecords[index] = {
-            ...customer.serviceRecords[index],
-            ...recordData,
-            updatedAt: new Date().toISOString()
+          customer.serviceRecords[index] = { 
+            ...customer.serviceRecords[index], 
+            ...recordData, 
+            updatedAt: new Date().toISOString() 
           };
         } else {
-          console.warn('Record ID provided but not found, creating new.');
-          const newRecord = {
-            ...recordData,
-            id: recordData.recordId,
-            isTempRecord: false,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+          const newRecord = { 
+            ...recordData, 
+            id: recordData.recordId, 
+            isTempRecord: false, 
+            createdAt: new Date().toISOString(), 
+            updatedAt: new Date().toISOString() 
           };
           customer.serviceRecords.unshift(newRecord);
         }
-
       } else {
-        const newRecord = {
-          id: `rec_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-          ...recordData,
-          isTempRecord: false,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
+        const newRecord = { 
+          id: `rec_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`, 
+          ...recordData, 
+          isTempRecord: false, 
+          createdAt: new Date().toISOString(), 
+          updatedAt: new Date().toISOString() 
         };
         customer.serviceRecords.unshift(newRecord);
       }
 
-      const result = window.AppCustomerManager.updateCustomer(customerId, customer);
+      // 寫回並通知
+      const result = this.customerManager.updateCustomer(customerId, customer);
       
       if (result.success) {
-        if (window.AppCustomerManager.notifyRecordAdded) {
-            window.AppCustomerManager.notifyRecordAdded(customerId);
+        if (typeof this.customerManager.notifyRecordAdded === 'function') {
+            this.customerManager.notifyRecordAdded(customerId);
         }
-        return Promise.resolve({ 
-          success: true, 
-          recordId: recordData.recordId || customer.serviceRecords[0].id 
-        });
+        return { success: true, recordId: recordData.recordId || customer.serviceRecords[0].id };
       } else {
-        return Promise.resolve({ success: false, error: result.errors.join(',') });
+        return { success: false, error: result.errors.join(',') };
       }
 
     } catch (error) {
-      console.error('Save record error:', error);
-      return Promise.resolve({ success: false, error: error.message });
+      console.error('Save Record Failed:', error);
+      return { success: false, error: error.message };
     }
   }
 
-  deleteRecord(customerId, recordId) {
+  async deleteRecord(customerId, recordId) {
     try {
-      if (!window.AppCustomerManager) {
-        throw new Error('AppCustomerManager not initialized');
-      }
+      if (!this.customerManager) throw new Error('CustomerManager not linked.');
 
-      const customer = window.AppCustomerManager.getCustomerById(customerId);
+      const customer = this.customerManager.getCustomerById(customerId);
       if (!customer || !customer.serviceRecords) {
-        return Promise.resolve({ success: false, error: '找不到紀錄' });
+        return { success: false, error: '找不到紀錄' };
       }
 
       const originalLength = customer.serviceRecords.length;
       customer.serviceRecords = customer.serviceRecords.filter(r => r.id !== recordId);
 
       if (customer.serviceRecords.length === originalLength) {
-        return Promise.resolve({ success: false, error: '紀錄 ID 不存在' });
+        return { success: false, error: '紀錄 ID 不存在' };
       }
 
-      const result = window.AppCustomerManager.updateCustomer(customerId, customer);
+      const result = this.customerManager.updateCustomer(customerId, customer);
       
       if (result.success) {
-        return Promise.resolve({ success: true });
+        return { success: true };
       } else {
-        return Promise.resolve({ success: false, error: result.errors.join(',') });
+        return { success: false, error: result.errors.join(',') };
       }
     } catch (error) {
       console.error('Delete record error:', error);
-      return Promise.resolve({ success: false, error: error.message });
+      return { success: false, error: error.message };
     }
   }
 }
+
 // ================================================================
-// 4. TemplateManager - 模板管理 (P2 升級版 v2.4)
+// 4. TemplateManager - 模板管理
 // ================================================================
 
 class TemplateManager {
   constructor() {
     this.storage = window.AppStorage;
-    this.key = DATA_MANAGER_CONFIG.keys.serviceTemplates || 'serviceTemplates'; // 確保有 key
+    this.key = DATA_MANAGER_CONFIG.keys.serviceTemplates;
     this.initDefaultTemplates();
   }
 
-  // 初始化預設模板 (展示用)
   initDefaultTemplates() {
     const existing = this.storage.load(this.key);
     if (existing && existing.length > 0) return;
@@ -487,18 +450,16 @@ class TemplateManager {
       {
         id: 'tpl_default_01',
         name: '急性落枕處理',
-        symptomTag: '落枕', // 用於寫入 healthTags
-        relatedBodyParts: ['neck', 'upper-back'], // 觸發部位
-        // 文字選項 (供 UI 產生 Checkbox 使用)
+        symptomTag: '落枕',
+        relatedBodyParts: ['neck', 'upper-back'],
         textItems: {
           complaints: ['早晨起床頸部劇痛', '頭部無法向單側轉動', '肩頸肌肉僵硬'],
           findings: ['提肩胛肌明顯緊繃', '頸椎旋轉角度受限 (<45度)', '胸鎖乳突肌壓痛'],
           treatments: ['熱敷放鬆', '激痛點按壓 (Trigger Point)', '頸椎關節鬆動術', '貼紮支撐'],
           recommendations: ['更換合適高度枕頭', '避免長時間低頭滑手機', '每小時頸部伸展', '居家熱敷15分鐘']
         },
-        // 關聯資料 ID (對應現有 TagManager 和 AssessmentManager 的預設 ID)
-        relatedMuscles: ['tag_m_01', 'tag_m_02'], // 斜方肌, 提肩胛肌
-        relatedAssessments: ['act_01', 'act_02']   // 頸部旋轉, 椎間孔擠壓
+        relatedMuscles: ['tag_m_01', 'tag_m_02'],
+        relatedAssessments: ['act_01', 'act_02']
       },
       {
         id: 'tpl_default_02',
@@ -511,74 +472,48 @@ class TemplateManager {
           treatments: ['關節囊鬆動術', '深層橫向按摩 (DFM)', 'P.N.F 伸展', '干擾波電療'],
           recommendations: ['爬牆運動 (Wall Crawl)', '毛巾操 (內旋訓練)', '睡覺時患側墊枕頭', '持續復健勿中斷']
         },
-        relatedMuscles: ['tag_m_03', 'tag_m_04'], // 胸大肌, 三角肌
-        relatedAssessments: ['act_03', 'act_04']   // Apley 抓背, 空罐測試
+        relatedMuscles: ['tag_m_03', 'tag_m_04'],
+        relatedAssessments: ['act_03', 'act_04']
       }
     ];
 
     this.storage.save(this.key, defaultTemplates);
   }
 
-  getAllTemplates() {
-    return this.storage.load(this.key) || [];
-  }
+  getAllTemplates() { return this.storage.load(this.key) || []; }
+  getTemplateById(id) { return this.getAllTemplates().find(t => t.id === id); }
 
-  getTemplateById(id) {
-    const templates = this.getAllTemplates();
-    return templates.find(t => t.id === id);
-  }
-
-  // 根據部位尋找適合的模板 (被動觸發用)
   findTemplatesByBodyPart(bodyPart) {
     const templates = this.getAllTemplates();
-    // 簡單匹配：只要模板的關聯部位包含傳入的部位 (移除左右側前綴後比對更廣泛，或精確比對)
     const normalizedPart = bodyPart.replace(/^(left|right)-/, '');
-    
     return templates.filter(t => 
-      t.relatedBodyParts.some(part => 
-        part === bodyPart || part === normalizedPart
-      )
+      t.relatedBodyParts.some(part => part === bodyPart || part === normalizedPart)
     );
   }
 
-  /**
-   * 新增模板
-   * @param {Object} templateData 
-   * 注意：傳入的 content 欄位若是字串 (來自 textarea)，會自動轉為陣列
-   */
   addTemplate(templateData) {
     try {
       if (!templateData.name) return { success: false, errors: ['模板名稱為必填'] };
-
       const templates = this.getAllTemplates();
-      
       const newTemplate = {
         id: `tpl_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
         name: templateData.name,
         symptomTag: templateData.symptomTag || '',
         relatedBodyParts: templateData.relatedBodyParts || [],
-        
-        // 處理多維度文字選項
         textItems: {
           complaints: this._parseList(templateData.content?.complaints),
           findings: this._parseList(templateData.content?.findings),
           treatments: this._parseList(templateData.content?.treatments),
           recommendations: this._parseList(templateData.content?.recommendations)
         },
-
-        // 關聯 ID
         relatedMuscles: templateData.relatedMuscles || [],
         relatedAssessments: templateData.relatedAssessments || [],
-        
         createdAt: new Date().toISOString()
       };
-
       templates.push(newTemplate);
       this.storage.save(this.key, templates);
       return { success: true, template: newTemplate };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
+    } catch (error) { return { success: false, error: error.message }; }
   }
 
   updateTemplate(id, updates) {
@@ -587,7 +522,6 @@ class TemplateManager {
       const index = templates.findIndex(t => t.id === id);
       if (index === -1) return { success: false, error: '模板不存在' };
 
-      // 如果有更新 content 內容，需重新 parse
       let updatedTextItems = templates[index].textItems;
       if (updates.content) {
         updatedTextItems = {
@@ -596,33 +530,23 @@ class TemplateManager {
           treatments: updates.content.treatments ? this._parseList(updates.content.treatments) : updatedTextItems.treatments,
           recommendations: updates.content.recommendations ? this._parseList(updates.content.recommendations) : updatedTextItems.recommendations,
         };
-        delete updates.content; // 移除原始 content，避免覆蓋
+        delete updates.content;
       }
 
-      templates[index] = {
-        ...templates[index],
-        ...updates,
-        textItems: updatedTextItems,
-        updatedAt: new Date().toISOString()
-      };
-
+      templates[index] = { ...templates[index], ...updates, textItems: updatedTextItems, updatedAt: new Date().toISOString() };
       this.storage.save(this.key, templates);
       return { success: true, template: templates[index] };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
+    } catch (error) { return { success: false, error: error.message }; }
   }
 
   deleteTemplate(id) {
     const templates = this.getAllTemplates();
     const newTemplates = templates.filter(t => t.id !== id);
     if (templates.length === newTemplates.length) return { success: false, error: '模板不存在' };
-    
     this.storage.save(this.key, newTemplates);
     return { success: true };
   }
 
-  // 內部工具：將字串或陣列轉為陣列，並過濾空值
   _parseList(input) {
     if (!input) return [];
     if (Array.isArray(input)) return input;
@@ -632,8 +556,9 @@ class TemplateManager {
     return [];
   }
 }
+
 // ================================================================
-// 5. DataExportService - 資料匯出匯入服務 (Phase 5)
+// 5. DataExportService - 資料匯出匯入服務
 // ================================================================
 
 class DataExportService {
@@ -658,45 +583,41 @@ class DataExportService {
         const key = localStorage.key(i);
         if (key && key.startsWith('customer_') && key !== 'customerIndex') {
            const detail = this.storage.load(key);
-           if (detail) {
-             data.customerDetails[key] = detail;
-           }
+           if (detail) data.customerDetails[key] = detail;
         }
       }
-
       return { success: true, data: data };
-    } catch (error) {
-      console.error('Export failed:', error);
-      return { success: false, error: error.message };
-    }
+    } catch (error) { return { success: false, error: error.message }; }
   }
-exportAssessmentsToCSV() {
+
+  exportAssessmentsToCSV() {
     try {
         const actions = this.storage.load('assessmentActions') || [];
         if (actions.length === 0) return { success: false, error: '無資料可匯出' };
         
         const headers = ['id', 'name', 'bodyPart', 'description'];
+        const escapeCSV = (field) => {
+            if (field === null || field === undefined) return '""'; 
+            let stringValue = Array.isArray(field) ? field.join('|') : String(field);
+            stringValue = stringValue.replace(/"/g, '""');
+            return `"${stringValue}"`;
+        };
+
         const rows = actions.map(a => 
-            [a.id, `"${a.name}"`, a.bodyPart, `"${(a.description||'').replace(/"/g, '""')}"`].join(',')
+            [escapeCSV(a.id), escapeCSV(a.name), escapeCSV(a.bodyPart), escapeCSV(a.description)].join(',')
         );
-        
         const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\n');
-        
         return { success: true, csv: csvContent };
-    } catch (e) {
-        return { success: false, error: e.message };
-    }
-}
+    } catch (e) { return { success: false, error: e.message }; }
+  }
+
   importData(jsonData, options = { source: 'local' }) {
     try {
       if (!jsonData.version || (!jsonData.customerIndex && !jsonData.customers)) {
         return { success: false, error: '無效的備份檔案格式' };
       }
-
-      // 匯入前先清空，避免 ID 衝突或殘留資料
       localStorage.clear();
-
-      // [修改重點] 將 options 參數傳遞給每一個 save 呼叫
+      
       if (jsonData.tags) this.storage.save('tags', jsonData.tags, options);
       if (jsonData.assessmentActions) this.storage.save('assessmentActions', jsonData.assessmentActions, options);
       if (jsonData.customerIndex) this.storage.save('customerIndex', jsonData.customerIndex, options);
@@ -707,46 +628,38 @@ exportAssessmentsToCSV() {
           this.storage.save(key, jsonData.customerDetails[key], options);
         });
       }
-
-      // 處理舊版資料結構
       if (jsonData.customers && !jsonData.customerIndex) {
          console.warn('Importing legacy data...');
          this.storage.save('customers', jsonData.customers, options);
       }
-
       return { success: true };
-    } catch (error) {
-      console.error('Import failed:', error);
-      return { success: false, error: error.message };
-    }
+    } catch (error) { return { success: false, error: error.message }; }
   }
 }
 
 // ================================================================
-// DataManager 主入口
+// DataManager 主入口 (等待依賴注入)
 // ================================================================
 
 class DataManager {
-  constructor() {
+  /**
+   * DataManager 現在是被動初始化的，必須由外部 (app.js) 傳入依賴
+   */
+  constructor(customerManager) {
     if (!window.AppStorage) {
       console.error('❌ AppStorage missing! DataManager cannot start.');
       return;
     }
-
+    
+    // 注入依賴
     this.tag = new TagManager();
     this.assessment = new AssessmentManager();
-    this.record = new RecordManager();
     this.template = new TemplateManager(); 
     this.exportService = new DataExportService();
     
-    console.log('✅ DataManager (v2.3) initialized with TemplateManager');
+    // 關鍵：將 customerManager 傳遞給 RecordManager
+    this.record = new RecordManager(customerManager);
+
+    console.log('✅ DataManager (v2.4 Refactored) initialized with DI');
   }
 }
-
-window.appDataManager = new DataManager();
-window.AppDataManager = window.appDataManager;
-window.AppTagManager = window.appDataManager.tag;
-window.AppRecordManager = window.appDataManager.record;
-window.AppAssessmentManager = window.appDataManager.assessment;
-window.AppTemplateManager = window.appDataManager.template; 
-window.AppDataExportService = window.appDataManager.exportService;

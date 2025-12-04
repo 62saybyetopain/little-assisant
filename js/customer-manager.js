@@ -323,9 +323,3 @@ class CustomerManager {
     }
   }
 }
-
-// 初始化全域實例 (使用新規範)
-window.AppCustomerManager = new CustomerManager();
-
-// 向後相容 (階段二代碼使用)
-window.customerManager = window.AppCustomerManager;

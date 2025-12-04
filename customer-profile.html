@@ -460,8 +460,6 @@
         ← 返回列表
       </button>
       <div class="header-actions">
-        <button class="icon-btn" id="edit-btn" title="編輯">✏️</button>
-        <button class="icon-btn" id="more-btn" title="更多">⋮</button>
       </div>
     </div>
     <div class="header-title">
@@ -472,7 +470,9 @@
 
   <div class="profile-container">
     <div class="card">
-      <div class="card-title">📋 基本資訊</div>
+      <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
+  📋 基本資訊
+  <button class="icon-btn" id="edit-btn" title="編輯資料">✏️</button>
       <div class="info-grid" id="basic-info-grid">
         </div>
     </div>
@@ -523,6 +523,7 @@
   <script src="js/storage.js"></script>
   <script src="js/customer-manager.js"></script>
   <script src="js/data-manager.js"></script>
+  <script src="js/app.js"></script>
   
   <script>
     // ===== 全域變數 =====
@@ -949,6 +950,9 @@
       document.getElementById('edit-cage').value = customer.age || '';
       document.getElementById('edit-coccupation').value = customer.occupation || '';
       document.getElementById('edit-clocation').value = customer.location || '';
+       
+      document.getElementById('edit-chealth').value = (customer.healthTags || []).join(', ');
+      document.getElementById('edit-cinterests').value = (customer.interestTags || customer.interests || []).join(', ');
 
       document.getElementById('edit-customer-modal').style.display = 'flex';
     }
@@ -960,6 +964,9 @@
     function handleUpdateCustomer(e) {
       e.preventDefault();
       
+      // 輔助函式：逗號分隔字串轉陣列
+      const parseTags = (str) => str.split(/[,，、]/).map(s => s.trim()).filter(s => s.length > 0);
+
       const updatedData = {
         name: document.getElementById('edit-cname').value,
         nickname: document.getElementById('edit-cnickname').value,
@@ -967,7 +974,9 @@
         gender: document.getElementById('edit-cgender').value,
         age: document.getElementById('edit-cage').value,
         occupation: document.getElementById('edit-coccupation').value,
-        location: document.getElementById('edit-clocation').value
+        location: document.getElementById('edit-clocation').value,
+        healthTags: parseTags(document.getElementById('edit-chealth').value),
+        interestTags: parseTags(document.getElementById('edit-cinterests').value)
       };
 
       const result = window.AppCustomerManager.updateCustomer(customerId, updatedData);
@@ -975,7 +984,7 @@
       if (result.success) {
         showToast('資料更新成功', 'success');
         closeEditModal();
-        loadCustomerProfile(); // 重新整理畫面
+        loadCustomerProfile(); 
       } else {
         showToast('更新失敗: ' + result.errors.join(','), 'error');
       }
@@ -1023,6 +1032,17 @@
           <label style="display:block;margin-bottom:5px;font-weight:bold;">居住地</label>
           <input type="text" id="edit-clocation" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;">
         </div>
+        <div style="border-top:1px solid #eee; margin: 15px 0; padding-top:10px;">
+          <div class="form-group" style="margin-bottom:15px;">
+            <label style="display:block;margin-bottom:5px;font-weight:bold; color:#D32F2F;">受傷史/健康狀態 (逗號分隔)</label>
+            <input type="text" id="edit-chealth" placeholder="例如: 高血壓, 骨折" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;">
+          </div>
+          <div class="form-group" style="margin-bottom:15px;">
+            <label style="display:block;margin-bottom:5px;font-weight:bold; color:#7B1FA2;">日常活動 (逗號分隔)</label>
+            <input type="text" id="edit-cinterests" placeholder="例如: 跑步, 游泳" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;">
+          </div>
+      </div>
+
         <div style="text-align:right;">
           <button type="button" onclick="closeEditModal()" class="btn" style="background:#eee;color:#333;margin-right:10px;">取消</button>
           <button type="submit" class="btn btn-primary">儲存變更</button>
