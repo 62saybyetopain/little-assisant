@@ -671,20 +671,22 @@ class DataExportService {
     }
   }
 exportAssessmentsToCSV() {
-      try {
-          const actions = this.storage.load('assessmentActions') || [];
-          if (actions.length === 0) return { success: false, error: '無資料可匯出' };
-          
-          const headers = ['id', 'name', 'bodyPart', 'description'];
-          const rows = actions.map(a => 
-              [a.id, `"${a.name}"`, a.bodyPart, `"${(a.description||'').replace(/"/g, '""')}"`].join(',')
-          );
-          
-          return { success: true, csv: [headers.join(','), ...rows].join('\n') };
-      } catch (e) {
-          return { success: false, error: e.message };
-      }
-  }
+    try {
+        const actions = this.storage.load('assessmentActions') || [];
+        if (actions.length === 0) return { success: false, error: '無資料可匯出' };
+        
+        const headers = ['id', 'name', 'bodyPart', 'description'];
+        const rows = actions.map(a => 
+            [a.id, `"${a.name}"`, a.bodyPart, `"${(a.description||'').replace(/"/g, '""')}"`].join(',')
+        );
+        
+        const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\n');
+        
+        return { success: true, csv: csvContent };
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
+}
   importData(jsonData, options = { source: 'local' }) {
     try {
       if (!jsonData.version || (!jsonData.customerIndex && !jsonData.customers)) {

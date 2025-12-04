@@ -15,7 +15,7 @@
       flex-direction: column;
       max-height: 90vh; /* 視窗高度的 90% */
       overflow: hidden; /* 防止外層出現滾動條 */
-      margin: 2vh auto; /* 確保上下有留白 */
+      margin: 5vh auto; /* 確保上下有留白 */
     }
 
     /* 2. 讓 Form 填滿剩餘空間，並成為內部 Flex 容器 */
@@ -28,26 +28,29 @@
     }
 
     /* 3. 標頭固定 (不縮放) */
-    .modal-header {
+    .modal-header, .modal-footer {
       flex-shrink: 0;
-    }
-
-    /* 4. [新增] 滾動區域樣式：只讓被包覆的內容區滾動 */
-    .modal-scrollable-body {
-      flex: 1;           /* 佔滿 Form 內的剩餘空間 */
-      overflow-y: auto;  /* 內容過長時出現滾動條 */
-      padding: 20px;     /* 內距移到這裡 */
-      padding-bottom: 40px; /* [Fix] 增加底部留白 */
-    }
-
-    /* 5. 頁尾固定 (不縮放) */
-    .modal-footer {
-      flex-shrink: 0;
-      background-color: #fff; /* 確保背景不透明，蓋住滾動內容 */
-      border-top: 1px solid #eee;
-      padding: 15px;
+      background: #fff; /* 確保背景不透明 */
       z-index: 10;
     }
+
+    /* 4. 設定中間區域可捲動 */
+     .form-section, .form-grid, .modal-scrollable-body {
+    }
+    #form-add-template, #form-edit-template {
+    overflow-y: auto; /* 讓整個 Form 可捲動 */
+    padding: 0;  /* 內距 */
+    }
+     .form-section {
+      margin: 20px;
+    }
+
+    /* 5. 針對模板 Modal 特別優化 */
+    .modal-lg {
+     max-width: 800px;
+     width: 90%;
+    }
+
     .sync-card {
       background: white;
       padding: 20px;

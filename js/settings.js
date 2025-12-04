@@ -17,36 +17,101 @@
  * (v2.4.1 Fix)
  * 修正重點：
  * 修正模板 Modal 中「系統關聯」讀取肌群標籤資料結構錯誤的問題 (.data vs Array)
- * v2.6[新增] 處理 P2P 同步操作
+ * v2.6處理 P2P 同步操作
+ * v2.7身體部位分類改良
  */
 
 // 定義身體部位
 const BODY_PARTS_DEF = [
-  { id: 'head', name: '頭部' }, { id: 'neck', name: '頸部' },
+  { id: 'head', name: '頭部' }, 
+  { id: 'neck', name: '左頸' },{ id: 'neck', name: '右頸' },
   { id: 'left-shoulder', name: '左肩' }, { id: 'right-shoulder', name: '右肩' },
   { id: 'upper-back', name: '上背' }, { id: 'lower-back', name: '下背/腰' },
-  { id: 'chest', name: '胸部' }, { id: 'abdomen', name: '腹部' },
-  { id: 'hip', name: '臀部' }, { id: 'left-arm', name: '左手' },
-  { id: 'right-arm', name: '右手' }, { id: 'left-leg', name: '左腿' },
-  { id: 'right-leg', name: '右腿' }, { id: 'left-knee', name: '左膝' },
-  { id: 'right-knee', name: '右膝' }, { id: 'left-ankle', name: '左腳踝' },
-  { id: 'right-ankle', name: '右腳踝' }
+  { id: 'left-chest', name: '左胸' }, { id: 'right-chest', name: '右胸' }, 
+  { id: 'left-abdomen', name: '左腹部' },{ id: 'right-abdomen', name: '右腹' },
+  { id: 'left-hip', name: '左臀' }, { id: 'left-hip', name: '右臀' },
+  { id: 'left-arm', name: '左手' },{ id: 'right-arm', name: '右手' }, 
+  { id: 'left-leg', name: '左大腿' },{ id: 'right-leg', name: '右大腿' },
+  { id: 'left-knee', name: '左膝' },{ id: 'right-knee', name: '右膝' },
+  { id: 'left-calf', name: '左小腿' },{ id: 'right-calf', name: '右小腿' },
+  { id: 'left-ankle', name: '左腳踝' },{ id: 'right-ankle', name: '右腳踝' },
+  { id: 'left-foot', name: '左足底' },{ id: 'right-foot', name: '右足底' }
+  
+];
+const SIMPLIFIED_BODY_PARTS = [
+    { id: 'head', name: '頭部' },
+    { id: 'neck', name: '頸部' },
+    { id: 'shoulder', name: '肩部' },      
+    { id: 'upper-back', name: '上背' },
+    { id: 'chest', name: '胸部' },         
+    { id: 'arm', name: '手臂' },           
+    { id: 'abdomen', name: '腹部' },
+    { id: 'lower-back', name: '腰部/下背' },
+    { id: 'hip', name: '髖/臀部' },
+    { id: 'leg', name: '大腿' },           
+    { id: 'knee', name: '膝' },          
+    { id: 'calf', name: '小腿' },
+    { id: 'ankle', name: '踝' },         
+    { id: 'foot', name: '足部' }          
+];
+const BODY_PART_ORDER = [
+  'head',        // 頭
+  'neck',        // 頸
+  'shoulder',    // 肩
+  'upper-back',  // 上背
+  'chest',       // 胸
+  'arm',         // 手
+  'abdomen',     // 腹
+  'lower-back',  // 腰/下背
+  'hip',         // 髖/臀
+  'leg',         // 大腿
+  'knee',        // 膝
+  'calf',        // 小腿
+  'ankle',       // 踝
+  'foot'         // 足部
+];
+function sortTagsByBodyPart(tags) {
+  return tags.sort((a, b) => {
+    // 取出兩個標籤的第一個關聯部位
+    const getPart = (tag) => {
+        const parts = tag.relatedBodyParts;
+        if (!parts || parts.length === 0) return '';
+        // 取第一個部位，並移除 left-/right- 前綴以進行通用比對
+        return parts[0].replace(/^(left|right)-/, '');
+    };
+
+    const partA = getPart(a);
+    const partB = getPart(b);
+
+    let indexA = BODY_PART_ORDER.indexOf(partA);
+    let indexB = BODY_PART_ORDER.indexOf(partB);
+
+    // 如果部位不在清單中 (例如 'unknown')，排在最後面
+    if (indexA === -1) indexA = 999;
+    if (indexB === -1) indexB = 999;
+
+    // 1. 先比對部位順序
+    if (indexA !== indexB) {
+      return indexA - indexB;
+    }
+    // 2. 如果部位相同，則依名稱筆畫/字母排序
+    return a.name.localeCompare(b.name);
+  });
+}
+const COLOR_OPTIONS = [
+  { color: '#7e22ce', hint: '頭頸 (穩定肌)' }, { color: '#e9d5ff', hint: '頭頸 (相位肌)' },
+  { color: '#3730a3', hint: '肩部 (穩定肌)' }, { color: '#a5b4fc', hint: '肩部 (相位肌)' },
+  { color: '#0f766e', hint: '上背 (穩定肌)' }, { color: '#5eead4', hint: '上背 (相位肌)' },
+  { color: '#1d4ed8', hint: '手臂 (穩定肌)' }, { color: '#93c5fd', hint: '手臂 (相位肌)' },
+  { color: '#15803d', hint: '胸腹 (穩定肌)' }, { color: '#86efac', hint: '胸腹 (相位肌)' },
+  { color: '#b45309', hint: '腰部 (穩定肌)' }, { color: '#fcd34d', hint: '腰部 (相位肌)' },
+  { color: '#be123c', hint: '臀部 (穩定肌)' }, { color: '#fda4af', hint: '臀部 (相位肌)' },
+  { color: '#78350f', hint: '大腿 (穩定肌)' }, { color: '#d6d3d1', hint: '大腿 (相位肌)' },
+  { color: '#334155', hint: '小腿 (穩定肌)' }, { color: '#94a3b8', hint: '小腿 (相位肌)' },
+  { color: '#000000', hint: '特殊/其他' }
 ];
 
-// 定義色盤 (深色=穩定肌 / 淺色=活動肌)
-// 順序：頭頸(紫) -> 肩(靛) -> 上背(青) -> 手(藍) -> 胸腹(綠) -> 腰(琥珀) -> 臀(玫瑰) -> 腿(棕) -> 腳(灰) -> 特殊
-const COLORS_DEF = [
-  '#7e22ce', '#e9d5ff', // 頭頸 (穩/活)
-  '#3730a3', '#a5b4fc', // 肩部 (穩/活)
-  '#0f766e', '#5eead4', // 上背 (穩/活)
-  '#1d4ed8', '#93c5fd', // 手臂 (穩/活)
-  '#15803d', '#86efac', // 胸腹 (穩/活)
-  '#b45309', '#fcd34d', // 腰部 (穩/活)
-  '#be123c', '#fda4af', // 臀部 (穩/活)
-  '#78350f', '#d6d3d1', // 大腿 (穩/活)
-  '#334155', '#94a3b8', // 小腿 (穩/活)
-  '#000000', '#ef4444'  // 黑/紅
-];
+const COLORS_DEF = COLOR_OPTIONS.map(o => o.color);
 
 const SettingsApp = {
   state: {
@@ -430,7 +495,8 @@ const SettingsApp = {
   // === 肌群標籤功能 ===
   loadMuscleList() {
     const res = window.AppTagManager.getTagsByCategory('muscleGroup');
-    this.state.muscleList = Array.isArray(res) ? res : (res.data || []);
+    let list = Array.isArray(res) ? res : (res.data || []);
+    this.state.muscleList = sortTagsByBodyPart(list);
     this.renderMuscleList();
   },
 
@@ -483,10 +549,11 @@ const SettingsApp = {
 
     // 渲染並選中顏色
     const palette = document.getElementById('edit-color-palette');
-    palette.innerHTML = COLORS_DEF.map(c => `
-      <div class="color-option ${c === tag.color ? 'selected' : ''}" 
-           style="background:${c}" 
-           onclick="SettingsApp.selectEditColor('${c}', this)"></div>
+    palette.innerHTML = COLOR_OPTIONS.map(opt => `
+      <div class="color-option ${opt.color === tag.color ? 'selected' : ''}" 
+           style="background:${opt.color}" 
+           title="${opt.hint}"
+           onclick="SettingsApp.selectEditColor('${opt.color}', this)"></div>
     `).join('');
     document.getElementById('edit-muscle-color').value = tag.color;
 
@@ -549,7 +616,7 @@ const SettingsApp = {
   renderCheckboxes(containerId, name) {
     const el = document.getElementById(containerId);
     if (el) {
-      el.innerHTML = BODY_PARTS_DEF.map(p => `
+      el.innerHTML = SIMPLIFIED_BODY_PARTS.map(p => `
         <label class="checkbox-item">
           <input type="checkbox" name="${name}" value="${p.id}"> ${p.name}
         </label>
@@ -560,8 +627,12 @@ const SettingsApp = {
   renderColorPalette() {
     const el = document.getElementById('color-palette');
     if (el) {
-      el.innerHTML = COLORS_DEF.map(c => `
-        <div class="color-option" style="background:${c}" onclick="SettingsApp.selectColor('${c}', this)"></div>
+      el.innerHTML = COLOR_OPTIONS.map(opt => `
+        <div class="color-option" 
+             style="background:${opt.color}" 
+             title="${opt.hint}" 
+             onclick="SettingsApp.selectColor('${opt.color}', this)">
+        </div>
       `).join('');
     }
   },
