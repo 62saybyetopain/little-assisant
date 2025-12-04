@@ -1,0 +1,833 @@
+/**
+ * service-record.css - 步驟導航與表單樣式
+ * 版本：v1.0
+ * 建立日期：2024-12-20
+ * 
+ * 主要元件：
+ * - 步驟導航指示器
+ * - 步驟容器與過渡效果
+ * - 表單樣式與驗證狀態
+ * - 導航按鈕與操作區域
+ * 
+ * CSS 變數：
+ * - 顏色系統
+ * - 間距與排版
+ * - 動畫與過渡
+ */
+
+/* ============================================
+   CSS 變數定義
+   ============================================ */
+
+:root {
+  /* 顏色系統 */
+  --primary-color: #2563eb;
+  --primary-dark: #1e40af;
+  --primary-light: #3b82f6;
+  --success-color: #16a34a;
+  --warning-color: #ea580c;
+  --error-color: #dc2626;
+  --info-color: #0891b2;
+  
+  --bg-light: #f9fafb;
+  --bg-white: #ffffff;
+  --text-primary: #1f2937;
+  --text-secondary: #6b7280;
+  --text-muted: #9ca3af;
+  --border-light: #e5e7eb;
+  --border-gray: #d1d5db;
+  
+  /* 間距 */
+  --spacing-xs: 0.25rem;   /* 4px */
+  --spacing-sm: 0.5rem;    /* 8px */
+  --spacing-md: 1rem;      /* 16px */
+  --spacing-lg: 1.5rem;    /* 24px */
+  --spacing-xl: 2rem;      /* 32px */
+  --spacing-2xl: 3rem;     /* 48px */
+  
+  /* 圓角 */
+  --radius-sm: 0.375rem;   /* 6px */
+  --radius-md: 0.5rem;     /* 8px */
+  --radius-lg: 0.75rem;    /* 12px */
+  --radius-full: 9999px;
+  
+  /* 陰影 */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  
+  /* 動畫 */
+  --transition-fast: 150ms ease-in-out;
+  --transition-base: 200ms ease-in-out;
+  --transition-slow: 300ms ease-in-out;
+}
+
+/* ============================================
+   基礎樣式重設
+   ============================================ */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  color: var(--text-primary);
+  background-color: var(--bg-light);
+  line-height: 1.6;
+  font-size: 16px;
+}
+
+/* ============================================
+   步驟導航指示器 (Step Navigation)
+   ============================================ */
+
+.step-navigation {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-lg);
+  padding: var(--spacing-xl);
+  background-color: var(--bg-white);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  margin-bottom: var(--spacing-xl);
+  overflow-x: auto; /* 手機友善 */
+}
+
+.step-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-sm);
+  position: relative;
+  flex: 1;
+  min-width: 80px;
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+/* 連接線 */
+.step-indicator::after {
+  content: '';
+  position: absolute;
+  top: 24px;
+  left: calc(50% + 40px);
+  width: calc(100% - 80px);
+  height: 2px;
+  background-color: var(--border-light);
+  z-index: -1;
+  transition: background-color var(--transition-base);
+}
+
+.step-indicator:last-child::after {
+  display: none;
+}
+
+/* 步驟編號圓形 */
+.step-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-full);
+  background-color: var(--bg-light);
+  border: 2px solid var(--border-light);
+  font-weight: 600;
+  font-size: 18px;
+  color: var(--text-secondary);
+  transition: all var(--transition-base);
+}
+
+/* 步驟標題 */
+.step-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-align: center;
+  transition: color var(--transition-base);
+  white-space: nowrap;
+}
+
+/* 步驟狀態指示 */
+.step-status {
+  display: none;
+  font-size: 12px;
+  color: var(--warning-color);
+  min-height: 16px;
+}
+
+/* 未完成狀態 */
+.step-indicator:hover .step-number {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+/* 活躍狀態 */
+.step-indicator.active .step-number {
+  background-color: var(--primary-color);
+  border-color: var(--primary-color);
+  color: var(--bg-white);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+}
+
+.step-indicator.active .step-title {
+  color: var(--primary-color);
+  font-weight: 700;
+}
+
+.step-indicator.active::after {
+  background-color: var(--primary-color);
+}
+
+/* 已完成狀態 */
+.step-indicator.completed .step-number {
+  background-color: var(--success-color);
+  border-color: var(--success-color);
+  color: var(--bg-white);
+}
+
+.step-indicator.completed .step-title {
+  color: var(--success-color);
+}
+
+.step-indicator.completed::after {
+  background-color: var(--success-color);
+}
+
+/* 已修改狀態 */
+.step-indicator.completed .step-status {
+  display: block;
+}
+
+/* 手機響應 */
+@media (max-width: 768px) {
+  .step-navigation {
+    gap: var(--spacing-md);
+    padding: var(--spacing-lg);
+    flex-wrap: wrap;
+  }
+
+  .step-indicator {
+    min-width: 70px;
+    flex: 0 0 auto;
+  }
+
+  .step-indicator::after {
+    left: calc(50% + 35px);
+    width: calc(100vw - 140px);
+  }
+
+  .step-title {
+    font-size: 12px;
+  }
+
+  .step-number {
+    width: 40px;
+    height: 40px;
+    font-size: 14px;
+  }
+}
+
+/* ============================================
+   步驟容器 (Step Container)
+   ============================================ */
+
+.step-container {
+  display: none;
+  animation: fadeIn var(--transition-base) ease-in-out;
+  background-color: var(--bg-white);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-xl);
+  box-shadow: var(--shadow-md);
+  margin-bottom: var(--spacing-xl);
+}
+
+.step-container.active {
+  display: block;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 步驟標題 */
+.step-container h2 {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: var(--spacing-lg);
+  padding-bottom: var(--spacing-lg);
+  border-bottom: 2px solid var(--border-light);
+}
+
+.step-container h3 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-top: var(--spacing-lg);
+  margin-bottom: var(--spacing-md);
+}
+
+/* 步驟描述 */
+.step-description {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-lg);
+  line-height: 1.6;
+}
+
+/* ============================================
+   表單元件
+   ============================================ */
+
+/* 表單組 */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-lg);
+}
+
+/* 標籤 */
+.form-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+/* 必填標記 */
+.required {
+  color: var(--error-color);
+  font-weight: 700;
+}
+
+/* 文本輸入與文本區 */
+input[type='text'],
+input[type='email'],
+input[type='tel'],
+textarea,
+select {
+  width: 100%;
+  padding: var(--spacing-md);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  color: var(--text-primary);
+  background-color: var(--bg-white);
+  transition: all var(--transition-base);
+  font-family: inherit;
+}
+
+input[type='text']:focus,
+input[type='email']:focus,
+input[type='tel']:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+/* 文本區特定樣式 */
+textarea {
+  resize: vertical;
+  min-height: 120px;
+  font-family: inherit;
+}
+
+/* 輸入驗證狀態 */
+input:invalid,
+textarea:invalid,
+select:invalid {
+  border-color: var(--error-color);
+}
+
+input:valid,
+textarea:valid,
+select:valid {
+  border-color: var(--success-color);
+}
+
+/* 幫助文字 */
+.form-help {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: var(--spacing-xs);
+}
+
+/* 錯誤信息 */
+.form-error {
+  font-size: 12px;
+  color: var(--error-color);
+  margin-top: var(--spacing-xs);
+  display: none;
+}
+
+input:invalid ~ .form-error,
+textarea:invalid ~ .form-error {
+  display: block;
+}
+
+/* ============================================
+   按鈕樣式
+   ============================================ */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md) var(--spacing-lg);
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-base);
+  white-space: nowrap;
+  text-align: center;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 主要按鈕 */
+.btn-primary {
+  background-color: var(--primary-color);
+  color: var(--bg-white);
+  border: 2px solid var(--primary-color);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: var(--primary-dark);
+  border-color: var(--primary-dark);
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* 次要按鈕 */
+.btn-secondary {
+  background-color: var(--bg-light);
+  color: var(--text-primary);
+  border: 2px solid var(--border-light);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: var(--border-light);
+  border-color: var(--border-gray);
+}
+
+/* 成功按鈕 */
+.btn-success {
+  background-color: var(--success-color);
+  color: var(--bg-white);
+  border: 2px solid var(--success-color);
+}
+
+.btn-success:hover:not(:disabled) {
+  background-color: #15803d;
+  border-color: #15803d;
+}
+
+/* 危險按鈕 */
+.btn-danger {
+  background-color: var(--error-color);
+  color: var(--bg-white);
+  border: 2px solid var(--error-color);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background-color: #b91c1c;
+  border-color: #b91c1c;
+}
+
+/* 禁用狀態 */
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 按鈕組 */
+.button-group {
+  display: flex;
+  gap: var(--spacing-md);
+  justify-content: flex-end;
+  margin-top: var(--spacing-xl);
+  flex-wrap: wrap;
+}
+
+/* ============================================
+   步驟導航按鈕區
+   ============================================ */
+
+.step-buttons {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+  padding: var(--spacing-lg);
+  background-color: var(--bg-white);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  margin-bottom: var(--spacing-xl);
+  flex-wrap: wrap;
+}
+
+.step-progress {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: var(--spacing-md);
+  background-color: var(--bg-light);
+  border-radius: var(--radius-md);
+  min-width: 80px;
+  text-align: center;
+}
+
+.btn-prev-step,
+.btn-next-step {
+  flex: 1;
+  min-width: 120px;
+  max-width: 200px;
+}
+
+/* 手機響應 */
+@media (max-width: 640px) {
+  .step-buttons {
+    gap: var(--spacing-sm);
+  }
+
+  .btn-prev-step,
+  .btn-next-step {
+    flex: 1;
+    min-width: 100px;
+    max-width: 150px;
+    font-size: 12px;
+    padding: var(--spacing-sm) var(--spacing-md);
+  }
+
+  .step-progress {
+    font-size: 12px;
+    padding: var(--spacing-sm);
+  }
+}
+
+/* ============================================
+   操作按鈕區
+   ============================================ */
+
+.action-buttons {
+  display: flex;
+  gap: var(--spacing-md);
+  justify-content: flex-end;
+  margin-top: var(--spacing-xl);
+  flex-wrap: wrap;
+}
+
+.btn-save-record {
+  min-width: 160px;
+}
+
+/* ============================================
+   警告與提示訊息
+   ============================================ */
+
+.alert-container {
+  position: fixed;
+  top: var(--spacing-lg);
+  right: var(--spacing-lg);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.alert {
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 500;
+  animation: slideIn var(--transition-base) ease-out;
+  box-shadow: var(--shadow-lg);
+  max-width: 400px;
+  word-wrap: break-word;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(420px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.alert-success {
+  background-color: #d1fae5;
+  color: #065f46;
+  border-left: 4px solid var(--success-color);
+}
+
+.alert-error {
+  background-color: #fee2e2;
+  color: #7f1d1d;
+  border-left: 4px solid var(--error-color);
+}
+
+.alert-warning {
+  background-color: #fef3c7;
+  color: #78350f;
+  border-left: 4px solid var(--warning-color);
+}
+
+.alert-info {
+  background-color: #cffafe;
+  color: #164e63;
+  border-left: 4px solid var(--info-color);
+}
+
+/* ============================================
+   提示與說明
+   ============================================ */
+
+.hint,
+.step-description {
+  padding: var(--spacing-md);
+  background-color: var(--bg-light);
+  border-left: 4px solid var(--info-color);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.hint {
+  margin-bottom: var(--spacing-lg);
+}
+
+.error-hint {
+  border-left-color: var(--error-color);
+  color: var(--error-color);
+}
+
+/* ============================================
+   評估結果摘要
+   ============================================ */
+
+.assessment-summary {
+  margin-top: var(--spacing-lg);
+  padding: var(--spacing-lg);
+  background-color: var(--bg-light);
+  border-radius: var(--radius-lg);
+}
+
+.assessment-summary-content h4 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: var(--spacing-lg);
+}
+
+.summary-section {
+  margin-bottom: var(--spacing-lg);
+  padding-bottom: var(--spacing-lg);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.summary-section:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.summary-section h5 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: var(--spacing-sm);
+}
+
+.summary-section p {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.summary-section ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.summary-section li {
+  font-size: 14px;
+  color: var(--text-primary);
+  padding: var(--spacing-xs) 0;
+  padding-left: var(--spacing-md);
+  position: relative;
+}
+
+.summary-section li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: var(--success-color);
+  font-weight: 700;
+}
+
+/* ============================================
+   手機響應式設計
+   ============================================ */
+
+@media (max-width: 768px) {
+  :root {
+    font-size: 14px;
+  }
+
+  .step-container {
+    padding: var(--spacing-lg);
+  }
+
+  .step-container h2 {
+    font-size: 20px;
+  }
+
+  .step-container h3 {
+    font-size: 16px;
+  }
+
+  .button-group {
+    flex-direction: column;
+    gap: var(--spacing-md);
+  }
+
+  .button-group .btn {
+    width: 100%;
+  }
+
+  .alert-container {
+    left: var(--spacing-lg);
+    right: var(--spacing-lg);
+  }
+
+  .alert {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  :root {
+    --spacing-lg: 1rem;
+    --spacing-xl: 1.5rem;
+  }
+
+  .step-container {
+    padding: var(--spacing-lg);
+    margin-bottom: var(--spacing-lg);
+  }
+
+  .step-navigation {
+    padding: var(--spacing-lg);
+    margin-bottom: var(--spacing-lg);
+  }
+
+  .step-container h2 {
+    font-size: 18px;
+  }
+
+  .btn {
+    padding: var(--spacing-sm) var(--spacing-md);
+    font-size: 13px;
+  }
+
+  input[type='text'],
+  input[type='email'],
+  input[type='tel'],
+  textarea,
+  select {
+    padding: var(--spacing-sm);
+    font-size: 16px; /* iOS 防止自動縮放 */
+  }
+
+  textarea {
+    min-height: 100px;
+  }
+}
+
+/* ============================================
+   暗色模式支援
+   ============================================ */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-light: #1f2937;
+    --bg-white: #111827;
+    --text-primary: #f3f4f6;
+    --text-secondary: #d1d5db;
+    --text-muted: #9ca3af;
+    --border-light: #374151;
+    --border-gray: #4b5563;
+  }
+
+  input[type='text'],
+  input[type='email'],
+  input[type='tel'],
+  textarea,
+  select {
+    background-color: #374151;
+    color: var(--text-primary);
+    border-color: #4b5563;
+  }
+
+  input[type='text']:focus,
+  input[type='email']:focus,
+  input[type='tel']:focus,
+  textarea:focus,
+  select:focus {
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+  }
+
+  .form-group {
+    color: var(--text-primary);
+  }
+}
+
+/* ============================================
+   打印樣式
+   ============================================ */
+
+@media print {
+  .step-navigation,
+  .step-buttons,
+  .action-buttons {
+    display: none;
+  }
+
+  .step-container {
+    page-break-inside: avoid;
+    box-shadow: none;
+  }
+
+  .btn {
+    display: none;
+  }
+}

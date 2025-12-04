@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>新增服務紀錄 - 客戶管理系統</title>
+  <link rel="stylesheet" href="styles/main.css">
+  <link rel="stylesheet" href="styles/service-record.css">
+  <link rel="stylesheet" href="styles/assessment-ui.css">
+</head>
+<body>
+  <div class="page-header">
+    <button class="back-btn" onclick="history.back()">
+      ← 返回
+    </button>
+    <div class="header-title">
+      <h1 id="page-title">新增服務紀錄</h1>
+      <p class="header-subtitle" id="customer-subtitle">載入中...</p>
+    </div>
+  </div>
+
+  <div class="page-container">
+    <div class="step-navigation"></div>
+
+    <div data-step="1" class="step-container">
+      <h2>主訴</h2>
+      <p class="step-description">描述客戶主要的症狀或問題</p>
+
+      <div class="form-group">
+        <label class="form-label">
+          主訴內容
+        </label>
+        <textarea 
+          name="complaint" 
+          class="form-textarea"
+          placeholder="請輸入客戶的主訴症狀，如：肩膀酸痛、腰部不適等"
+          rows="4">
+        </textarea>
+        <span class="form-help">請簡潔描述客戶的主要症狀</span>
+      </div>
+
+      <div class="step-actions-bar">
+         <button type="button" class="btn-secondary btn-save-record">儲存</button>
+      </div>
+    </div>
+
+    <div data-step="2" class="step-container">
+      <h2>症狀評估</h2>
+      <p class="step-description">詳細記錄症狀、肌群標籤與評估結果</p>
+
+      <div class="section-divider">
+        <h3>身體部位選擇</h3>
+      </div>
+      <div class="ui-assessment-body-diagram">
+        <div class="body-diagram-wrapper">
+          <svg id="body-diagram-front" viewBox="0 0 320 420" xmlns="http://www.w3.org/2000/svg">
+            <style>
+              .label-text { font-size: 12px; fill: #666; font-weight: bold; text-anchor: middle; pointer-events: none; }
+              .body-part { fill: #e0e0e0; stroke: #999; stroke-width: 1; cursor: pointer; transition: fill 0.2s; }
+              .body-part:hover { fill: #b3d9ff; }
+              .body-part.selected { fill: #4A90E2; stroke: #2171c7; }
+            </style>
+            
+            <text x="80" y="20" class="label-text">正面 (Front)</text>
+            <text x="240" y="20" class="label-text">背面 (Back)</text>
+
+            <g transform="translate(0, 30)">
+              <circle class="body-part" data-part="head" cx="80" cy="25" r="20" />
+              <rect class="body-part" data-part="neck" x="70" y="45" width="20" height="15" rx="5" />
+              <path class="body-part" data-part="left-shoulder" d="M70 60 L40 70 L45 90 L70 80 Z" />
+              <path class="body-part" data-part="right-shoulder" d="M90 60 L120 70 L115 90 L90 80 Z" />
+              <rect class="body-part" data-part="chest" x="60" y="80" width="40" height="40" rx="5" />
+              <rect class="body-part" data-part="abdomen" x="65" y="125" width="30" height="45" rx="5" />
+              
+              <rect class="body-part" data-part="left-arm" x="35" y="95" width="15" height="50" rx="5" />
+              <rect class="body-part" data-part="left-arm" x="35" y="150" width="15" height="45" rx="5" /> <rect class="body-part" data-part="right-arm" x="110" y="95" width="15" height="50" rx="5" />
+              <rect class="body-part" data-part="right-arm" x="110" y="150" width="15" height="45" rx="5" /> <rect class="body-part" data-part="left-leg" x="55" y="180" width="20" height="70" rx="5" /> <circle class="body-part" data-part="left-knee" cx="65" cy="260" r="10" /> <rect class="body-part" data-part="left-calf" x="58" y="275" width="14" height="60" rx="5" /> <rect class="body-part" data-part="left-ankle" x="55" y="340" width="20" height="10" rx="3" /> <rect class="body-part" data-part="right-leg" x="85" y="180" width="20" height="70" rx="5" /> <circle class="body-part" data-part="right-knee" cx="95" cy="260" r="10" /> <rect class="body-part" data-part="right-calf" x="88" y="275" width="14" height="60" rx="5" /> <rect class="body-part" data-part="right-ankle" x="85" y="340" width="20" height="10" rx="3" /> </g>
+
+            <g transform="translate(160, 30)">
+              <circle class="body-part" data-part="head" cx="80" cy="25" r="20" />
+              <rect class="body-part" data-part="neck" x="70" y="45" width="20" height="15" rx="5" />
+              <path class="body-part" data-part="left-shoulder" d="M70 60 L40 70 L45 90 L70 80 Z" />
+              <path class="body-part" data-part="right-shoulder" d="M90 60 L120 70 L115 90 L90 80 Z" />
+              
+              <rect class="body-part" data-part="upper-back" x="60" y="80" width="40" height="50" rx="5" />
+              <rect class="body-part" data-part="lower-back" x="65" y="135" width="30" height="25" rx="5" />
+              <rect class="body-part" data-part="hip" x="60" y="165" width="40" height="25" rx="5" />
+
+              <rect class="body-part" data-part="left-arm" x="35" y="95" width="15" height="50" rx="5" />
+              <rect class="body-part" data-part="left-arm" x="35" y="150" width="15" height="45" rx="5" />
+              <rect class="body-part" data-part="right-arm" x="110" y="95" width="15" height="50" rx="5" />
+              <rect class="body-part" data-part="right-arm" x="110" y="150" width="15" height="45" rx="5" />
+
+              <rect class="body-part" data-part="left-leg" x="55" y="195" width="20" height="70" rx="5" />
+              <rect class="body-part" data-part="left-calf" x="58" y="275" width="14" height="60" rx="5" />
+              
+              <rect class="body-part" data-part="right-leg" x="85" y="195" width="20" height="70" rx="5" />
+              <rect class="body-part" data-part="right-calf" x="88" y="275" width="14" height="60" rx="5" />
+            </g>
+          </svg>
+        </div>
+        <div id="list-mode-hint" style="display: none;"></div>
+      </div>
+
+      <div class="section-divider">
+        <h3>相關肌群標籤</h3>
+      </div>
+      <div id="muscle-tags-container" class="muscle-tags-container">
+        </div>
+
+      <div class="section-divider">
+        <h3>評估動作結果</h3>
+      </div>
+      <div id="assessment-container" class="assessment-container">
+        </div>
+
+      <div class="step-actions-bar">
+         <button type="button" class="btn-secondary btn-save-record">儲存</button>
+      </div>
+    </div>
+
+    <div data-step="3" class="step-container">
+      <h2>評估結果</h2>
+      <p class="step-description">整理評估結果與初步診斷</p>
+
+      <div class="assessment-summary">
+        <h3>評估結果摘要</h3>
+        <div id="assessment-summary-content" class="assessment-summary-content">
+          <p class="hint">暫無評估結果，請返回上一步完成評估</p>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">
+          初步診斷與發現
+        </label>
+        <textarea 
+          name="findings" 
+          class="form-textarea"
+          placeholder="根據評估結果，記錄初步診斷和主要發現"
+          rows="5">
+        </textarea>
+        <span class="form-help">總結評估的主要發現和初步診斷</span>
+      </div>
+
+      <div class="step-actions-bar">
+         <button type="button" class="btn-secondary btn-save-record">儲存</button>
+      </div>
+    </div>
+
+    <div data-step="4" class="step-container">
+      <h2>處理方案</h2>
+      <p class="step-description">建議治療方案與處理方式</p>
+
+      <div class="form-group">
+        <label class="form-label">
+          治療計畫
+        </label>
+        <textarea 
+          name="treatment-plan" 
+          class="form-textarea"
+          placeholder="詳述建議的治療方案、手法、頻率等"
+          rows="5">
+        </textarea>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">
+          建議與注意事項
+        </label>
+        <textarea 
+          name="recommendations" 
+          class="form-textarea"
+          placeholder="提供給客戶的建議，如：居家保健、運動建議、注意事項等"
+          rows="4">
+        </textarea>
+      </div>
+      <div class="step-actions-bar">
+         <button type="button" class="btn-secondary btn-save-record">儲存</button>
+      </div>
+    </div>
+
+    <div data-step="5" class="step-container">
+      <h2>客戶反饋</h2>
+      <p class="step-description">記錄客戶反應與後續建議</p>
+
+      <div class="form-group">
+        <label class="form-label">
+          客戶反饋
+        </label>
+        <textarea 
+          name="feedback" 
+          class="form-textarea"
+          placeholder="記錄客戶對治療的反應、症狀改善情況等"
+          rows="4">
+        </textarea>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">
+          後續建議與預約
+        </label>
+        <textarea 
+          name="next-steps" 
+          class="form-textarea"
+          placeholder="建議下次預約時間、後續治療計畫等"
+          rows="4">
+        </textarea>
+      </div>
+      <div class="step-actions-bar">
+         <button type="button" class="btn-secondary btn-save-record">儲存</button>
+      </div
+    </div>
+
+    <div class="step-buttons"></div>
+
+    <div class="action-buttons"></div>
+  </div>
+
+  <div class="alert-container"></div>
+
+<div id="modal-template-selector" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="tpl-modal-title">發現適用模板</h2>
+        <button class="close-btn" onclick="closeModal('modal-template-selector')">×</button>
+      </div>
+      
+      <div class="modal-body">
+        <div id="tpl-select-container" class="form-group" style="display:none;">
+          <label class="form-label" style="font-weight:bold;">選擇要套用的模板：</label>
+          <select id="tpl-select" class="form-select">
+            </select>
+        </div>
+
+        <form id="form-apply-template">
+          
+          <div class="template-section">
+            <h3 class="tpl-section-title">文字內容 (勾選後加入欄位)</h3>
+            
+            <div class="tpl-group">
+              <label>主訴 (Complaints)</label>
+              <div id="tpl-check-complaints" class="checkbox-list"></div>
+            </div>
+            
+            <div class="tpl-group">
+              <label>評估發現 (Findings)</label>
+              <div id="tpl-check-findings" class="checkbox-list"></div>
+            </div>
+
+            <div class="tpl-group">
+              <label>處理方式 (Treatments)</label>
+              <div id="tpl-check-treatments" class="checkbox-list"></div>
+            </div>
+
+            <div class="tpl-group">
+              <label>建議 (Recommendations)</label>
+              <div id="tpl-check-recommendations" class="checkbox-list"></div>
+            </div>
+          </div>
+
+          <hr class="divider">
+
+          <div class="template-section">
+            <h3 class="tpl-section-title">系統關聯 (自動選取標籤/動作)</h3>
+            
+            <div class="tpl-group">
+              <label>相關肌群標籤</label>
+              <div id="tpl-check-muscles" class="checkbox-list"></div>
+            </div>
+
+            <div class="tpl-group">
+              <label>評估動作清單</label>
+              <div id="tpl-check-assessments" class="checkbox-list"></div>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" onclick="closeModal('modal-template-selector')">取消</button>
+        <button type="button" class="btn-primary" id="btn-apply-template">確認套用</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/storage.js"></script>
+  <script src="js/customer-manager.js"></script>
+  <script src="js/data-manager.js"></script>
+
+  <script src="js/ui-assessment.js"></script>
+
+  <script src="js/service-record-flow.js"></script>
+
+  <script>
+    /**
+     * 服務紀錄頁面初始化
+     */
+    document.addEventListener('DOMContentLoaded', async () => {
+      console.log('✅ 服務紀錄頁面載入');
+
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const customerId = urlParams.get('customerId');
+
+        if (!customerId) {
+          showAlert('無效的客戶 ID', 'error');
+          setTimeout(() => {
+            window.location.href = 'customer-list.html';
+          }, 2000);
+          return;
+        }
+
+        if (!window.AppCustomerManager) {
+          console.error('❌ 資料管理系統未正確初始化');
+          showAlert('系統初始化失敗，請重新整理頁面', 'error');
+          return;
+        }
+
+        const customer = window.AppCustomerManager.getCustomerById(customerId);
+        if (!customer) {
+          showAlert('找不到該客戶', 'error');
+          setTimeout(() => {
+            window.location.href = 'customer-list.html';
+          }, 2000);
+          return;
+        }
+
+        document.getElementById('page-title').textContent = `新增服務紀錄 - ${customer.name}`;
+        document.getElementById('customer-subtitle').textContent = 
+          `客戶：${customer.name} | 暱稱：${customer.nickname} | 電話末三碼：***${customer.phoneLastThree}`;
+
+        if (window.AppUIAssessment) {
+          console.log('🔄 初始化 UIAssessment...');
+          await window.AppUIAssessment.init({
+            bodyDiagramId: 'body-diagram-front',
+            muscleTagContainerId: 'muscle-tags-container',
+            assessmentContainerId: 'assessment-container'
+          });
+        }
+
+        if (!window.AppServiceRecordFlow) {
+          console.error('❌ ServiceRecordFlow 未定義');
+          return;
+        }
+
+        console.log('🔄 初始化 ServiceRecordFlow...');
+        await window.AppServiceRecordFlow.init(customerId);
+
+        console.log('✅ 頁面初始化完成');
+
+        document.addEventListener('serviceRecordSaved', (e) => {
+          console.log('✅ 服務紀錄已保存：', e.detail.recordId);
+          showAlert('服務紀錄已成功保存！', 'success');
+
+          setTimeout(() => {
+            window.location.href = `customer-profile.html?id=${customerId}`;
+          }, 2000);
+        });
+
+      } catch (error) {
+        console.error('❌ 頁面初始化錯誤：', error);
+        showAlert(`初始化錯誤：${error.message}`, 'error');
+      }
+    });
+
+    function showAlert(message, type = 'info') {
+      let alertContainer = document.querySelector('.alert-container');
+      if (!alertContainer) {
+        alertContainer = document.createElement('div');
+        alertContainer.className = 'alert-container';
+        document.body.insertBefore(alertContainer, document.body.firstChild);
+      }
+
+      const alert = document.createElement('div');
+      alert.className = `alert alert-${type}`;
+      alert.setAttribute('role', 'alert');
+      alert.textContent = message;
+
+      alertContainer.appendChild(alert);
+
+      setTimeout(() => {
+        alert.remove();
+      }, 3000);
+    }
+
+    window.showAlert = showAlert;
+    window.showLoading = showLoading;
+    window.hideLoading = hideLoading;
+
+// [新增] Modal 控制函式
+    window.openModal = function(modalId) {
+      const modal = document.getElementById(modalId);
+      if (modal) modal.classList.add('show');
+    };
+
+    window.closeModal = function(modalId) {
+      const modal = document.getElementById(modalId);
+      if (modal) modal.classList.remove('show');
+    };
+  </script>
+
+  <style>
+    /* 頁面特定樣式 */
+    .page-header {
+      background: white;
+      padding: 20px;
+      border-bottom: 1px solid var(--border-light);
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+    }
+
+    .back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: transparent;
+      border: none;
+      color: var(--primary-color);
+      font-size: 16px;
+      font-weight: 500;
+      cursor: pointer;
+      margin-bottom: 12px;
+    }
+
+    .back-btn:hover {
+      text-decoration: underline;
+    }
+
+    .header-title h1 {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin: 0;
+    }
+
+    .header-subtitle {
+      font-size: 14px;
+      color: var(--text-secondary);
+      margin: 4px 0 0 0;
+    }
+
+    .page-container {
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 24px 16px;
+    }
+
+    .section-divider {
+      margin-top: 24px;
+      margin-bottom: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border-light);
+    }
+
+    .section-divider h3 {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin: 0;
+    }
+
+    .form-textarea {
+      width: 100%;
+      padding: var(--spacing-md);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-md);
+      font-size: 14px;
+      font-family: inherit;
+      color: var(--text-primary);
+      resize: vertical;
+      transition: all var(--transition-base);
+    }
+
+    .form-textarea:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    @media (max-width: 768px) {
+      .page-container {
+        padding: 16px 12px;
+      }
+
+      .header-title h1 {
+        font-size: 20px;
+      }
+
+      .header-subtitle {
+        font-size: 12px;
+      }
+    }
+/* [新增] 模板選擇器 Modal 特定樣式 */
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal.show {
+      display: flex;
+    }
+
+    .modal-content {
+      background: white;
+      border-radius: 8px;
+      width: 90%;
+      max-width: 600px;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-light);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-header h2 {
+      margin: 0;
+      font-size: 18px;
+      color: var(--text-primary);
+    }
+
+    .close-btn {
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      color: #999;
+    }
+
+    .modal-body {
+      padding: 20px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .modal-footer {
+      padding: 16px 20px;
+      border-top: 1px solid var(--border-light);
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      background: #f9fafb;
+      border-radius: 0 0 8px 8px;
+    }
+
+    /* 模板內容排版 */
+    .tpl-section-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--primary-color);
+      margin-bottom: 12px;
+      padding-left: 8px;
+      border-left: 4px solid var(--primary-color);
+    }
+
+    .tpl-group {
+      margin-bottom: 16px;
+    }
+
+    .tpl-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+
+    .checkbox-list {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+      background: #f8fafc;
+      padding: 10px;
+      border-radius: 6px;
+    }
+    
+    .checkbox-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .checkbox-item input[type="checkbox"] {
+      margin-top: 3px;
+    }
+
+    .form-select {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid var(--border-light);
+      border-radius: 4px;
+      font-size: 14px;
+      background-color: white;
+    }
+
+    .divider {
+      border: 0;
+      border-top: 1px solid var(--border-light);
+      margin: 20px 0;
+    }
+
+    .btn-primary {
+      background: var(--primary-color);
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .btn-secondary {
+      background: white;
+      border: 1px solid var(--border-light);
+      color: var(--text-primary);
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+   /* 每一步驟下方的按鈕列 */
+    .step-actions-bar {
+        margin-top: 20px;
+        padding-top: 15px;
+        border-top: 1px dashed var(--border-light);
+        display: flex;
+        justify-content: flex-end;
+    }
+    
+    /*讓步驟指示器看起來可以點擊 */
+    .step-indicator {
+        cursor: pointer; 
+    }
+  </style>
+</body>
+</html>

@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>顧客列表 - 客戶管理系統</title>
+  <link rel="stylesheet" href="styles/main.css">
+  <link rel="stylesheet" href="styles/components.css">
+  <style>
+    /* ===== 頁面特定樣式 ===== */
+    
+    /* 搜尋容器 */
+    .search-container {
+      padding: 16px;
+      background: var(--bg-primary);
+      border-bottom: 1px solid var(--border-color);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .search-box {
+      position: relative;
+      max-width: 768px;
+      margin: 0 auto;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 12px 16px 12px 48px;
+      border: 2px solid var(--border-color);
+      border-radius: var(--radius-md);
+      font-size: 16px;
+      background-color: var(--bg-secondary);
+      transition: all 0.2s;
+    }
+
+    .search-input:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      background-color: var(--bg-primary);
+      box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 16px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-tertiary);
+      font-size: 20px;
+    }
+
+    /* 顧客列表容器 */
+    .customer-list {
+      padding: 16px;
+      max-width: 768px;
+      margin: 0 auto;
+      min-height: calc(100vh - 80px);
+    }
+
+    /* 顧客卡片 */
+    .customer-card {
+      background: var(--bg-primary);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      margin-bottom: 12px;
+      box-shadow: var(--shadow-sm);
+      cursor: pointer;
+      transition: all 0.2s;
+      border-left: 4px solid transparent;
+    }
+
+    .customer-card:hover {
+      box-shadow: var(--shadow-md);
+      transform: translateY(-2px);
+      border-left-color: var(--primary-color);
+    }
+
+    .customer-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .customer-name {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .customer-phone {
+      font-size: 14px;
+      color: var(--text-secondary);
+      font-family: monospace;
+      background: var(--bg-secondary);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .customer-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    /* 統計數據行 */
+    .customer-stats {
+      display: flex;
+      gap: 16px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border-color);
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .stat-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* 浮動新增按鈕 (FAB) */
+    .add-customer-btn {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: var(--primary-color);
+      color: white;
+      border: none;
+      font-size: 28px;
+      box-shadow: var(--shadow-lg);
+      cursor: pointer;
+      transition: all 0.2s;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .add-customer-btn:hover {
+      background: var(--primary-hover);
+      transform: scale(1.1);
+    }
+
+    .add-customer-btn:active {
+      transform: scale(0.95);
+    }
+
+    /* Modal 特定修正 */
+    .modal-overlay {
+      z-index: 11000;
+    }
+    
+    /* 確保 Modal 顯示時不透明 */
+    .modal-overlay.modal-show .modal {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    /* 標籤樣式 */
+    .tag.health { background-color: #e8f5e9; color: #2e7d32; }
+    .tag.personality { background-color: #e3f2fd; color: #1565c0; }
+    
+    /* 表單佈局修正 */
+    .form-row {
+      display: flex;
+      gap: 16px;
+    }
+    .form-row .form-group {
+      flex: 1;
+    }
+  </style>
+</head>
+<body>
+  <div class="search-container">
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input 
+        type="text" 
+        id="search-input" 
+        class="search-input" 
+        placeholder="搜尋姓名、暱稱..."
+        autocomplete="off"
+      >
+      <button class="btn-icon" onclick="window.location.href='settings.html'" style="background:none; border:none; font-size:24px; cursor:pointer;" aria-label="系統設定">
+        ⚙️
+      </button>
+    </div>
+  </div>
+
+  <div class="customer-list" id="customer-list">
+    </div>
+
+  <button class="add-customer-btn" id="add-customer-btn" aria-label="新增顧客">
+    +
+  </button>
+
+  <div id="add-customer-modal" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title">新增顧客</h3>
+        <button type="button" class="modal-close" id="modal-close-btn">✕</button>
+      </div>
+      
+      <div class="modal-body">
+        <form id="add-customer-form" novalidate>
+          <div class="form-group">
+            <label class="form-label">姓名 <span style="color:red">*</span></label>
+            <input type="text" name="name" class="form-control" placeholder="請輸入姓名" required>
+            <span class="error-message"></span>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">暱稱</label>
+            <input type="text" name="nickname" class="form-control" placeholder="請輸入暱稱">
+            <span class="error-message"></span>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">電話末三碼</label>
+            <input type="tel" name="phoneLastThree" class="form-control" placeholder="例如: 123" maxlength="3" pattern="\d{3}">
+            <span class="error-message"></span>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">性別</label>
+              <select name="gender" class="form-control">
+                <option value="">未選擇</option>
+                <option value="male">男</option>
+                <option value="female">女</option>
+                <option value="other">多元</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">年齡</label>
+              <input type="number" name="age" class="form-control" min="0" max="120">
+            </div>
+          </div>
+          
+          <div class="form-group">
+             <label class="form-label">職業</label>
+             <input type="text" name="occupation" class="form-control">
+          </div>
+
+          <button type="submit" style="display: none;"></button>
+        </form>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="cancel-btn">取消</button>
+        <button type="button" class="btn btn-primary" onclick="document.getElementById('add-customer-form').dispatchEvent(new Event('submit', {cancelable: true, bubbles: true}))">確認新增</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/storage.js"></script>
+  <script src="js/customer-manager.js"></script>
+  <script src="js/data-manager.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/form-validator.js"></script>
+
+  <script>
+    // 確保 DOM 載入後執行
+    document.addEventListener('DOMContentLoaded', () => {
+      console.log('🚀 顧客列表頁面初始化...');
+
+      // 1. 檢查依賴
+      if (!window.AppCustomerManager) {
+        console.error('❌ CustomerManager 未初始化');
+        window.showToast?.('系統初始化失敗', 'error');
+        return;
+      }
+
+      // 2. DOM 元素參照
+      const els = {
+        list: document.getElementById('customer-list'),
+        searchInput: document.getElementById('search-input'),
+        addBtn: document.getElementById('add-customer-btn'),
+        modal: document.getElementById('add-customer-modal'),
+        modalClose: document.getElementById('modal-close-btn'),
+        cancelBtn: document.getElementById('cancel-btn'),
+        form: document.getElementById('add-customer-form')
+      };
+
+      // 3. 渲染列表函式
+      const renderList = (customers) => {
+        if (!customers || customers.length === 0) {
+          els.list.innerHTML = `
+            <div class="empty-state">
+              <div class="empty-state-icon">👥</div>
+              <h3 class="empty-state-title">尚無顧客資料</h3>
+              <p class="empty-state-description">點擊右下角「+」按鈕新增您的第一位顧客</p>
+            </div>
+          `;
+          return;
+        }
+
+        els.list.innerHTML = customers.map(c => {
+          const tagsHtml = [
+            ...(c.healthTags || []).slice(0, 2).map(t => `<span class="tag health">${t}</span>`),
+            ...(c.personalityTags || []).slice(0, 2).map(t => `<span class="tag personality">${t}</span>`)
+          ].join('');
+
+          const serviceCount = c.stats ? c.stats.totalServices : 0;
+          
+          return `
+            <div class="customer-card" onclick="window.location.href='customer-profile.html?id=${c.id}'">
+              <div class="customer-header">
+                <div class="customer-name">
+                  ${c.name} <span style="font-size:0.8em; color:#666; font-weight:normal">(${c.nickname || '-'})</span>
+                </div>
+                <div class="customer-phone">***${c.phoneLastThree}</div>
+              </div>
+              
+              ${tagsHtml ? `<div class="customer-tags">${tagsHtml}</div>` : ''}
+              
+              <div class="customer-stats">
+                <div class="stat-item">
+                  <span>📋</span> 服務 ${serviceCount} 次
+                </div>
+                <div class="stat-item">
+                  <span>🕒</span> ${c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : '新建立'}
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      };
+
+      // 4. 資料載入
+      const refreshData = () => {
+        try {
+          const customers = window.AppCustomerManager.getAllCustomers();
+          renderList(customers);
+        } catch (e) {
+          console.error('Load error:', e);
+          window.showToast?.('讀取資料失敗', 'error');
+        }
+      };
+
+      // 5. 搜尋功能
+      const handleSearch = window.debounce((e) => {
+        const keyword = e.target.value.trim();
+        const results = window.AppCustomerManager.searchCustomers(keyword);
+        renderList(results);
+      }, 300);
+
+      els.searchInput.addEventListener('input', handleSearch);
+
+      // 6. Modal 操作
+      const openModal = () => {
+        els.modal.classList.add('modal-show');
+        els.form.querySelector('input[name="name"]').focus();
+      };
+
+      const closeModal = () => {
+        els.modal.classList.remove('modal-show');
+        els.form.reset();
+        els.form.querySelectorAll('.invalid').forEach(el => el.classList.remove('invalid'));
+        els.form.querySelectorAll('.error-message').forEach(el => el.style.display = 'none');
+      };
+
+      els.addBtn.addEventListener('click', openModal);
+      els.modalClose.addEventListener('click', closeModal);
+      els.cancelBtn.addEventListener('click', closeModal);
+      
+      els.modal.addEventListener('click', (e) => {
+        if (e.target === els.modal) closeModal();
+      });
+
+      // 7. 表單驗證與提交
+      if (window.FormValidator) {
+        const validator = new FormValidator('add-customer-form', {
+          name: { required: true, maxLength: 50 },
+          // 根據您的需求，以下改為選填
+          nickname: { required: false, maxLength: 20 },
+          phoneLastThree: { required: false, pattern: /^\d{3}$/, patternMessage: '需為3位數字' }
+        });
+
+        validator.onSubmit = () => {
+          const formData = validator.getFormData();
+          window.showLoading?.('儲存中...');
+
+          setTimeout(() => {
+            const result = window.AppCustomerManager.addCustomer(formData);
+            window.hideLoading?.();
+
+            if (result.success) {
+              window.showToast?.('新增成功！', 'success');
+              closeModal();
+              refreshData();
+            } else {
+              window.showToast?.(result.errors.join(', '), 'error');
+            }
+          }, 300);
+        };
+      }
+
+      // 8. 首次執行
+      refreshData();
+      
+      // 檢查儲存空間
+      const storageWarning = window.AppStorage.checkStorageWarning();
+      if (storageWarning) {
+        window.showToast?.(storageWarning.message, 'warning', 5000);
+      }
+    });
+  </script>
+</body>
+</html>

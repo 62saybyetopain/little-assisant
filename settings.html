@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>系統設定 - 客戶管理系統</title>
+  <link rel="stylesheet" href="styles/main.css">
+  <link rel="stylesheet" href="styles/settings.css">
+<style>
+    /* [Developer Fix] 針對 Modal 高度溢出與固定 Footer 的修正樣式 */
+    
+    /* 1. 設定 Modal 容器為 Flex Column，並限制最大高度 */
+    .modal-content {
+      display: flex;
+      flex-direction: column;
+      max-height: 90vh; /* 視窗高度的 90% */
+      overflow: hidden; /* 防止外層出現滾動條 */
+      margin: 2vh auto; /* 確保上下有留白 */
+    }
+
+    /* 2. 讓 Form 填滿剩餘空間，並成為內部 Flex 容器 */
+    .modal-content form {
+      display: flex;
+      flex-direction: column;
+      flex: 1;       /* 佔滿 modal-content 剩餘空間 */
+      min-height: 0; /* 修正 Firefox/Chrome 的 Flex 巢狀滾動行為 */
+      overflow: hidden; 
+    }
+
+    /* 3. 標頭固定 (不縮放) */
+    .modal-header {
+      flex-shrink: 0;
+    }
+
+    /* 4. [新增] 滾動區域樣式：只讓被包覆的內容區滾動 */
+    .modal-scrollable-body {
+      flex: 1;           /* 佔滿 Form 內的剩餘空間 */
+      overflow-y: auto;  /* 內容過長時出現滾動條 */
+      padding: 20px;     /* 內距移到這裡 */
+    }
+
+    /* 5. 頁尾固定 (不縮放) */
+    .modal-footer {
+      flex-shrink: 0;
+      background-color: #fff; /* 確保背景不透明，蓋住滾動內容 */
+      border-top: 1px solid #eee;
+      padding: 15px;
+      z-index: 10;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <header class="app-header">
+      <button class="back-btn" onclick="goBack()" aria-label="返回">←</button>
+      <h1 class="page-title">系統設定</h1>
+    </header>
+
+    <main class="settings-main">
+      <div class="tabs-container" role="tablist">
+        <button class="tab-btn active" onclick="switchTab('assessment')" data-tab="assessment">評估動作</button>
+        <button class="tab-btn" onclick="switchTab('muscle')" data-tab="muscle">肌群標籤</button>
+        <button class="tab-btn" onclick="switchTab('template')" data-tab="template">常用模板</button>
+        <button class="tab-btn" onclick="switchTab('bodypart')" data-tab="bodypart">身體部位</button>
+        <button class="tab-btn" onclick="switchTab('system')" data-tab="system">系統維護</button>
+      </div>
+
+      <div id="panel-assessment" class="tab-panel active">
+        <div class="panel-header">
+          <h2>評估動作列表</h2>
+          <button class="btn-primary" onclick="showAddAssessmentModal()">+ 新增</button>
+        </div>
+        <div class="search-bar">
+          <input type="search" id="assessment-search" placeholder="搜尋動作...">
+        </div>
+        <div id="assessment-list" class="settings-list"></div>
+        <div class="settings-section">
+            <h3>匯出/匯入</h3>
+            <div style="display:flex; gap:10px;">
+                <button class="btn-secondary" onclick="exportAssessments()">匯出 CSV</button>
+                <button class="btn-secondary" onclick="alert('請使用系統維護頁面的完整備份功能')">匯入 CSV</button>
+            </div>
+        </div>
+      </div>
+
+      <div id="panel-muscle" class="tab-panel">
+        <div class="panel-header">
+          <h2>肌群標籤列表</h2>
+          <button class="btn-primary" onclick="showAddMuscleTagModal()">+ 新增</button>
+        </div>
+        <div class="search-bar">
+          <input type="search" id="muscle-search" placeholder="搜尋標籤...">
+        </div>
+        <div id="muscle-list" class="settings-list"></div>
+      </div>
+     <div id="panel-template" class="tab-panel">
+        <div class="panel-header">
+          <h2>常用模板列表</h2>
+          <button class="btn-primary" onclick="showAddTemplateModal()">+ 新增模板</button>
+        </div>
+        <div class="search-bar">
+          <input type="search" id="template-search" placeholder="搜尋模板名稱、症狀...">
+        </div>
+        <div id="template-list" class="settings-list">
+            </div>
+      </div>
+      <div id="panel-bodypart" class="tab-panel">
+        <div class="panel-header">
+          <h2>身體部位檢視</h2>
+        </div>
+        <div id="bodypart-list" class="settings-list"></div>
+      </div>
+
+      <div id="panel-system" class="tab-panel">
+        <div class="panel-header"><h2>資料備份與還原</h2></div>
+        
+        <div class="settings-section">
+          <div class="storage-usage">
+            <span class="label">儲存空間：</span>
+            <div class="progress-bar"><div id="storage-progress" class="progress-fill" style="width: 0%"></div></div>
+            <span class="usage-text" id="storage-text">計算中...</span>
+          </div>
+          
+          <div class="action-buttons">
+            <button class="btn-secondary" onclick="exportAllData()">📦 完整匯出 (JSON)</button>
+            <button class="btn-secondary" onclick="importData()">📥 完整還原 (JSON)</button>
+            <button class="btn-danger" onclick="clearAllData()">⚠️ 清空所有資料</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div id="modal-add-assessment" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>新增評估動作</h2>
+        <button class="close-btn" onclick="closeModal('modal-add-assessment')">×</button>
+      </div>
+      <form id="form-add-assessment" onsubmit="saveAssessment(event)">
+        <div class="form-group">
+          <label>動作名稱 *</label>
+          <input type="text" id="assessment-name" required>
+        </div>
+        <div class="form-group">
+          <label>所屬部位 * (可複選)</label>
+          <div id="assessment-bodyparts-check" class="checkbox-group"></div>
+        </div>
+        <div class="form-group">
+          <label>描述</label>
+          <textarea id="assessment-description" rows="3"></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" onclick="closeModal('modal-add-assessment')">取消</button>
+          <button type="submit" class="btn-primary">儲存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modal-add-muscle" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>新增肌群標籤</h2>
+        <button class="close-btn" onclick="closeModal('modal-add-muscle')">×</button>
+      </div>
+      <form id="form-add-muscle" onsubmit="saveMuscleTag(event)">
+        <div class="form-group">
+          <label>標籤名稱 *</label>
+          <input type="text" id="muscle-name" required>
+        </div>
+        <div class="form-group">
+          <label>關聯部位 *</label>
+          <div id="muscle-bodyparts" class="checkbox-group"></div>
+        </div>
+        <div class="form-group">
+          <label>標籤顏色</label>
+          <div id="color-palette" class="color-palette"></div>
+          <input type="hidden" id="muscle-color" value="#3b82f6">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" onclick="closeModal('modal-add-muscle')">取消</button>
+          <button type="submit" class="btn-primary">儲存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modal-confirm-delete" class="modal">
+    <div class="modal-content" style="max-width: 300px;">
+      <h3>確認刪除</h3>
+      <p id="confirm-message">確定要刪除嗎？</p>
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" onclick="closeModal('modal-confirm-delete')">取消</button>
+        <button type="button" class="btn-danger" onclick="confirmDelete()">確認刪除</button>
+      </div>
+    </div>
+  </div>
+<div id="modal-edit-assessment" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>編輯評估動作</h2>
+        <button class="close-btn" onclick="closeModal('modal-edit-assessment')">×</button>
+      </div>
+      <form id="form-edit-assessment" onsubmit="updateAssessment(event)">
+        <input type="hidden" id="edit-assessment-id">
+        <div class="form-group">
+          <label>動作名稱 *</label>
+          <input type="text" id="edit-assessment-name" required>
+        </div>
+        <div class="form-group">
+          <label>所屬部位 * (可複選)</label>
+          <div id="edit-assessment-bodyparts-check" class="checkbox-group"></div>
+        </div>
+        <div class="form-group">
+          <label>描述</label>
+          <textarea id="edit-assessment-description" rows="3"></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" onclick="closeModal('modal-edit-assessment')">取消</button>
+          <button type="submit" class="btn-primary">更新</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modal-edit-muscle" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>編輯肌群標籤</h2>
+        <button class="close-btn" onclick="closeModal('modal-edit-muscle')">×</button>
+      </div>
+      <form id="form-edit-muscle" onsubmit="updateMuscleTag(event)">
+        <input type="hidden" id="edit-muscle-id">
+        <div class="form-group">
+          <label>標籤名稱 *</label>
+          <input type="text" id="edit-muscle-name" required>
+        </div>
+        <div class="form-group">
+          <label>關聯部位 *</label>
+          <div id="edit-muscle-bodyparts" class="checkbox-group"></div>
+        </div>
+        <div class="form-group">
+          <label>標籤顏色</label>
+          <div id="edit-color-palette" class="color-palette"></div>
+          <input type="hidden" id="edit-muscle-color">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" onclick="closeModal('modal-edit-muscle')">取消</button>
+          <button type="submit" class="btn-primary">更新</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <script src="js/storage.js"></script>
+  <script src="js/customer-manager.js"></script>
+  <script src="js/data-manager.js"></script>
+  <script src="js/settings.js"></script>
+  <script>
+    function goBack() { window.location.href = 'customer-list.html'; }
+  </script>
+<div id="modal-add-template" class="modal">
+    <div class="modal-content modal-lg"> <div class="modal-header">
+        <h2>新增服務模板</h2>
+        <button class="close-btn" onclick="closeModal('modal-add-template')">×</button>
+      </div>
+      <form id="form-add-template" onsubmit="saveTemplate(event)">
+        
+        <fieldset class="form-section">
+            <legend>基本設定</legend>
+            <div class="form-row"> <div class="form-group" style="flex:1;">
+                    <label>模板名稱 *</label>
+                    <input type="text" id="tpl-name" placeholder="例如：落枕、五十肩" required>
+                </div>
+                <div class="form-group" style="flex:1;">
+                    <label>症狀標籤 (寫入顧客標籤)</label>
+                    <input type="text" id="tpl-symptom" placeholder="例如：落枕">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>觸發部位 (點擊此部位時提示) *</label>
+                <div id="tpl-bodyparts" class="checkbox-group"></div>
+            </div>
+        </fieldset>
+
+        <fieldset class="form-section">
+            <legend>內容設定 (每行代表一個選項)</legend>
+            <div class="form-grid"> <div class="form-group">
+                    <label>主訴 (Complaints)</label>
+                    <textarea id="tpl-complaints" rows="3" placeholder="一行一個項目"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>評估發現 (Findings)</label>
+                    <textarea id="tpl-findings" rows="3" placeholder="一行一個項目"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>處理方式 (Treatments)</label>
+                    <textarea id="tpl-treatments" rows="3" placeholder="一行一個項目"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>建議 (Recommendations)</label>
+                    <textarea id="tpl-recommendations" rows="3" placeholder="一行一個項目"></textarea>
+                </div>
+            </div>
+        </fieldset>
+
+        <fieldset class="form-section">
+            <legend>系統關聯 (自動勾選)</legend>
+            <div class="form-group">
+                <label>關聯肌群標籤</label>
+                <div id="tpl-rel-muscles" class="checkbox-group scrollable-checkboxes"></div>
+            </div>
+            <div class="form-group">
+                <label>關聯評估動作</label>
+                <div id="tpl-rel-assessments" class="checkbox-group scrollable-checkboxes"></div>
+            </div>
+        </fieldset>
+
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" onclick="closeModal('modal-add-template')">取消</button>
+          <button type="submit" class="btn-primary">儲存模板</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modal-edit-template" class="modal">
+    <div class="modal-content modal-lg">
+      <div class="modal-header">
+        <h2>編輯服務模板</h2>
+        <button class="close-btn" onclick="closeModal('modal-edit-template')">×</button>
+      </div>
+      <form id="form-edit-template" onsubmit="updateTemplate(event)">
+        <input type="hidden" id="edit-tpl-id">
+        
+        <fieldset class="form-section">
+            <legend>基本設定</legend>
+            <div class="form-row">
+                <div class="form-group" style="flex:1;">
+                    <label>模板名稱 *</label>
+                    <input type="text" id="edit-tpl-name" required>
+                </div>
+                <div class="form-group" style="flex:1;">
+                    <label>症狀標籤</label>
+                    <input type="text" id="edit-tpl-symptom">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>觸發部位</label>
+                <div id="edit-tpl-bodyparts" class="checkbox-group"></div>
+            </div>
+        </fieldset>
+
+        <fieldset class="form-section">
+            <legend>內容設定 (每行代表一個選項)</legend>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>主訴</label>
+                    <textarea id="edit-tpl-complaints" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>評估發現</label>
+                    <textarea id="edit-tpl-findings" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>處理方式</label>
+                    <textarea id="edit-tpl-treatments" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>建議</label>
+                    <textarea id="edit-tpl-recommendations" rows="3"></textarea>
+                </div>
+            </div>
+        </fieldset>
+
+        <fieldset class="form-section">
+            <legend>系統關聯</legend>
+            <div class="form-group">
+                <label>關聯肌群標籤</label>
+                <div id="edit-tpl-rel-muscles" class="checkbox-group scrollable-checkboxes"></div>
+            </div>
+            <div class="form-group">
+                <label>關聯評估動作</label>
+                <div id="edit-tpl-rel-assessments" class="checkbox-group scrollable-checkboxes"></div>
+            </div>
+        </fieldset>
+
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" onclick="closeModal('modal-edit-template')">取消</button>
+          <button type="submit" class="btn-primary">更新模板</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</body>
+</html>
