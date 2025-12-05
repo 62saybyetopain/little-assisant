@@ -5,12 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>客戶檔案管理系統</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
+    * { margin: 0; padding: 0; box-sizing: border-box; }
     :root {
       --primary-color: #2196F3;
       --primary-hover: #1976D2;
@@ -23,444 +18,96 @@
       --danger: #F44336;
       --warning: #FF9800;
     }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--background-secondary); color: var(--text-primary); }
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      background: var(--background-secondary);
-      color: var(--text-primary);
+    /* Modal 彈窗樣式*/
+    .modal-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 2000; backdrop-filter: blur(2px);
+    }
+    .modal-content {
+      box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+      max-height: 90vh; overflow-y: auto;
     }
 
-    /* 頭部樣式 */
-    .profile-header {
-      background: var(--background-primary);
-      padding: 16px;
-      border-bottom: 1px solid var(--border-color);
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
-    }
+    .profile-header { background: var(--background-primary); padding: 16px; border-bottom: 1px solid var(--border-color); position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06); }
+    .header-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .back-btn { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: transparent; border: none; color: var(--primary-color); font-size: 14px; font-weight: 500; cursor: pointer; border-radius: 6px; transition: background 0.2s; }
+    .back-btn:hover { background: var(--background-secondary); }
+    .icon-btn { padding: 8px 12px; background: var(--background-secondary); border: none; color: var(--text-primary); font-size: 14px; cursor: pointer; border-radius: 6px; transition: all 0.2s; }
+    .icon-btn:hover { background: var(--border-color); }
+    .header-title { display: flex; align-items: baseline; gap: 12px; }
+    .customer-name { font-size: 24px; font-weight: 600; }
+    .customer-nickname { font-size: 14px; color: var(--text-secondary); }
+    .profile-container { max-width: 900px; margin: 0 auto; padding: 16px; }
+    
+    /* 卡片與網格 */
+    .card { background: var(--background-primary); border-radius: 12px; padding: 20px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06); }
+    .card-title { font-size: 18px; font-weight: 600; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid var(--border-color); }
+    .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; padding: 10px 0; }
+    .info-item { display: flex; flex-direction: column; padding: 12px; background: #fff; border: 1px solid var(--border-color); border-radius: 8px; }
+    .info-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 4px; }
+    .info-value { font-size: 16px; font-weight: 500; }
+    
+    /* 統計與標籤 */
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .stat-card { background: var(--background-secondary); padding: 16px; border-radius: 8px; text-align: center; border-left: 3px solid var(--primary-color); }
+    .stat-value { font-size: 28px; font-weight: 700; color: var(--primary-color); }
+    .stat-label { font-size: 12px; color: var(--text-secondary); }
+    .tags-section { display: none; }
+    .tags-section.show { display: block; }
+    .tags-group { margin-bottom: 16px; }
+    .tags-group-title { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px; }
+    .tags-list { display: flex; flex-wrap: wrap; gap: 8px; }
+    .tag { padding: 6px 12px; border-radius: 16px; font-size: 13px; font-weight: 500; }
+    .tag.health { background: #FFE8E8; color: #D32F2F; }
+    .tag.personality { background: #E3F2FD; color: #1976D2; }
+    .tag.interest { background: #F3E5F5; color: #7B1FA2; }
 
-    .header-top {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 12px;
-    }
-
-    .back-btn {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 12px;
-      background: transparent;
-      border: none;
-      color: var(--primary-color);
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      border-radius: 6px;
-      transition: background 0.2s;
-    }
-
-    .back-btn:hover {
-      background: var(--background-secondary);
-    }
-
-    .header-actions {
-      display: flex;
-      gap: 8px;
-    }
-
-    .icon-btn {
-      padding: 8px 12px;
-      background: var(--background-secondary);
-      border: none;
-      color: var(--text-primary);
-      font-size: 14px;
-      cursor: pointer;
-      border-radius: 6px;
-      transition: all 0.2s;
-    }
-
-    .icon-btn:hover {
-      background: var(--border-color);
-    }
-
-    .header-title {
-      display: flex;
-      align-items: baseline;
-      gap: 12px;
-    }
-
-    .customer-name {
-      font-size: 24px;
-      font-weight: 600;
-      color: var(--text-primary);
-    }
-
-    .customer-nickname {
-      font-size: 14px;
-      color: var(--text-secondary);
-    }
-
-    /* 主容器 */
-    .profile-container {
-      max-width: 900px;
-      margin: 0 auto;
-      padding: 16px;
-    }
-
-    /* 卡片樣式 */
-    .card {
-      background: var(--background-primary);
-      border-radius: 12px;
-      padding: 20px;
-      margin-bottom: 16px;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-    }
-
-    .card-title {
-      font-size: 18px;
-      font-weight: 600;
-      color: var(--text-primary);
-      margin-bottom: 16px;
-      padding-bottom: 12px;
-      border-bottom: 2px solid var(--border-color);
-    }
-
-    /* 基本資訊網格 */
-    .info-grid {
-      display: grid;
-      gap: 16px;
-    }
-
-    .info-item {
-      display: flex;
-      flex-direction: column;
-    }
-
-    .info-label {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text-secondary);
-      text-transform: uppercase;
-      margin-bottom: 4px;
-      letter-spacing: 0.5px;
-    }
-
-    .info-value {
-      font-size: 16px;
-      color: var(--text-primary);
-      font-weight: 500;
-    }
-
-    /* 統計卡片 */
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-      gap: 12px;
-      margin-bottom: 16px;
-    }
-
-    .stat-card {
-      background: var(--background-secondary);
-      padding: 16px;
-      border-radius: 8px;
-      text-align: center;
-      border-left: 3px solid var(--primary-color);
-    }
-
-    .stat-value {
-      font-size: 28px;
-      font-weight: 700;
-      color: var(--primary-color);
-      margin-bottom: 4px;
-    }
-
-    .stat-label {
-      font-size: 12px;
-      color: var(--text-secondary);
-      font-weight: 500;
-    }
-
-    /* 標籤樣式 */
-    .tags-section {
-      display: none;
-    }
-
-    .tags-section.show {
-      display: block;
-    }
-
-    .tags-group {
-      margin-bottom: 16px;
-    }
-
-    .tags-group-title {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text-secondary);
-      text-transform: uppercase;
-      margin-bottom: 8px;
-      letter-spacing: 0.5px;
-    }
-
-    .tags-list {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-
-    .tag {
-      display: inline-block;
-      padding: 6px 12px;
-      border-radius: 16px;
-      font-size: 13px;
-      font-weight: 500;
-      background: var(--background-secondary);
-      color: var(--text-primary);
-    }
-
-    .tag.health {
-      background: #FFE8E8;
-      color: #D32F2F;
-    }
-
-    .tag.personality {
-      background: #E3F2FD;
-      color: #1976D2;
-    }
-
-    .tag.interest {
-      background: #F3E5F5;
-      color: #7B1FA2;
-    }
-
-    /* 按鈕樣式 */
-    .btn {
-      padding: 12px 20px;
-      border: none;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-    }
-
-    .btn-primary {
-      background: var(--primary-color);
-      color: white;
-      width: 100%;
-    }
-
-    .btn-primary:hover {
-      background: var(--primary-hover);
-    }
-
-    .btn-primary:active {
-      transform: scale(0.98);
-    }
-
-    /* 篩選工具列 */
-    .filter-bar {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-      margin-bottom: 16px;
-    }
-
-    .filter-input, .filter-select {
-      padding: 10px 12px;
-      border: 1px solid var(--border-color);
-      border-radius: 6px;
-      font-size: 14px;
-      font-family: inherit;
-    }
-
-    .filter-input:focus, .filter-select:focus {
-      outline: none;
-      border-color: var(--primary-color);
-      box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
-    }
-
-    /* 服務紀錄列表 */
-    .records-list {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .record-item {
-      padding: 16px;
-      border-left: 3px solid var(--primary-color);
-      background: var(--background-secondary);
-      border-radius: 8px;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-
-    .record-item:hover {
-      background: var(--border-color);
-    }
-
-    .record-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 8px;
-    }
-
-    .record-date {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--primary-color);
-    }
-
-    .record-actions {
-      display: flex;
-      gap: 8px;
-    }
-
-    .record-action-btn {
-      padding: 4px 12px;
-      border: none;
-      border-radius: 4px;
-      font-size: 12px;
-      cursor: pointer;
-      background: white;
-      border: 1px solid var(--border-color);
-      color: var(--text-secondary);
-      transition: all 0.2s;
-    }
-
-    .record-action-btn:hover {
-      border-color: var(--primary-color);
-      color: var(--primary-color);
-    }
-
-    .record-summary {
-      font-size: 14px;
-      color: var(--text-secondary);
-      margin-bottom: 8px;
-      line-height: 1.5;
-    }
-
-    .record-parts {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin-top: 8px;
-    }
-
-    .part-tag {
-      display: inline-block;
-      padding: 4px 10px;
-      background: white;
-      border: 1px solid var(--border-color);
-      border-radius: 4px;
-      font-size: 12px;
-      color: var(--text-secondary);
-    }
-
-    /* 空狀態 */
-    .empty-state {
-      text-align: center;
-      padding: 40px 20px;
-    }
-
-    .empty-icon {
-      font-size: 48px;
-      margin-bottom: 12px;
-    }
-
-    .empty-title {
-      font-size: 16px;
-      font-weight: 600;
-      color: var(--text-primary);
-      margin-bottom: 4px;
-    }
-
-    .empty-description {
-      font-size: 14px;
-      color: var(--text-secondary);
-    }
-
-    /* 無限滾動載入條 */
-    .load-more-trigger {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      padding: 20px;
-      gap: 10px;
-      color: var(--text-secondary);
-      font-size: 14px;
-    }
-
-    .loading-spinner {
-      width: 18px;
-      height: 18px;
-      border: 2px solid var(--border-color);
-      border-top-color: var(--primary-color);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-
-    /* Toast 通知 */
-    .toast {
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      padding: 12px 20px;
-      background: var(--text-primary);
-      color: white;
-      border-radius: 8px;
-      font-size: 14px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-      animation: slideUp 0.3s ease-out;
-      z-index: 1000;
-    }
-
-    .toast.info { background: var(--text-primary); }
+    /* 按鈕與列表 */
+    .btn { padding: 12px 20px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+    .btn-primary { background: var(--primary-color); color: white; width: 100%; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .filter-bar { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+    .filter-input, .filter-select { padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 14px; }
+    .records-list { display: flex; flex-direction: column; gap: 12px; }
+    .record-item { padding: 16px; border-left: 3px solid var(--primary-color); background: var(--background-secondary); border-radius: 8px; cursor: pointer; transition: all 0.2s; }
+    .record-item:hover { background: var(--border-color); }
+    .record-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
+    .record-date { font-size: 14px; font-weight: 600; color: var(--primary-color); }
+    .record-actions { display: flex; gap: 8px; }
+    .record-action-btn { padding: 4px 12px; border: 1px solid var(--border-color); border-radius: 4px; font-size: 12px; cursor: pointer; background: white; color: var(--text-secondary); }
+    .record-action-btn:hover { border-color: var(--primary-color); color: var(--primary-color); }
+    .record-summary { font-size: 14px; color: var(--text-secondary); margin-bottom: 8px; }
+    .record-parts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .part-tag { padding: 4px 10px; background: white; border: 1px solid var(--border-color); border-radius: 4px; font-size: 12px; color: var(--text-secondary); }
+    
+    .empty-state { text-align: center; padding: 40px 20px; }
+    .empty-icon { font-size: 48px; margin-bottom: 12px; }
+    .load-more-trigger { display: flex; justify-content: center; align-items: center; padding: 20px; gap: 10px; color: var(--text-secondary); font-size: 14px; }
+    .loading-spinner { width: 18px; height: 18px; border: 2px solid var(--border-color); border-top-color: var(--primary-color); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    
+    .toast { position: fixed; bottom: 20px; right: 20px; padding: 12px 20px; background: var(--text-primary); color: white; border-radius: 8px; font-size: 14px; z-index: 1000; animation: slideUp 0.3s ease-out; }
     .toast.success { background: var(--success); }
     .toast.error { background: var(--danger); }
     .toast.warning { background: var(--warning); }
+    @keyframes slideUp { from { transform: translateY(100px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
-    @keyframes slideUp {
-      from { transform: translateY(100px); opacity: 0; }
-      to { transform: translateY(0); opacity: 1; }
-    }
-
-    /* 響應式設計 */
     @media (max-width: 768px) {
-      .filter-bar {
-        grid-template-columns: 1fr;
-      }
-      .stats-grid {
-        grid-template-columns: repeat(2, 1fr);
-      }
-      .profile-container {
-        padding: 12px;
-      }
+      .filter-bar { grid-template-columns: 1fr; }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .profile-container { padding: 12px; }
     }
   </style>
 </head>
 <body>
   <div class="profile-header">
     <div class="header-top">
-      <button class="back-btn" id="back-btn">
-        ← 返回列表
-      </button>
-      <div class="header-actions">
-      </div>
+      <button class="back-btn" id="back-btn">← 返回列表</button>
+      <div class="header-actions"></div>
     </div>
     <div class="header-title">
       <span class="customer-name" id="customer-name">載入中...</span>
@@ -471,22 +118,20 @@
   <div class="profile-container">
     <div class="card">
       <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
-  📋 基本資訊
-  <button class="icon-btn" id="edit-btn" title="編輯資料">✏️</button>
-      <div class="info-grid" id="basic-info-grid">
-        </div>
+        <span>📋 基本資訊</span>
+        <button class="icon-btn" id="edit-btn" title="編輯資料">✏️</button>
+      </div>
+      <div class="info-grid" id="basic-info-grid"></div>
     </div>
 
     <div class="card">
       <div class="card-title">📊 統計資訊</div>
-      <div class="stats-grid" id="stats-grid">
-        </div>
+      <div class="stats-grid" id="stats-grid"></div>
     </div>
 
     <div class="card tags-section" id="tags-section">
       <div class="card-title">🏷️ 特殊標籤</div>
-      <div id="tags-content">
-        </div>
+      <div id="tags-content"></div>
     </div>
 
     <button class="btn btn-primary" id="add-record-btn">
@@ -495,23 +140,14 @@
 
     <div class="card">
       <div class="card-title">📅 服務紀錄歷史</div>
-      
       <div class="filter-bar">
-        <input 
-          type="text" 
-          class="filter-input" 
-          id="search-input" 
-          placeholder="搜尋主訴或診斷..."
-        >
+        <input type="text" class="filter-input" id="search-input" placeholder="搜尋主訴或診斷...">
         <select class="filter-select" id="sort-select">
           <option value="newest">最新優先</option>
           <option value="oldest">最舊優先</option>
         </select>
       </div>
-
-      <div id="records-container" class="records-list">
-        </div>
-
+      <div id="records-container" class="records-list"></div>
       <div id="load-more-trigger" class="load-more-trigger" style="display: none;">
         <span class="loading-spinner"></span>
         <span class="loading-text">載入更多...</span>
@@ -533,14 +169,13 @@
     // 無限滾動相關變數
     let allRecords = [];
     let filteredRecords = [];
-    let displayedRecords = []; // 當前已渲染的紀錄
-    const batchSize = 10;      // 每次載入幾筆
+    let displayedRecords = [];
+    const batchSize = 10;
     let isLoading = false;
-    let observer;              // IntersectionObserver 實例
+    let observer;
 
     // ===== 初始化 =====
     document.addEventListener('DOMContentLoaded', () => {
-      // 等待所有模組載入完成 (給予緩衝)
       setTimeout(() => {
         if (!customerId) {
           showToast('無效的客戶 ID', 'error');
@@ -548,7 +183,6 @@
           return;
         }
         
-        // 檢查 Managers 是否就緒
         if (!window.AppCustomerManager || !window.AppRecordManager) {
              console.error('Managers not loaded');
              showToast('系統載入失敗，請重新整理', 'error');
@@ -560,9 +194,19 @@
       }, 100);
     });
 
-    // ===== 載入客戶資料 (V2.0 正式版) =====
+    // ===== 全域函式: 跳轉新增頁面 =====
+    // 定義在 window 物件上以供 HTML onclick 使用 (如果有需要)
+    // 但我們主要使用 addEventListener
+    window.goToAddRecord = function() {
+      if (!customerId) {
+        showToast('錯誤：找不到顧客 ID', 'error');
+        return;
+      }
+      window.location.href = `service-record.html?customerId=${customerId}`;
+    };
+
+    // ===== 載入客戶資料 =====
     function loadCustomerProfile() {
-      // 改用 Manager 獲取詳細資料 (會自動讀取 customer_{id})
       const customer = window.AppCustomerManager.getCustomerById(customerId);
 
       if (!customer) {
@@ -571,17 +215,15 @@
       }
 
       renderCustomerInfo(customer);
-      loadServiceRecords(customerId); // 改傳 ID，由 RecordManager 處理
+      loadServiceRecords(customerId);
     }
 
     // ===== 渲染客戶資訊 =====
     function renderCustomerInfo(customer) {
-      // 頁面標題
       document.title = `${customer.name} - 客戶檔案`;
       document.getElementById('customer-name').textContent = customer.name;
       document.getElementById('customer-nickname').textContent = customer.nickname ? `(${customer.nickname})` : '';
 
-      // 基本資訊
       const basicInfo = [
         { label: '暱稱', value: customer.nickname || '-' },
         { label: '電話末三碼', value: `***${customer.phoneLastThree}` },
@@ -601,13 +243,10 @@
 
       document.getElementById('basic-info-grid').innerHTML = basicInfoHtml;
 
-      // 統計資訊 - 改用 RecordManager 計算 (V2.0)
+      // 統計資訊
       let stats = { totalServices: 0, lastServiceDate: null, daysSinceLastService: null };
-      
       if (window.AppRecordManager.calculateStats) {
           stats = window.AppRecordManager.calculateStats(customerId);
-      } else {
-          console.warn('calculateStats method missing in AppRecordManager');
       }
 
       const statsHtml = `
@@ -627,7 +266,6 @@
 
       document.getElementById('stats-grid').innerHTML = statsHtml;
 
-      // 標籤
       const hasTags = (customer.healthTags?.length || 0) > 0 || 
                       (customer.personalityTags?.length || 0) > 0 ||
                       (customer.interestTags?.length || 0) > 0;
@@ -638,7 +276,6 @@
       }
     }
 
-    // ===== 渲染標籤  =====
     function renderTags(customer) {
       let html = '';
       if (customer.healthTags?.length > 0) {
@@ -653,21 +290,17 @@
       document.getElementById('tags-content').innerHTML = html;
     }
 
-    // ===== 載入服務紀錄 (V2.0 正式版) =====
+    // ===== 載入服務紀錄 =====
     function loadServiceRecords(customerId) {
-      // 使用 RecordManager 獲取紀錄
       if (window.AppRecordManager.getRecords) {
           allRecords = window.AppRecordManager.getRecords(customerId);
       } else {
-          console.warn('getRecords method missing in AppRecordManager');
           allRecords = [];
       }
-      
       filteredRecords = [...allRecords];
-      renderRecords(false); // 初始渲染 (非追加)
+      renderRecords(false);
     }
 
-    // ===== 渲染服務紀錄 (無限滾動版) =====
     function renderRecords(isAppend = false) {
       const container = document.getElementById('records-container');
       const trigger = document.getElementById('load-more-trigger');
@@ -684,14 +317,12 @@
         return;
       }
 
-      // 如果不是追加模式，先清空容器並重置計數
       if (!isAppend) {
         container.innerHTML = '';
         displayedRecords = [];
         window.scrollTo(0, 0);
       }
 
-      // 計算本次要渲染的範圍
       const currentCount = displayedRecords.length;
       const nextBatch = filteredRecords.slice(currentCount, currentCount + batchSize);
       
@@ -700,21 +331,14 @@
         return;
       }
 
-      // 渲染新的一批紀錄
       const html = nextBatch.map(record => `
         <div class="record-item" onclick="viewRecord('${record.id}')">
           <div class="record-header">
             <div class="record-date">${formatDateTime(record.createdAt || record.date)}</div>
             <div class="record-actions">
-              <button class="record-action-btn copy-btn" onclick="event.stopPropagation(); copyRecordSummary('${record.id}')" title="複製摘要">
-                📋 摘要
-              </button>
-              <button class="record-action-btn" onclick="event.stopPropagation(); editRecord('${record.id}')">
-                編輯
-              </button>
-              <button class="record-action-btn" onclick="event.stopPropagation(); deleteRecord('${record.id}')">
-                刪除
-              </button>
+              <button class="record-action-btn copy-btn" onclick="event.stopPropagation(); copyRecordSummary('${record.id}')" title="複製摘要">📋 摘要</button>
+              <button class="record-action-btn" onclick="event.stopPropagation(); editRecord('${record.id}')">編輯</button>
+              <button class="record-action-btn" onclick="event.stopPropagation(); deleteRecord('${record.id}')">刪除</button>
             </div>
           </div>
           <div class="record-summary">
@@ -728,117 +352,64 @@
         </div>
       `).join('');
 
-      // 使用 insertAdjacentHTML 追加內容
       container.insertAdjacentHTML('beforeend', html);
-      
-      // 更新已顯示列表
       displayedRecords = [...displayedRecords, ...nextBatch];
 
-      // 判斷是否還有更多資料
       if (displayedRecords.length < filteredRecords.length) {
         trigger.style.display = 'flex';
-        // 重新啟動觀察 (因為 DOM 可能變動)
         setupIntersectionObserver();
       } else {
         trigger.style.display = 'none';
         if (observer) observer.disconnect();
       }
-      
       isLoading = false;
     }
-    // ===== 一鍵複製功能 (Smart Copy) =====
+
     function copyRecordSummary(recordId) {
       const customer = window.AppCustomerManager.getCustomerById(customerId);
       const record = window.AppRecordManager.getRecordById(customerId, recordId);
-      
       if (!customer || !record) return;
 
-      const lines = [];
+      const lines = ['【本次服務摘要】'];
+      lines.push(`日期：${new Date(record.createdAt).toLocaleDateString()}`);
       
-      // 標題
-      lines.push('【本次服務摘要】');
-
-      // 1. 日期 (必填)
-      const dateStr = new Date(record.createdAt).toLocaleDateString();
-      lines.push(`日期：${dateStr}`);
-
-      // 2. 主訴
       const complaint = record.steps?.chiefComplaint?.complaint;
-      if (complaint && complaint.trim()) {
-        lines.push(`主訴：${complaint.trim()}`);
-      }
+      if (complaint?.trim()) lines.push(`主訴：${complaint.trim()}`);
 
-      // 3. 受傷史 (對應 healthTags)
-      if (customer.healthTags && customer.healthTags.length > 0) {
-        lines.push(`受傷史：${customer.healthTags.join('、')}`);
-      }
+      if (customer.healthTags?.length > 0) lines.push(`受傷史：${customer.healthTags.join('、')}`);
 
-      // 4. 評估
       const assessment = record.steps?.assessment?.findings;
-      if (assessment && assessment.trim()) {
-        lines.push(`評估：${assessment.trim()}`);
-      }
+      if (assessment?.trim()) lines.push(`評估：${assessment.trim()}`);
 
-      // 5. 處理過程
       const treatment = record.steps?.treatment?.treatmentPlan;
-      if (treatment && treatment.trim()) {
-        lines.push(`處理過程：${treatment.trim()}`);
-      }
+      if (treatment?.trim()) lines.push(`處理過程：${treatment.trim()}`);
 
-      // 6. 居住地
-      if (customer.location && customer.location.trim()) {
-        lines.push(`居住地：${customer.location.trim()}`);
-      }
+      if (customer.location?.trim()) lines.push(`居住地：${customer.location.trim()}`);
+      if (customer.occupation?.trim()) lines.push(`職業：${customer.occupation.trim()}`);
 
-      // 7. 職業
-      if (customer.occupation && customer.occupation.trim()) {
-        lines.push(`職業：${customer.occupation.trim()}`);
-      }
-
-      // 8. 興趣 (相容 interests 和 interestTags)
       const interestsList = customer.interests || customer.interestTags;
-      if (interestsList && interestsList.length > 0) {
-        lines.push(`興趣：${interestsList.join('、')}`);
-      }
+      if (interestsList?.length > 0) lines.push(`興趣：${interestsList.join('、')}`);
 
-      // 組合文本
-      const text = lines.join('\n');
-
-      // 寫入剪貼簿
-      navigator.clipboard.writeText(text).then(() => {
+      navigator.clipboard.writeText(lines.join('\n')).then(() => {
         showToast('摘要已複製！', 'success');
-      }).catch(err => {
-        console.error(err);
-        showToast('複製失敗，請手動複製', 'error');
-      });
+      }).catch(err => showToast('複製失敗', 'error'));
     }
-    // ===== 設定無限滾動觀察器 =====
+
     function setupIntersectionObserver() {
       if (observer) observer.disconnect();
-
       const trigger = document.getElementById('load-more-trigger');
       if (!trigger) return;
 
       observer = new IntersectionObserver((entries) => {
         const entry = entries[0];
-        // 如果觸發元素進入視窗且目前沒有在載入中，且還有更多資料
         if (entry.isIntersecting && !isLoading && displayedRecords.length < filteredRecords.length) {
           isLoading = true;
-          // 模擬少許延遲，優化體驗
-          setTimeout(() => {
-            renderRecords(true); // true 代表追加模式
-          }, 300);
+          setTimeout(() => { renderRecords(true); }, 300);
         }
-      }, {
-        root: null, 
-        rootMargin: '100px', // 提前 100px 觸發載入
-        threshold: 0.1
-      });
-
+      }, { root: null, rootMargin: '100px', threshold: 0.1 });
       observer.observe(trigger);
     }
 
-    // ===== 篩選和搜尋 =====
     function applyFilters() {
       const searchText = document.getElementById('search-input').value.toLowerCase();
       const sortOrder = document.getElementById('sort-select').value;
@@ -853,30 +424,31 @@
       } else {
         filteredRecords.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       }
-
-      // 重置為非追加模式
       renderRecords(false);
     }
 
-    // ===== 事件監聽  =====
+    // ===== 事件監聽整合 =====
     function attachEventListeners() {
       document.getElementById('back-btn').addEventListener('click', () => {
         window.location.href = 'customer-list.html';
       });
+      
+      // 這裡只需要綁定一次
       document.getElementById('edit-btn').addEventListener('click', () => {
-        showToast('編輯功能即將推出', 'info');
+        openEditModal();
       });
-      document.getElementById('more-btn').addEventListener('click', () => {
-        showToast('更多選項即將推出', 'info');
-      });
-      document.getElementById('add-record-btn').addEventListener('click', () => {
-        window.location.href = `service-record.html?customerId=${customerId}`;
-      });
+      
+      // 使用 Event Listener 取代 onclick (更安全)
+      const addBtn = document.getElementById('add-record-btn');
+      if(addBtn) {
+          addBtn.addEventListener('click', () => window.goToAddRecord());
+      }
+      
       document.getElementById('search-input').addEventListener('input', applyFilters);
       document.getElementById('sort-select').addEventListener('change', applyFilters);
     }
 
-    // ===== 工具函式  =====
+    // ===== 工具函式 =====
     function formatDate(isoString) {
       if(!isoString) return '-';
       const date = new Date(isoString);
@@ -894,7 +466,6 @@
       return genderMap[gender] || '-';
     }
 
-    // ===== 紀錄操作 =====
     function viewRecord(recordId) {
      window.location.href = `service-record.html?customerId=${customerId}&recordId=${recordId}&mode=edit`;
     }
@@ -905,16 +476,11 @@
 
     async function deleteRecord(recordId) {
       if (!confirm('確定要刪除此紀錄嗎？此操作無法復原。')) return;
-
       try {
-        // 呼叫 DataManager 執行刪除
         const result = await window.AppRecordManager.deleteRecord(customerId, recordId);
-        
         if (result.success) {
           showToast('紀錄已刪除', 'success');
-          // 重新載入列表
           loadServiceRecords(customerId);
-          // 更新統計數據
           loadCustomerProfile(); 
         } else {
           showToast(`刪除失敗：${result.error}`, 'error');
@@ -925,7 +491,6 @@
       }
     }
 
-    // ===== Toast 通知 =====
     function showToast(message, type = 'info') {
       const toast = document.createElement('div');
       toast.className = `toast ${type}`;
@@ -933,11 +498,8 @@
       document.body.appendChild(toast);
       setTimeout(() => toast.remove(), 3000);
     }
-// 綁定編輯按鈕事件
-    document.getElementById('edit-btn').addEventListener('click', () => {
-      openEditModal();
-    });
 
+    // ===== Modal 邏輯 =====
     function openEditModal() {
       const customer = window.AppCustomerManager.getCustomerById(customerId);
       if (!customer) return;
@@ -963,8 +525,6 @@
 
     function handleUpdateCustomer(e) {
       e.preventDefault();
-      
-      // 輔助函式：逗號分隔字串轉陣列
       const parseTags = (str) => str.split(/[,，、]/).map(s => s.trim()).filter(s => s.length > 0);
 
       const updatedData = {
@@ -990,8 +550,9 @@
       }
     }
   </script>
-<div id="edit-customer-modal" class="modal-overlay" style="display:none; z-index:2000;">
-    <div class="modal-content" style="background:white; padding:20px; border-radius:12px; max-width:500px; width:90%; margin: 50px auto;">
+
+  <div id="edit-customer-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-content" style="background:white; padding:20px; border-radius:12px; max-width:500px; width:90%;">
       <div class="modal-header" style="display:flex; justify-content:space-between; margin-bottom:20px;">
         <h3 style="margin:0;">編輯顧客資料</h3>
         <button onclick="closeEditModal()" style="background:none;border:none;font-size:24px;cursor:pointer;">×</button>
@@ -1042,7 +603,6 @@
             <input type="text" id="edit-cinterests" placeholder="例如: 跑步, 游泳" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;">
           </div>
       </div>
-
         <div style="text-align:right;">
           <button type="button" onclick="closeEditModal()" class="btn" style="background:#eee;color:#333;margin-right:10px;">取消</button>
           <button type="submit" class="btn btn-primary">儲存變更</button>
