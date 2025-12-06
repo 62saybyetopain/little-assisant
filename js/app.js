@@ -1,50 +1,66 @@
 /**
  * js/app.js - 系統啟動入口
  * 職責：按照正確順序初始化各大 Manager，並解決依賴注入 (DI)
+ * V3.0加入 DOMContentLoaded 事件監聽
  */
 (function() {
-  console.log('🚀 System Booting...');
+  // 核心初始化邏輯 (不涉及 UI 操作，僅建立實例與綁定)
+  function initCore() {
+    console.log('⚙️ Initializing Core Systems...');
 
-  // 1. 檢查基礎環境
-  if (!window.AppStorage) {
-    console.error('❌ Critical: AppStorage not loaded.');
-    return;
+    // 1. 檢查基礎環境
+    if (!window.AppStorage) {
+      console.error('❌ Critical: AppStorage not loaded.');
+      return false;
+    }
+
+    // 2. 初始化 CustomerManager
+    if (typeof CustomerManager === 'undefined') {
+      console.error('❌ Critical: CustomerManager class missing.');
+      return false;
+    }
+    
+    // 建立唯一實例
+    const customerManagerInstance = new CustomerManager();
+    window.AppCustomerManager = customerManagerInstance;
+    window.customerManager = customerManagerInstance; 
+
+    // 3. 初始化 DataManager (並注入依賴)
+    if (typeof DataManager === 'undefined') {
+      console.error('❌ Critical: DataManager class missing.');
+      return false;
+    }
+    
+    // 注入 customerManager 實例
+    const dataManagerInstance = new DataManager(customerManagerInstance);
+    window.appDataManager = dataManagerInstance;
+    window.AppDataManager = dataManagerInstance;
+
+    // 4. 建立便捷引用 (Shortcuts)
+    window.AppTagManager = dataManagerInstance.tag;
+    window.AppRecordManager = dataManagerInstance.record;
+    window.AppAssessmentManager = dataManagerInstance.assessment;
+    window.AppTemplateManager = dataManagerInstance.template;
+    window.AppDataExportService = dataManagerInstance.exportService;
+
+    return true;
   }
 
-  // 2. 初始化 CustomerManager (核心資料源)
-  // 假設 CustomerManager 類別已經載入但尚未初始化
-  if (typeof CustomerManager === 'undefined') {
-    console.error('❌ Critical: CustomerManager class missing.');
-    return;
-  }
-  
-  // 建立唯一實例
-  const customerManagerInstance = new CustomerManager();
-  
-  // 掛載到全域 (相容舊代碼 usage: window.AppCustomerManager)
-  window.AppCustomerManager = customerManagerInstance;
-  window.customerManager = customerManagerInstance; 
+  //等待 DOM Ready 再執行初始化與 UI 相關邏輯
+  document.addEventListener('DOMContentLoaded', () => {
+    console.log('🚀 DOM Ready, Booting App...');
+    
+    const coreReady = initCore();
+    
+    if (coreReady) {
+      console.log('✅ System Fully Initialized (Dependency Injected)');
+      
+      // 觸發全域事件，通知各個 UI 頁面 (如 customer-list.html) 可以開始渲染了
+      document.dispatchEvent(new Event('app-ready'));
+    } else {
+      console.error('❌ System Initialization Failed');
+      alert('系統核心初始化失敗，請檢查 Console 錯誤');
+    }
+  });
 
-  // 3. 初始化 DataManager (並注入依賴)
-  if (typeof DataManager === 'undefined') {
-    console.error('❌ Critical: DataManager class missing.');
-    return;
-  }
-  
-  // 注入 customerManager 實例
-  const dataManagerInstance = new DataManager(customerManagerInstance);
-  
-  // 掛載到全域
-  window.appDataManager = dataManagerInstance;
-  window.AppDataManager = dataManagerInstance;
-
-  // 4. 建立便捷引用 (Shortcuts)
-  // 讓 UI 頁面可以直接呼叫 window.AppRecordManager 而不用改程式碼
-  window.AppTagManager = dataManagerInstance.tag;
-  window.AppRecordManager = dataManagerInstance.record;
-  window.AppAssessmentManager = dataManagerInstance.assessment;
-  window.AppTemplateManager = dataManagerInstance.template;
-  window.AppDataExportService = dataManagerInstance.exportService;
-
-  console.log('✅ System Initialized Successfully (Dependency Injected)');
 })();

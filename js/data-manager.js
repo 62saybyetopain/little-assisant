@@ -1,11 +1,12 @@
 /**
  * ================================================================
- * Data Manager - 資料管理核心模組 (v2.4 Refactored)
+ * Data Manager - 資料管理核心模組 (v3.0)
  * ================================================================
  * 職責：
  * 1. 統一管理 Tag, Record, Assessment 的 CRUD
  * 2. 提供資料初始化 (Seed Data)
  * 3. 透過依賴注入與 AppStorage 和 CustomerManager 對接
+ * 加上快照備份 (Snapshot) 與錯誤回滾 (Rollback) 機制。
  */
 
 const DATA_MANAGER_CONFIG = {
@@ -611,31 +612,71 @@ class DataExportService {
     } catch (e) { return { success: false, error: e.message }; }
   }
 
+  /**
+   * 匯入資料 (含回滾機制)
+   * 防止匯入壞檔導致資料庫清空後無法復原
+   */
   importData(jsonData, options = { source: 'local' }) {
+    console.group('📦 執行安全匯入...');
+    
+    // 1. 建立記憶體快照 (Snapshot)
+    const snapshot = {};
     try {
-      if (!jsonData.version || (!jsonData.customerIndex && !jsonData.customers)) {
-        return { success: false, error: '無效的備份檔案格式' };
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        snapshot[key] = localStorage.getItem(key);
       }
+      console.log(`已備份 ${Object.keys(snapshot).length} 筆現有資料`);
+    } catch (e) {
+      return { success: false, error: '備份失敗，取消匯入' };
+    }
+
+    try {
+      // 2. 驗證資料
+      if (!jsonData.version || (!jsonData.customerIndex && !jsonData.customers)) {
+        throw new Error('無效的備份檔案格式 (Missing Version/Index)');
+      }
+
+      // 3. 清空並寫入
       localStorage.clear();
+
+      // 使用 source: 'remote' 避免匯入時觸發大量 P2P 廣播
+      const opts = { source: 'remote' };
+
+      // 依序寫入 (若出錯會跳到 catch)
+      if (jsonData.tags) this.storage.save('tags', jsonData.tags, opts);
+      if (jsonData.assessmentActions) this.storage.save('assessmentActions', jsonData.assessmentActions, opts);
+      if (jsonData.customerIndex) this.storage.save('customerIndex', jsonData.customerIndex, opts);
+      if (jsonData.appSettings) this.storage.save('appSettings', jsonData.appSettings, opts);
       
-      if (jsonData.tags) this.storage.save('tags', jsonData.tags, options);
-      if (jsonData.assessmentActions) this.storage.save('assessmentActions', jsonData.assessmentActions, options);
-      if (jsonData.customerIndex) this.storage.save('customerIndex', jsonData.customerIndex, options);
-      if (jsonData.appSettings) this.storage.save('appSettings', jsonData.appSettings, options);
-      
+      // 寫入詳細資料
       if (jsonData.customerDetails) {
         Object.keys(jsonData.customerDetails).forEach(key => {
-          this.storage.save(key, jsonData.customerDetails[key], options);
+          this.storage.save(key, jsonData.customerDetails[key], opts);
         });
       }
+      // 相容舊版
       if (jsonData.customers && !jsonData.customerIndex) {
-         console.warn('Importing legacy data...');
-         this.storage.save('customers', jsonData.customers, options);
+         this.storage.save('customers', jsonData.customers, opts);
       }
+
+      console.log('✅ 匯入成功');
+      console.groupEnd();
       return { success: true };
-    } catch (error) { return { success: false, error: error.message }; }
+
+    } catch (error) {
+      // 4. [P0] 發生錯誤，執行回滾
+      console.error('❌ 匯入失敗，正在還原快照...', error);
+      
+      localStorage.clear();
+      Object.keys(snapshot).forEach(key => {
+        localStorage.setItem(key, snapshot[key]);
+      });
+      
+      console.groupEnd();
+      return { success: false, error: `匯入失敗 (資料已還原): ${error.message}` };
+    }
   }
-}
 
 // ================================================================
 // DataManager 主入口 (等待依賴注入)

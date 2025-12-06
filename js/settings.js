@@ -19,6 +19,7 @@
  * 修正模板 Modal 中「系統關聯」讀取肌群標籤資料結構錯誤的問題 (.data vs Array)
  * v2.6處理 P2P 同步操作
  * v2.7身體部位分類改良
+ * V3.0加入 Lazy Check (惰性檢查) 與 Guard Clause (防衛語句)防止因為 DOM 元素缺失導致 JS 執行中斷
  */
 
 // 定義身體部位
@@ -151,19 +152,20 @@ const SettingsApp = {
   },
 
   init() {
-    console.log('🚀 SettingsApp initializing...');
+    console.log('🚀 SettingsApp initializing (Defensive Mode)...');
     
     // 檢查依賴
     if (!window.AppDataManager) {
       console.error('❌ AppDataManager not found!');
-      alert('系統核心未載入，請重新整理頁面。');
+      // 改為非侵入式提示，避免在非設定頁面引用此腳本時彈窗
+      console.warn('系統核心未載入，SettingsApp 功能受限');
       return;
     }
 
     // 1. 初始化隱藏檔案輸入框 (for Import)
     this.createHiddenFileInput();
 
-    // 2. 渲染複選框群組
+    // 2. 渲染複選框群組 (加入防禦)
     this.renderCheckboxes('muscle-bodyparts', 'muscle-part');
     this.renderCheckboxes('assessment-bodyparts-check', 'assessment-part');
 
@@ -173,14 +175,15 @@ const SettingsApp = {
     // 4. 更新儲存空間資訊
     this.updateStorageInfo();
 
-    // 5. 綁定搜尋輸入事件
+    // 5. 綁定搜尋輸入事件 (使用 Optional Chaining 防止報錯)
     document.getElementById('assessment-search')?.addEventListener('input', (e) => this.renderAssessmentList(e.target.value));
     document.getElementById('muscle-search')?.addEventListener('input', (e) => this.renderMuscleList(e.target.value));
     document.getElementById('template-search')?.addEventListener('input', (e) => this.renderTemplateList(e.target.value));
+
     // 6. 預設顯示第一個分頁
     const urlParams = new URLSearchParams(window.location.search);
     const tab = urlParams.get('tab') || 'assessment';
-    this.switchTab('assessment');
+    this.switchTab(tab);
   },
 
   // === 頁籤切換 ===
@@ -190,9 +193,11 @@ const SettingsApp = {
       btn.classList.toggle('active', btn.dataset.tab === tabId);
     });
 
-    // 切換面板顯示 (搭配 CSS 的 display: none/block)
+    // 切換面板顯示 (加入防禦檢查)
     document.querySelectorAll('.tab-panel').forEach(panel => {
-      panel.classList.toggle('active', panel.id === `panel-${tabId}`);
+      if (panel) {
+        panel.classList.toggle('active', panel.id === `panel-${tabId}`);
+      }
     });
 
     this.state.currentTab = tabId;
@@ -220,11 +225,13 @@ const SettingsApp = {
   },
 
   renderAssessmentList(keyword = '') {
-    const list = this.state.assessmentList.filter(item => 
+    // 防止 list 為 null
+    const list = (this.state.assessmentList || []).filter(item => 
       !keyword || item.name.toLowerCase().includes(keyword.toLowerCase())
     );
     
     const container = document.getElementById('assessment-list');
+    // Lazy Check: 如果找不到容器就停止渲染，避免崩潰
     if (!container) return;
 
     if (list.length === 0) {
@@ -331,13 +338,15 @@ const SettingsApp = {
   },
 
   renderTemplateList(keyword = '') {
-    const list = this.state.templateList.filter(item => 
+    const list = (this.state.templateList || []).filter(item => 
       !keyword || 
       item.name.toLowerCase().includes(keyword.toLowerCase()) ||
       (item.symptomTag && item.symptomTag.toLowerCase().includes(keyword.toLowerCase()))
     );
     
     const container = document.getElementById('template-list');
+    
+    // [P1] Lazy Check: 如果找不到容器就停止渲染，避免崩潰
     if (!container) return;
 
     if (list.length === 0) {
@@ -529,11 +538,13 @@ const SettingsApp = {
   },
 
   renderMuscleList(keyword = '') {
-    const list = this.state.muscleList.filter(item => 
+    const list = (this.state.muscleList || []).filter(item => 
       !keyword || item.name.toLowerCase().includes(keyword.toLowerCase())
     );
     
     const container = document.getElementById('muscle-list');
+    
+    // [P1] Lazy Check: 如果找不到容器就停止渲染，避免崩潰
     if (!container) return;
 
     if (list.length === 0) {
@@ -662,17 +673,18 @@ const SettingsApp = {
   // === 輔助功能：複選框與色盤 ===
   renderCheckboxes(containerId, name) {
     const el = document.getElementById(containerId);
-    if (el) {
-      // 判斷是新增還是編輯模式 (根據 name)
-      const mode = name === 'muscle-part' ? "'add'" : (name === 'edit-muscle-part' ? "'edit'" : "null");
-      const eventHandler = (mode !== "null" && containerId.includes('muscle')) ? `onchange="autoSelectColor(${mode})"` : "";
+    // [P1] 如果找不到容器直接跳過，不報錯
+    if (!el) return;
 
-      el.innerHTML = SIMPLIFIED_BODY_PARTS.map(p => `
-        <label class="checkbox-item">
-          <input type="checkbox" name="${name}" value="${p.id}" ${eventHandler}> ${p.name}
-        </label>
-      `).join('');
-    }
+    // 判斷是新增還是編輯模式 (根據 name)
+    const mode = name === 'muscle-part' ? "'add'" : (name === 'edit-muscle-part' ? "'edit'" : "null");
+    const eventHandler = (mode !== "null" && containerId.includes('muscle')) ? `onchange="autoSelectColor(${mode})"` : "";
+
+    el.innerHTML = SIMPLIFIED_BODY_PARTS.map(p => `
+      <label class="checkbox-item">
+        <input type="checkbox" name="${name}" value="${p.id}" ${eventHandler}> ${p.name}
+      </label>
+    `).join('');
   },
 
   renderColorPalette() {
@@ -835,11 +847,19 @@ const SettingsApp = {
   },
 
   openModal(id) {
-    document.getElementById(id).classList.add('show');
+    const modal = document.getElementById(id);
+    if (modal) {
+      modal.classList.add('show');
+    } else {
+      console.warn(`Modal #${id} not found, cannot open.`);
+    }
   },
 
   closeModal(id) {
-    document.getElementById(id).classList.remove('show');
+    const modal = document.getElementById(id);
+    if (modal) {
+      modal.classList.remove('show');
+    }
   },
 
   // === 工具函式 ===

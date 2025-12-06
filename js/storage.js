@@ -1,6 +1,7 @@
 /**
- * LocalStorage 封裝服務 (v2.0 重構版)
+ * LocalStorage 封裝服務 (v3.0)
  * 支援分級儲存策略 (Index vs Detail) 與自動遷移
+ * 新增交易機制以及更新基礎存取方法
  */
 
 class StorageService {
@@ -28,6 +29,80 @@ class StorageService {
       return false;
     }
   }
+  // ==========================================
+  // [P0] 核心交易機制 (Atomic Transaction)
+  // 防止寫入 Index 成功但寫入 Detail 失敗導致的資料不一致
+  // ==========================================
+  executeTransaction(operations) {
+    // operations 格式: [{ type: 'save'|'remove', key: '...', value: ... }, ...]
+    console.group('🔒 執行原力交換...');
+    
+    // 1. 建立快照 (Snapshot) - 備份將被修改的 key
+    const backup = {};
+    const keysToModify = operations.map(op => op.key);
+    
+    try {
+      keysToModify.forEach(key => {
+        const val = localStorage.getItem(key);
+        if (val !== null) backup[key] = val;
+      });
+    } catch (e) {
+      console.error('交易初始化失敗 (備份階段):', e);
+      console.groupEnd();
+      return { success: false, error: 'TRANS_INIT_FAILED' };
+    }
+
+    // 2. 執行操作
+    try {
+      operations.forEach(op => {
+        if (op.type === 'save') {
+          // 直接操作 localStorage，不透過 this.save 以避免巢狀廣播
+          localStorage.setItem(op.key, JSON.stringify(op.value));
+        } else if (op.type === 'remove') {
+          localStorage.removeItem(op.key);
+        }
+      });
+
+      // 3. 交易成功：發送 P2P 廣播
+      if (window.AppSyncManager) {
+        operations.forEach(op => {
+          const val = op.type === 'save' ? op.value : null;
+          // 注意：交易通常由本地觸發，所以 source 預設為 local
+          window.AppSyncManager.broadcastUpdate(op.key, val);
+        });
+      }
+
+      console.log('✅ 交易提交成功');
+      console.groupEnd();
+      return { success: true };
+
+    } catch (error) {
+      // 4. [P0] 發生錯誤 (如 QuotaExceeded)，執行回滾 (Rollback)
+      console.warn('⚠️ 交易失敗，正在進行時光回溯...', error);
+      
+      try {
+        // 還原備份
+        keysToModify.forEach(key => {
+          if (backup.hasOwnProperty(key)) {
+            localStorage.setItem(key, backup[key]);
+          } else {
+            localStorage.removeItem(key);
+          }
+        });
+        console.log('↩️ 回溯完成，資料庫一致性已保護');
+      } catch (rollbackError) {
+        console.error('❌ 災難性錯誤：回溯失敗', rollbackError);
+        alert('系統發生嚴重錯誤，請重新整理頁面');
+      }
+
+      console.groupEnd();
+      
+      if (error.name === 'QuotaExceededError') {
+        return { success: false, error: 'QUOTA_EXCEEDED', message: '儲存空間不足' };
+      }
+      return { success: false, error: 'TRANS_FAILED', message: error.message };
+    }
+  }
 
   // ==========================================
   // 1. 通用基礎方法 (Base Methods)
@@ -45,6 +120,7 @@ class StorageService {
     }
 
     try {
+      // [P0] P2P 迴圈防護：如果是遠端來的資料，只寫入不廣播
       const jsonString = JSON.stringify(data);
       localStorage.setItem(key, jsonString);
 
@@ -54,19 +130,10 @@ class StorageService {
 
       return { success: true, mode: 'normal' };
     } catch (error) {
-      // 容量不足處理
       if (error.name === 'QuotaExceededError') {
-        return {
-          success: false,
-          error: 'QUOTA_EXCEEDED',
-          message: '儲存空間不足，請封存或匯出舊資料'
-        };
+        return { success: false, error: 'QUOTA_EXCEEDED', message: '儲存空間不足' };
       }
-      return {
-        success: false,
-        error: 'SAVE_FAILED',
-        message: '儲存失敗:' + error.message
-      };
+      return { success: false, error: 'SAVE_FAILED', message: error.message };
     }
   }
 
@@ -86,23 +153,14 @@ class StorageService {
   }
 
   remove(key, options = { source: 'local' }) {
-    if (this.demoMode) {
-      delete this.inMemoryData[key];
-      return { success: true, mode: 'demo' };
-    }
-
+    if (this.demoMode) { delete this.inMemoryData[key]; return { success: true }; }
     try {
       localStorage.removeItem(key);
-
-      // [P2P 修改點] 同步刪除操作 (傳送 null 代表刪除)
       if (options.source === 'local' && window.AppSyncManager) {
         window.AppSyncManager.broadcastUpdate(key, null);
       }
-
       return { success: true };
-    } catch (error) {
-      return { success: false, message: '刪除失敗' };
-    }
+    } catch (error) { return { success: false }; }
   }
 
   // ==========================================

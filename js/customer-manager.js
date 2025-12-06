@@ -1,6 +1,7 @@
 /**
- * 顧客管理模組 (Customer Manager) - v2.0 重構版
+ * 顧客管理模組 (Customer Manager) - v3.0
  * 整合 StorageService 的分級儲存策略 (Index + Detail)
+ * 改用 executeTransaction 確保寫入的一致性
  */
 
 class CustomerManager {
@@ -115,21 +116,16 @@ class CustomerManager {
     });
   }
 
-  /**
-   * 新增顧客
-   * 必須同時寫入：1. 詳細資料檔  2. 更新索引列表
-   */
+  // 使用交易機制的新增方法
   addCustomer(customerData) {
     const validation = this.validate(customerData);
-    if (!validation.isValid) {
-      return { success: false, errors: validation.errors };
-    }
+    if (!validation.isValid) return { success: false, errors: validation.errors };
 
     try {
       const newId = this.generateId();
       const now = new Date().toISOString();
 
-      // 1. 準備完整資料物件
+      // 1. 準備詳細資料 (Detail)
       const newCustomer = {
         id: newId,
         name: customerData.name.trim(),
@@ -142,120 +138,122 @@ class CustomerManager {
         interests: customerData.interests || [],
         healthTags: customerData.healthTags || [],
         personalityTags: customerData.personalityTags || [],
-        serviceRecords: [], // 初始無紀錄
+        serviceRecords: [],
         createdAt: now,
         updatedAt: now
       };
 
-      // 2. 儲存詳細資料 (customer_{id})
-      const saveDetail = this.storage.saveCustomerDetail(newId, newCustomer);
-      if (!saveDetail.success) return saveDetail;
-
-      // 3. 更新索引
-      const index = this.storage.loadCustomerIndex();
-      index.push({
+      // 2. 準備更新後的索引 (Index)
+      // 注意：必須先 load 出來，再 push 新資料
+      const index = this.storage.loadCustomerIndex() || [];
+      const newIndexEntry = {
         id: newId,
         name: newCustomer.name,
         nickname: newCustomer.nickname,
         phoneLastThree: newCustomer.phoneLastThree,
         status: 'active',
         updatedAt: now,
-        // 索引中包含輕量統計
         stats: { totalServices: 0 }
-      });
+      };
       
-      this.storage.saveCustomerIndex(index);
+      const updatedIndex = [...index, newIndexEntry];
 
-      return { success: true, customer: newCustomer };
+      // 3. [關鍵] 執行原子性交易 (Atomic Transaction)
+      // 同時寫入 Detail 和 Index，任一失敗 (如容量不足) 則全部回滾
+      const result = this.storage.executeTransaction([
+        { type: 'save', key: `customer_${newId}`, value: newCustomer },
+        { type: 'save', key: this.storage.KEYS.CUSTOMER_INDEX, value: updatedIndex }
+      ]);
+
+      if (result.success) {
+        return { success: true, customer: newCustomer };
+      } else {
+        return { success: false, errors: [result.message || '儲存失敗'] };
+      }
 
     } catch (error) {
       console.error('Add customer error:', error);
-      return { success: false, errors: ['新增顧客失敗:' + error.message] };
+      return { success: false, errors: [error.message] };
     }
   }
 
-  /**
-   * 更新顧客
-   * 同時更新詳細資料與索引
-   */
+  // [P0] 使用交易機制的更新方法
   updateCustomer(customerId, updatedData) {
     const validation = this.validate(updatedData);
-    if (!validation.isValid) {
-      return { success: false, errors: validation.errors };
-    }
+    if (!validation.isValid) return { success: false, errors: validation.errors };
 
     try {
-      // 1. 載入現有詳細資料
       const currentData = this.getCustomerById(customerId);
       if (!currentData) return { success: false, errors: ['找不到該顧客'] };
 
-      // 2. 合併資料
+      // 1. 準備更新後的詳細資料
       const newData = {
         ...currentData,
         ...updatedData,
-        name: updatedData.name.trim(),
-        nickname: updatedData.nickname.trim(),
-        phoneLastThree: updatedData.phoneLastThree.trim(),
-        gender: updatedData.gender || currentData.gender,
-        age: updatedData.age ? parseInt(updatedData.age) : currentData.age,
-        location: updatedData.location?.trim() || currentData.location,
-        occupation: updatedData.occupation?.trim() || currentData.occupation,
-        interests: updatedData.interests || currentData.interests,
-        healthTags: updatedData.healthTags || currentData.healthTags,
-        personalityTags: updatedData.personalityTags || currentData.personalityTags,
+        // 確保關鍵欄位經過 trim 處理
+        name: updatedData.name ? updatedData.name.trim() : currentData.name,
+        nickname: updatedData.nickname ? updatedData.nickname.trim() : currentData.nickname,
+        phoneLastThree: updatedData.phoneLastThree ? updatedData.phoneLastThree.trim() : currentData.phoneLastThree,
         updatedAt: new Date().toISOString()
       };
 
-      // 3. 儲存詳細資料
-      const saveDetail = this.storage.saveCustomerDetail(customerId, newData);
-      if (!saveDetail.success) return saveDetail;
-
-      // 4. 更新索引 (如果關鍵欄位變更)
-      const index = this.storage.loadCustomerIndex();
+      // 2. 準備更新後的索引
+      const index = this.storage.loadCustomerIndex() || [];
       const idx = index.findIndex(c => c.id === customerId);
+      let updatedIndex = index;
       
+      // 只有在索引內容變更時才更新索引物件
       if (idx !== -1) {
-        index[idx] = {
-          ...index[idx],
+        updatedIndex = [...index]; // 複製陣列
+        updatedIndex[idx] = {
+          ...updatedIndex[idx],
           name: newData.name,
           nickname: newData.nickname,
           phoneLastThree: newData.phoneLastThree,
           updatedAt: newData.updatedAt
         };
-        this.storage.saveCustomerIndex(index);
       }
 
-      return { success: true, customer: newData };
+      // 3. [關鍵] 執行原子性交易
+      const result = this.storage.executeTransaction([
+        { type: 'save', key: `customer_${customerId}`, value: newData },
+        { type: 'save', key: this.storage.KEYS.CUSTOMER_INDEX, value: updatedIndex }
+      ]);
 
+      if (result.success) {
+        return { success: true, customer: newData };
+      } else {
+        return { success: false, errors: [result.message || '更新失敗'] };
+      }
     } catch (error) {
       console.error('Update customer error:', error);
-      return { success: false, errors: ['更新顧客失敗:' + error.message] };
+      return { success: false, errors: [error.message] };
     }
   }
 
-  /**
-   * 刪除顧客
-   */
+  // [P0] 使用交易機制的刪除方法
   deleteCustomer(customerId) {
     try {
-      // 1. 刪除詳細資料檔
-      this.storage.remove(`customer_${customerId}`);
-
-      // 2. 從索引移除
-      const index = this.storage.loadCustomerIndex();
+      // 1. 準備新的索引 (移除該顧客)
+      const index = this.storage.loadCustomerIndex() || [];
       const newIndex = index.filter(c => c.id !== customerId);
       
-      // 如果長度沒變，代表索引中找不到
+      // 如果過濾後長度沒變，代表本來就不存在
       if (index.length === newIndex.length) {
         return { success: false, error: '找不到該顧客' };
       }
 
-      const saveIndex = this.storage.saveCustomerIndex(newIndex);
-      
-      if (saveIndex.success) {
+      // 2. [關鍵] 執行原子性交易
+      // 同時刪除 Detail 檔並更新 Index
+      const result = this.storage.executeTransaction([
+        { type: 'remove', key: `customer_${customerId}` },
+        { type: 'save', key: this.storage.KEYS.CUSTOMER_INDEX, value: newIndex }
+      ]);
+
+      if (result.success) {
         return { success: true };
       } else {
-        return { success: false, error: '刪除索引失敗' };
+        return { success: false, error: result.message || '刪除失敗' };
       }
 
     } catch (error) {
