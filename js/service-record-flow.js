@@ -72,8 +72,25 @@ class ServiceRecordFlow {
       const savedDraft = await this.loadTempRecord();
       
       if (savedDraft && savedDraft.recordId === this.recordId) {
-        console.log('Loaded from draft');
-        this.tempRecord = savedDraft;
+        console.log('Loaded from draft (Safe Merge Mode)');
+        
+        //安全合併機制：防止舊草稿缺欄位導致崩潰
+        const emptyRecord = this.createEmptyRecord();
+        
+        // 1. 先用空紀錄當底
+        // 2. 覆蓋舊草稿的屬性
+        // 3. 特別處理 steps 物件，確保每一大步都有預設結構
+        this.tempRecord = {
+            ...emptyRecord,
+            ...savedDraft,
+            steps: {
+                chiefComplaint: { ...emptyRecord.steps.chiefComplaint, ...(savedDraft.steps?.chiefComplaint || {}) },
+                symptoms: { ...emptyRecord.steps.symptoms, ...(savedDraft.steps?.symptoms || {}) },
+                assessment: { ...emptyRecord.steps.assessment, ...(savedDraft.steps?.assessment || {}) },
+                treatment: { ...emptyRecord.steps.treatment, ...(savedDraft.steps?.treatment || {}) },
+                feedback: { ...emptyRecord.steps.feedback, ...(savedDraft.steps?.feedback || {}) }
+            }
+        };
       } else if (this.recordId) {
         const existingRecord = window.appDataManager.record.getRecordById(customerId, recordId);
         if (existingRecord) {

@@ -170,6 +170,7 @@ class StorageService {
   /**
    * 載入顧客索引 (輕量級列表)
    * 如果發現只有舊版資料，會自動執行遷移
+   * 加入 Rollback 機制，防止空間不足導致資料損毀
    */
   loadCustomerIndex() {
     // 1. 優先讀取新版索引
@@ -183,36 +184,52 @@ class StorageService {
       console.log(`發現 ${oldData.length} 筆舊版資料，開始拆分儲存...`);
       
       try {
-        // 建立新索引
+        // 建立新索引物件
         const newIndex = oldData.map(c => ({
           id: c.id,
           name: c.name,
           nickname: c.nickname,
           phoneLastThree: c.phoneLastThree,
-          status: 'active', // 預設為活躍
+          status: 'active',
           updatedAt: c.updatedAt,
-          // 快取少量統計資料以便列表顯示
           stats: { 
             totalServices: c.serviceRecords ? c.serviceRecords.length : 0 
           }
         }));
 
-        // A. 儲存索引
+        // A. 嘗試儲存索引
         this.save(this.KEYS.CUSTOMER_INDEX, newIndex);
         
-        // B. 將每位顧客的完整資料獨立儲存 (customer_{id})
+        // B. 將每位顧客的完整資料獨立儲存
+        // 這裡可能會因為空間不足而拋出 QuotaExceededError
         oldData.forEach(c => {
           this.saveCustomerDetail(c.id, c);
         });
 
-        console.log('✅ 資料遷移完成！已啟用分級儲存。');
+        console.log('✅ 資料遷移完成！');
         console.groupEnd();
+        
+        // 遷移成功，回傳新結構
         return newIndex;
 
       } catch (err) {
-        console.error('❌ 資料遷移失敗:', err);
+        console.error('❌ 資料遷移失敗 (已觸發時光回溯):', err);
+        
+        //執行回滾 (Rollback)
+        this.remove(this.KEYS.CUSTOMER_INDEX);
+        
+        // 2. 盡可能清理剛剛寫入的殘留檔案，釋放空間
+        try {
+            oldData.forEach(c => this.remove(`customer_${c.id}`));
+            console.log('↩️ 已清除殘留的遷移檔案');
+        } catch (cleanupErr) {
+            console.warn('⚠️ 清理殘留檔案時發生次要錯誤:', cleanupErr);
+        }
+
         console.groupEnd();
-        // 發生嚴重錯誤時回傳舊資料以避免當機
+        
+        // 回傳帶有錯誤狀態的舊資料，讓 UI 可以顯示（但不影響系統核心運作）
+        // 建議在 UI 層偵測到 'migration_failed' 時顯示警告
         return oldData.map(c => ({ ...c, status: 'migration_failed' }));
       }
     }
@@ -361,6 +378,56 @@ class StorageService {
       };
     }
     return null;
+  }
+/**
+   * 垃圾回收機制 (Vacuum / GC)
+   * 用途：掃描並刪除沒有對應索引的「孤兒檔案」，釋放空間。
+   * 觸發時機：App 啟動後背景執行、或使用者手動執行。
+   */
+  vacuum() {
+    console.groupCollapsed('🧹 [System] 執行垃圾回收 (GC)...');
+    try {
+      // 1. 取得所有合法的 ID 清單
+      const index = this.loadCustomerIndex() || [];
+      const validIds = new Set(index.map(c => c.id));
+      let removedCount = 0;
+      let totalFreed = 0;
+
+      // 2. 遍歷 localStorage 尋找孤兒
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        
+        // 只檢查顧客檔案 (customer_ 開頭)
+        if (key && key.startsWith('customer_')) {
+          const id = key.replace('customer_', '');
+          
+          // 如果這個 ID 不在合法清單中，它就是孤兒 (Orphan)
+          if (!validIds.has(id)) {
+            const size = localStorage.getItem(key).length;
+            console.warn(`🗑️ 發現殘留檔案: ${key} (${(size/1024).toFixed(2)} KB)，正在移除...`);
+            
+            localStorage.removeItem(key);
+            removedCount++;
+            totalFreed += size;
+          }
+        }
+      }
+      
+      const freedKB = (totalFreed / 1024).toFixed(2);
+      if (removedCount > 0) {
+        console.log(`✅ 清理完成：共移除 ${removedCount} 個檔案，釋放 ${freedKB} KB 空間。`);
+      } else {
+        console.log('✨ 系統很乾淨，無需清理。');
+      }
+      
+      console.groupEnd();
+      return { success: true, removedCount, freedKB };
+
+    } catch (e) {
+      console.error('❌ 垃圾回收失敗:', e);
+      console.groupEnd();
+      return { success: false, error: e.message };
+    }
   }
 }
 

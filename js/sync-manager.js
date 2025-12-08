@@ -20,43 +20,78 @@ class SyncManager {
 
   // 1. 初始化 Peer (通常在進入設定頁或應用啟動時呼叫)
   init() {
-    if (this.peer) return; // 避免重複初始化
-    if (typeof Peer === 'undefined') {
-      console.error('❌ PeerJS 尚未載入，無法啟動同步功能');
-      return;
-    }
+    if (typeof Peer === 'undefined') return console.error('PeerJS missing');
 
-    // 產生隨機 ID (前綴 client_ 方便識別)
-    const randomId = 'client_' + Math.random().toString(36).substr(2, 5);
+    // 1. 讀取 ID，若無則生成預設 (user_xxxx)
+    let savedId = localStorage.getItem(this.storageKey);
+    if (!savedId) {
+      savedId = this.generateIdWithPrefix('user'); // 預設前綴 user
+      localStorage.setItem(this.storageKey, savedId);
+    }
     
-    this.peer = new Peer(randomId);
+    this.startPeer(savedId);
+  }
+
+  // [修改] 生成帶前綴的 ID (排除混淆字元)
+  generateIdWithPrefix(prefix) {
+    // 1. 清理前綴：只保留英數字，將空白轉為底線，轉小寫
+    const cleanPrefix = prefix.trim().replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+    
+    // 2. 生成後綴 (4碼，排除 l, 1, o, 0)
+    const chars = 'abcdefghjkmnpqrstuvwxyz23456789'; 
+    let suffix = '';
+    for (let i = 0; i < 4; i++) {
+      suffix += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    
+    // 結果範例: taipei_9a2b
+    return `${cleanPrefix}_${suffix}`;
+  }
+
+  // [修改] 設定裝置名稱 (前綴)
+  setDeviceName(name) {
+    if (!name || name.length < 2) return { success: false, error: '名稱太短 (至少2字)' };
+    
+    // 生成包含隨機後綴的新 ID，確保不重複
+    const newId = this.generateIdWithPrefix(name);
+
+    localStorage.setItem(this.storageKey, newId);
+    
+    // 重啟連線
+    if (this.peer) {
+      this.peer.destroy();
+      this.peer = null;
+    }
+    this.init(); 
+    return { success: true, newId: newId };
+  }
+   startPeer(id) {
+    this.peer = new Peer(id);
 
     this.peer.on('open', (id) => {
       this.myId = id;
-      console.log('📡 [P2P] 本機 ID 已建立:', id);
+      console.log('📡 [P2P] ID:', id);
       this.updateUIStatus('ready', id);
     });
 
-    // 被動連線：當別人連我時
     this.peer.on('connection', (conn) => {
-      console.log('📡 [P2P] 收到連線請求...');
       this.setupConnection(conn);
     });
 
     this.peer.on('error', (err) => {
-      console.error('❌ [P2P] 錯誤:', err);
-      this.updateUIStatus('error', err.type);
-      alert(`連線錯誤: ${err.type}`);
+      console.error('P2P Error:', err);
+      if (err.type === 'unavailable-id') {
+          // 極低機率發生，若發生則自動重試一次
+          localStorage.removeItem(this.storageKey);
+          this.init();
+      } else {
+          this.updateUIStatus('error', err.type);
+      }
     });
   }
-
-  // 2. 主動連線到目標 ID
+  // 主動連線到目標 ID
   connectTo(remoteId) {
-    if (!this.peer) this.init();
-    if (!remoteId) return;
-
-    console.log('📡 [P2P] 嘗試連線到:', remoteId);
-    
+    if (!this.peer) return;
     const conn = this.peer.connect(remoteId);
     this.setupConnection(conn);
   }
@@ -114,24 +149,15 @@ class SyncManager {
 
   // 處理全量匯入
   handleFullSyncImport(jsonData) {
-    if (confirm('收到遠端設備的全量資料同步請求，是否覆蓋本機資料？\n(此操作無法復原)')) {
-      try {
-        // 檢查匯入服務是否存在
-        if (window.AppDataExportService && window.AppDataExportService.importData) {
-            const result = window.AppDataExportService.importData(jsonData, { source: 'remote' });            
-            if (result.success) {
-                alert('同步成功！頁面將重新整理。');
-                location.reload();
-            } else {
-                alert('匯入失敗: ' + (result.error || result.message));
-            }
+    if (confirm('收到遠端同步請求，確定要覆蓋本機資料嗎？')) {
+      if (window.AppDataExportService) {
+        const result = window.AppDataExportService.importData(jsonData, { source: 'remote' });
+        if (result.success) {
+          alert('同步成功！');
+          location.reload();
         } else {
-            console.warn('⚠️ 未找到 AppDataExportService，請確認匯入功能已實作');
-            alert('系統尚未實作自動匯入功能，請檢查 console');
+          alert('同步失敗: ' + result.error);
         }
-      } catch (e) {
-        console.error('匯入過程發生錯誤:', e);
-        alert('匯入失敗，資料格式可能不符');
       }
     }
   }
@@ -183,24 +209,34 @@ class SyncManager {
   // UI 狀態更新輔助函式
   updateUIStatus(status, detail) {
     const elStatus = document.getElementById('p2p-status');
-    const elId = document.getElementById('p2p-my-id');
+    // 注意：ID 顯示現在分為兩個地方：設定輸入框 和 完整ID顯示區
+    const elFullId = document.getElementById('p2p-full-id');
+    const elNameInput = document.getElementById('p2p-device-name'); 
     
-    // 如果不在設定頁面，可能找不到元素，直接返回不報錯
+    // 如果不在設定頁面，可能找不到元素，直接返回
     if (!elStatus) return;
 
     if (status === 'ready') {
-      elStatus.textContent = '等待連線 (在線)';
-      elStatus.className = 'status-badge ready';
-      if(elId) elId.value = detail;
-    } else if (status === 'connected') {
-      elStatus.textContent = `已連線至: ${detail}`;
-      elStatus.className = 'status-badge connected';
+      if (elFullId) elFullId.textContent = detail;
+      // 嘗試從完整 ID 解析出前綴填入輸入框，方便使用者修改
+      if (elNameInput && !elNameInput.value) {
+          const parts = detail.split('_');
+          if (parts.length > 1) {
+              // 去掉最後一段隨機碼，剩下的就是前綴
+              elNameInput.value = parts.slice(0, -1).join('_');
+          }
+      }
+    }
+
+    if (status === 'connected') {
+        elStatus.textContent = `已連線至: ${detail}`;
+        elStatus.className = 'status-badge connected';
     } else if (status === 'disconnected') {
-      elStatus.textContent = '連線中斷';
-      elStatus.className = 'status-badge disconnected';
+        elStatus.textContent = '未連線';
+        elStatus.className = 'status-badge disconnected';
     } else if (status === 'error') {
-      elStatus.textContent = '連線錯誤';
-      elStatus.className = 'status-badge error';
+        elStatus.textContent = '連線錯誤';
+        elStatus.className = 'status-badge error';
     }
   }
 
@@ -217,4 +253,3 @@ class SyncManager {
 
 // 初始化全域實例
 window.AppSyncManager = new SyncManager();
-console.log('✅ SyncManager (v1.0) 模組已載入');

@@ -570,23 +570,33 @@ class DataExportService {
   exportAllData() {
     try {
       const data = {
-        version: '2.0',
+        version: '3.1',
         exportedAt: new Date().toISOString(),
-        customers: this.storage.load('customers') || [],
-        customerIndex: this.storage.load('customerIndex') || [],
+        // 核心設定
         tags: this.storage.load('tags') || [],
         assessmentActions: this.storage.load('assessmentActions') || [],
+        serviceTemplates: this.storage.load('serviceTemplates') || [], // 模板
         appSettings: this.storage.load('appSettings') || {},
+        
+        // 顧客資料
+        customerIndex: this.storage.load('customerIndex') || [],
         customerDetails: {}
       };
 
+      // [重要] 遍歷所有 customer_ 開頭的 key，確保詳細資料被打包
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && key.startsWith('customer_') && key !== 'customerIndex') {
+        if (key && key.startsWith('customer_')) {
            const detail = this.storage.load(key);
            if (detail) data.customerDetails[key] = detail;
         }
       }
+      
+      // 檢查完整性
+      if (data.customerIndex.length > 0 && Object.keys(data.customerDetails).length === 0) {
+          console.warn('Export Warning: Index exists but no details found.');
+      }
+
       return { success: true, data: data };
     } catch (error) { return { success: false, error: error.message }; }
   }
@@ -619,45 +629,43 @@ class DataExportService {
   importData(jsonData, options = { source: 'local' }) {
     console.group('📦 執行安全匯入...');
     
-    // 1. 建立記憶體快照 (Snapshot)
+    // 1. 建立快照
     const snapshot = {};
     try {
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         snapshot[key] = localStorage.getItem(key);
       }
-      console.log(`已備份 ${Object.keys(snapshot).length} 筆現有資料`);
-    } catch (e) {
-      return { success: false, error: '備份失敗，取消匯入' };
-    }
+    } catch (e) { return { success: false, error: '備份失敗，取消匯入' }; }
 
     try {
-      // 2. 驗證資料
-      if (!jsonData.version || (!jsonData.customerIndex && !jsonData.customers)) {
-        throw new Error('無效的備份檔案格式 (Missing Version/Index)');
+      if (!jsonData.version) throw new Error('檔案格式錯誤');
+
+      // [P0 關鍵防護] 檢查資料完整性
+      // 如果匯入包中有顧客索引，但卻完全沒有詳細資料，視為「壞檔」或「傳輸不全」
+      const hasIndex = jsonData.customerIndex && jsonData.customerIndex.length > 0;
+      const hasDetails = jsonData.customerDetails && Object.keys(jsonData.customerDetails).length > 0;
+      
+      if (hasIndex && !hasDetails) {
+          throw new Error('❌ 資料完整性檢查失敗：偵測到只有索引但無詳細資料，為防止資料遺失，已拒絕匯入。');
       }
 
       // 3. 清空並寫入
       localStorage.clear();
+      const opts = { source: 'remote' }; // 防止 P2P 回音
 
-      // 使用 source: 'remote' 避免匯入時觸發大量 P2P 廣播
-      const opts = { source: 'remote' };
-
-      // 依序寫入 (若出錯會跳到 catch)
+      // 寫入設定類
       if (jsonData.tags) this.storage.save('tags', jsonData.tags, opts);
       if (jsonData.assessmentActions) this.storage.save('assessmentActions', jsonData.assessmentActions, opts);
-      if (jsonData.customerIndex) this.storage.save('customerIndex', jsonData.customerIndex, opts);
+      if (jsonData.serviceTemplates) this.storage.save('serviceTemplates', jsonData.serviceTemplates, opts);
       if (jsonData.appSettings) this.storage.save('appSettings', jsonData.appSettings, opts);
       
-      // 寫入詳細資料
+      // 寫入顧客資料
+      if (jsonData.customerIndex) this.storage.save('customerIndex', jsonData.customerIndex, opts);
       if (jsonData.customerDetails) {
         Object.keys(jsonData.customerDetails).forEach(key => {
           this.storage.save(key, jsonData.customerDetails[key], opts);
         });
-      }
-      // 相容舊版
-      if (jsonData.customers && !jsonData.customerIndex) {
-         this.storage.save('customers', jsonData.customers, opts);
       }
 
       console.log('✅ 匯入成功');
@@ -665,17 +673,53 @@ class DataExportService {
       return { success: true };
 
     } catch (error) {
-      // 4. [P0] 發生錯誤，執行回滾
-      console.error('❌ 匯入失敗，正在還原快照...', error);
-      
+      console.error('❌ 匯入失敗，還原快照:', error);
       localStorage.clear();
-      Object.keys(snapshot).forEach(key => {
-        localStorage.setItem(key, snapshot[key]);
-      });
-      
+      Object.keys(snapshot).forEach(key => localStorage.setItem(key, snapshot[key]));
       console.groupEnd();
-      return { success: false, error: `匯入失敗 (資料已還原): ${error.message}` };
+      return { success: false, error: error.message };
     }
+  }
+/**
+   *匯出特定模組設定 (CSV/JSON)
+   * type: 'action' | 'muscle' | 'template'
+   */
+  exportConfig(type) {
+      let data = [];
+      let filename = '';
+      
+      if (type === 'action') {
+          data = this.storage.load('assessmentActions') || [];
+          filename = 'assessments.json';
+      } else if (type === 'muscle') {
+          data = this.storage.load('tags') || [];
+          filename = 'muscle_tags.json';
+      } else if (type === 'template') {
+          data = this.storage.load('serviceTemplates') || [];
+          filename = 'templates.json';
+      }
+
+      return { success: true, data: JSON.stringify(data, null, 2), filename };
+  }
+
+  /**
+   * 匯入並取代特定模組設定
+   */
+  importConfig(type, jsonData) {
+      try {
+          if (!Array.isArray(jsonData)) throw new Error('格式錯誤：必須是陣列');
+          
+          let key = '';
+          if (type === 'action') key = 'assessmentActions';
+          else if (type === 'muscle') key = 'tags';
+          else if (type === 'template') key = 'serviceTemplates';
+          
+          // 直接覆蓋 (Replace)
+          this.storage.save(key, jsonData, { source: 'local' });
+          return { success: true };
+      } catch (e) {
+          return { success: false, error: e.message };
+      }
   }
 }
 // ================================================================

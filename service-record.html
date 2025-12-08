@@ -58,6 +58,7 @@
               .label-text { font-size: 12px; fill: #666; font-weight: bold; text-anchor: middle; pointer-events: none; }
               .body-part { fill: #e0e0e0; stroke: #999; stroke-width: 1; cursor: pointer; transition: fill 0.2s; }
               .body-part:hover { fill: #b3d9ff; }
+              /* JS 會切換 .selected 類別來改變顏色 */
               .body-part.selected { fill: #4A90E2; stroke: #2171c7; }
             </style>
             
@@ -67,18 +68,34 @@
             <g transform="translate(0, 30)">
               <circle class="body-part" data-part="head" cx="80" cy="25" r="20" />
               <rect class="body-part" data-part="neck" x="70" y="45" width="20" height="15" rx="5" />
+              
               <path class="body-part" data-part="left-shoulder" d="M70 60 L40 70 L45 90 L70 80 Z" />
               <path class="body-part" data-part="right-shoulder" d="M90 60 L120 70 L115 90 L90 80 Z" />
+              
               <rect class="body-part" data-part="chest" x="60" y="80" width="40" height="40" rx="5" />
               <rect class="body-part" data-part="abdomen" x="65" y="125" width="30" height="45" rx="5" />
               
               <rect class="body-part" data-part="left-arm" x="35" y="95" width="15" height="50" rx="5" />
-              <rect class="body-part" data-part="left-arm" x="35" y="150" width="15" height="45" rx="5" /> <rect class="body-part" data-part="right-arm" x="110" y="95" width="15" height="50" rx="5" />
-              <rect class="body-part" data-part="right-arm" x="110" y="150" width="15" height="45" rx="5" /> <rect class="body-part" data-part="left-leg" x="55" y="180" width="20" height="70" rx="5" /> <circle class="body-part" data-part="left-knee" cx="65" cy="260" r="10" /> <rect class="body-part" data-part="left-calf" x="58" y="275" width="14" height="60" rx="5" /> <rect class="body-part" data-part="left-ankle" x="55" y="340" width="20" height="10" rx="3" /> <rect class="body-part" data-part="right-leg" x="85" y="180" width="20" height="70" rx="5" /> <circle class="body-part" data-part="right-knee" cx="95" cy="260" r="10" /> <rect class="body-part" data-part="right-calf" x="88" y="275" width="14" height="60" rx="5" /> <rect class="body-part" data-part="right-ankle" x="85" y="340" width="20" height="10" rx="3" /> </g>
+              <rect class="body-part" data-part="left-arm" x="35" y="150" width="15" height="45" rx="5" />
+              
+              <rect class="body-part" data-part="right-arm" x="110" y="95" width="15" height="50" rx="5" />
+              <rect class="body-part" data-part="right-arm" x="110" y="150" width="15" height="45" rx="5" />
+              
+              <rect class="body-part" data-part="left-leg" x="55" y="180" width="20" height="70" rx="5" />
+              <circle class="body-part" data-part="left-knee" cx="65" cy="260" r="10" />
+              <rect class="body-part" data-part="left-calf" x="58" y="275" width="14" height="60" rx="5" />
+              <rect class="body-part" data-part="left-ankle" x="55" y="340" width="20" height="10" rx="3" />
+              
+              <rect class="body-part" data-part="right-leg" x="85" y="180" width="20" height="70" rx="5" />
+              <circle class="body-part" data-part="right-knee" cx="95" cy="260" r="10" />
+              <rect class="body-part" data-part="right-calf" x="88" y="275" width="14" height="60" rx="5" />
+              <rect class="body-part" data-part="right-ankle" x="85" y="340" width="20" height="10" rx="3" />
+            </g>
 
             <g transform="translate(160, 30)">
               <circle class="body-part" data-part="head" cx="80" cy="25" r="20" />
               <rect class="body-part" data-part="neck" x="70" y="45" width="20" height="15" rx="5" />
+              
               <path class="body-part" data-part="left-shoulder" d="M70 60 L40 70 L45 90 L70 80 Z" />
               <path class="body-part" data-part="right-shoulder" d="M90 60 L120 70 L115 90 L90 80 Z" />
               
@@ -88,6 +105,7 @@
 
               <rect class="body-part" data-part="left-arm" x="35" y="95" width="15" height="50" rx="5" />
               <rect class="body-part" data-part="left-arm" x="35" y="150" width="15" height="45" rx="5" />
+              
               <rect class="body-part" data-part="right-arm" x="110" y="95" width="15" height="50" rx="5" />
               <rect class="body-part" data-part="right-arm" x="110" y="150" width="15" height="45" rx="5" />
 

@@ -54,9 +54,23 @@
     
     if (coreReady) {
       console.log('✅ System Fully Initialized (Dependency Injected)');
+
+      // (Fix) 設定全域旗標，讓晚載入的腳本(Lazy Loaded Scripts)也能判斷系統狀態
+      window.isAppReady = true;
       
       // 觸發全域事件，通知各個 UI 頁面 (如 customer-list.html) 可以開始渲染了
       document.dispatchEvent(new Event('app-ready'));
+    //啟動背景垃圾回收 (Background GC)
+      // 延遲 3 秒執行，避免拖慢首屏載入速度
+      setTimeout(() => {
+        if (window.AppStorage) {
+          const report = window.AppStorage.vacuum();
+          // 如果有清理出垃圾，可以在 Console 提示開發者，但不打擾使用者
+          if (report.success && report.removedCount > 0) {
+             console.info(`[Auto-GC] 系統自動清理了 ${report.removedCount} 筆異常殘留資料。`);
+          }
+        }
+      }, 3000);
     } else {
       console.error('❌ System Initialization Failed');
       alert('系統核心初始化失敗，請檢查 Console 錯誤');

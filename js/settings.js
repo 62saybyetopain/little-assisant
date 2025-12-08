@@ -149,6 +149,7 @@ const SettingsApp = {
     muscleList: [],
     templateList: [],
     pendingDelete: null,
+    isInitialized: false, //防止重複初始化
   },
 
   init() {
@@ -586,9 +587,21 @@ const SettingsApp = {
         cb.checked = parts.includes(cb.value);
     });
 
-    const colorDef = COLOR_DEF_MAP.find(c => c.hex === tag.color);
-    const type = colorDef ? colorDef.type : 'other';
-    // 勾選對應的 Radio
+    // 1. 定義 Hex 驗證正則 (支援 #RGB 與 #RRGGBB)
+    const hexRegex = /^#([0-9A-F]{3}){1,2}$/i;
+    
+    // 2. 驗證並決定使用的顏色 (Fallback 機制)
+    let safeColor = tag.color;
+    if (!safeColor || !hexRegex.test(safeColor)) {
+        console.warn(`⚠️ 偵測到無效色碼: "${tag.color}"，已自動重置為預設值。`);
+        safeColor = COLORS_DEF[0] || '#000000'; // Fallback 到第一個定義色或黑色
+    }
+
+    // 3. 安全查找定義 (使用 Optional Chaining)
+    const colorDef = COLOR_DEF_MAP.find(c => c.hex === safeColor);
+    const type = colorDef?.type || 'other'; // 如果找不到定義，歸類為 other
+
+    // 4. 勾選對應的 Radio
     const radio = document.querySelector(`input[name="edit-muscle-type"][value="${type}"]`);
     if (radio) radio.checked = true;
 
@@ -601,11 +614,12 @@ const SettingsApp = {
            onclick="SettingsApp.selectEditColor('${opt.color}', this)"></div>
     `).join('');
 
-    document.getElementById('edit-muscle-color').value = tag.color;
+    document.getElementById('edit-muscle-color').value = safeColor;
     const textEl = document.getElementById('edit-selected-color-name');
     if (textEl) {
-        textEl.textContent = colorDef ? colorDef.name : '自訂顏色';
-        textEl.style.color = tag.color;
+        // 安全存取 .name 屬性
+        textEl.textContent = colorDef?.name || '自訂/未知顏色';
+        textEl.style.color = safeColor;
     }
 
     this.openModal('modal-edit-muscle');
@@ -614,13 +628,17 @@ const SettingsApp = {
   selectEditColor(color, el) {
     document.getElementById('edit-muscle-color').value = color;
     document.querySelectorAll('#edit-color-palette .color-option').forEach(d => d.classList.remove('selected'));
-    el.classList.add('selected');
+    if (el) el.classList.add('selected');
 
+    // [Fix] 使用 Optional Chaining 防禦
     const def = COLOR_DEF_MAP.find(c => c.hex === color);
     const textEl = document.getElementById('edit-selected-color-name');
     if (textEl) {
-        textEl.textContent = def ? def.name : '自訂顏色';
-        textEl.style.color = color;
+        textEl.textContent = def?.name || '自訂顏色';
+        // 只有在顏色有效時才設定 style，避免污染 DOM
+        if (/^#([0-9A-F]{3}){1,2}$/i.test(color)) {
+            textEl.style.color = color;
+        }
     }
   },
 
@@ -703,13 +721,17 @@ const SettingsApp = {
   selectColor(color, el) {
     document.getElementById('muscle-color').value = color;
     document.querySelectorAll('.color-option').forEach(d => d.classList.remove('selected'));
-    el.classList.add('selected');
+    if (el) el.classList.add('selected');
     
+    // [Fix] 使用 Optional Chaining 防禦
     const def = COLOR_DEF_MAP.find(c => c.hex === color);
     const textEl = document.getElementById('add-selected-color-name');
     if (textEl) {
-        textEl.textContent = def ? def.name : '自訂顏色';
-        textEl.style.color = color;
+        textEl.textContent = def?.name || '自訂顏色';
+        // 只有在顏色有效時才設定 style
+        if (/^#([0-9A-F]{3}){1,2}$/i.test(color)) {
+            textEl.style.color = color;
+        }
     }
   },
 
@@ -805,7 +827,23 @@ const SettingsApp = {
       location.reload();
     }
   },
-
+  cleanOrphans() {
+    if (!window.AppStorage) return;
+    
+    if (confirm('此操作將掃描系統內部，並刪除「無效的殘留檔案」以釋放空間。\n(不會影響正常的顧客資料)\n\n確定要執行嗎？')) {
+        const result = window.AppStorage.vacuum();
+        if (result.success) {
+            if (result.removedCount > 0) {
+                alert(`掃描完成！\n共清除了 ${result.removedCount} 個殘留檔案，釋放了 ${result.freedKB} KB 空間。`);
+                this.updateStorageInfo(); // 立即更新空間顯示條
+            } else {
+                alert('掃描完成。系統很健康，沒有發現殘留檔案。');
+            }
+        } else {
+            alert('清理失敗: ' + result.error);
+        }
+    }
+  },
   // === Modal 控制 ===
   showAddAssessmentModal() {
     document.getElementById('form-add-assessment').reset();
@@ -903,6 +941,30 @@ const SettingsApp = {
 // 全域綁定與啟動
 window.SettingsApp = SettingsApp;
 
+// 更新裝置名稱 (前綴)
+window.updateDeviceName = () => {
+  const name = document.getElementById('p2p-device-name').value.trim();
+  const result = window.AppSyncManager.setDeviceName(name);
+  if (result.success) {
+    SettingsApp.showToast(`ID 已更新為: ${result.newId}`, 'success');
+    // 清空輸入框，讓使用者專注於下方的完整 ID
+    // document.getElementById('p2p-device-name').value = ''; // 選擇性：不清空可能體驗較好
+  } else {
+    alert(result.error);
+  }
+};
+
+// 複製完整 ID
+window.copyFullId = () => {
+  const idText = document.getElementById('p2p-full-id').textContent;
+  if (idText && idText !== '載入中...') {
+      navigator.clipboard.writeText(idText).then(() => {
+          SettingsApp.showToast('完整 ID 已複製', 'success');
+      }).catch(() => {
+          alert('複製失敗，請手動複製');
+      });
+  }
+};
 // 自動選色邏輯 (全域函式，供 HTML onchange 呼叫)
 window.autoSelectColor = (mode) => {
   // mode: 'add' or 'edit'
@@ -966,12 +1028,18 @@ window.showAddTemplateModal = () => SettingsApp.showAddTemplateModal();
 window.saveTemplate = (e) => SettingsApp.saveTemplate(e);
 window.showEditTemplateModal = (id) => SettingsApp.showEditTemplateModal(id);
 window.updateTemplate = (e) => SettingsApp.updateTemplate(e);
+window.cleanOrphans = () => SettingsApp.cleanOrphans();
 
-window.copyId = () => {
-  const el = document.getElementById('p2p-my-id');
-  el.select();
-  document.execCommand('copy');
-  SettingsApp.showToast('ID 已複製', 'success');
+window.copyFullId = () => {
+  const idText = document.getElementById('p2p-full-id').textContent;
+  
+  if (idText && idText !== '載入中...') {
+      navigator.clipboard.writeText(idText).then(() => {
+          SettingsApp.showToast('完整 ID 已複製', 'success');
+      }).catch(() => {
+          alert('複製失敗，請手動選取複製');
+      });
+  }
 };
 window.connectToPeer = () => {
   const targetId = document.getElementById('p2p-target-id').value.trim();
@@ -983,5 +1051,21 @@ window.pushSync = () => {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
-  SettingsApp.init();
+  const bootSettings = () => {
+    // 防止重複執行
+    if (SettingsApp.state.isInitialized) return;
+    
+    console.log('🚀 Booting SettingsApp via app-ready/flag...');
+    SettingsApp.init();
+    SettingsApp.state.isInitialized = true;
+  };
+
+  // 檢查 app.js 是否已經完成初始化
+  if (window.isAppReady) {
+    // 如果系統已經準備好 (Settings 載入較慢)，直接執行
+    bootSettings();
+  } else {
+    // 如果系統還沒好 (Settings 載入較快)，監聽 app-ready 事件
+    document.addEventListener('app-ready', bootSettings);
+  }
 });

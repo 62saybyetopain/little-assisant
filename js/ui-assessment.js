@@ -67,8 +67,8 @@ class BodyDiagram {
   }
 
   togglePart(partElement) {
+    if (!partElement || !partElement.dataset) return;
     const partName = partElement.dataset.part;
-
     if (!partName) return;
 
     if (this.selectedParts.has(partName)) {

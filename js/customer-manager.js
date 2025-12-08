@@ -41,7 +41,7 @@ class CustomerManager {
     else if (customerData.nickname.length > 20) {
       errors.push('暱稱最多 20 字');
     }
-    else if (!/^\d{3}$/.test(customerData.phoneLastThree)) {
+    else if (customerData.phoneLastThree && !/^\d{3}$/.test(customerData.phoneLastThree)) {
       errors.push('電話後三碼必須為 3 位數字');
     }
 
@@ -72,7 +72,11 @@ class CustomerManager {
       // 改為讀取索引
       const index = this.storage.loadCustomerIndex();
       // 按更新時間倒序
-      return index.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+      return index.sort((a, b) => {
+    const dateA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+    const dateB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+    return dateB - dateA;
+});
     } catch (error) {
       console.error('Get customer index error:', error);
       return [];

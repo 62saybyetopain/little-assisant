@@ -154,23 +154,33 @@
         
         <div class="settings-section">
           <div class="sync-card">
-            <h3>本機資訊</h3>
-            <p class="hint">將此 ID 告訴另一台設備以進行連線</p>
+            <h3>本機 ID 設定</h3>
+            <p class="hint">請輸入裝置名稱 (如: Taiwan)，系統將自動產生不重複代碼。</p>
+            
             <div class="id-display-group">
-              <input type="text" id="p2p-my-id" readonly class="code-input" value="初始化中...">
-              <button class="btn-secondary" onclick="copyId()">複製</button>
+              <input type="text" id="p2p-device-name" class="code-input" placeholder="例如: clinic_A" style="flex:1;">
+              <button class="btn-primary" onclick="updateDeviceName()">設定名稱</button>
             </div>
+
+            <div style="margin-top: 15px; padding: 10px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; display:flex; align-items:center; justify-content:space-between;">
+              <div>
+                <span style="color:#166534; font-weight:bold; font-size:14px; display:block;">您的完整 ID：</span>
+                <span id="p2p-full-id" style="font-family:monospace; font-size:18px; font-weight:bold; color:#15803d;">初始化中...</span>
+              </div>
+              <button class="btn-secondary" style="padding: 4px 12px; font-size: 14px;" onclick="copyFullId()">複製 ID</button>
+            </div>
+
             <div class="status-row">
-              狀態：<span id="p2p-status" class="status-badge disconnected">未連線</span>
+              連線狀態：<span id="p2p-status" class="status-badge disconnected">未連線</span>
             </div>
           </div>
 
           <div class="sync-card">
             <h3>連線到遠端</h3>
             <div class="form-group">
-              <label>輸入對方 ID：</label>
+              <label>輸入對方的完整 ID：</label>
               <div class="input-group">
-                <input type="text" id="p2p-target-id" placeholder="例如: client_abc12">
+                <input type="text" id="p2p-target-id" placeholder="例如: taipei_9a2b">
                 <button class="btn-primary" onclick="connectToPeer()">連線</button>
               </div>
             </div>
@@ -183,22 +193,60 @@
           </div>
         </div>
       </div>
+      </div>
       <div id="panel-system" class="tab-panel">
-        <div class="panel-header"><h2>資料備份與還原</h2></div>
+        <div class="panel-header"><h2>系統維護</h2></div>
         
         <div class="settings-section">
-          <div class="storage-usage">
+          <h3>資料備份與還原 (完整)</h3>
+          <div class="storage-usage" style="margin-bottom:15px;">
             <span class="label">儲存空間：</span>
             <div class="progress-bar"><div id="storage-progress" class="progress-fill" style="width: 0%"></div></div>
             <span class="usage-text" id="storage-text">計算中...</span>
           </div>
           
           <div class="action-buttons">
-            <button class="btn-secondary" onclick="exportAllData()">📦 完整匯出 (JSON)</button>
+            <button class="btn-secondary" onclick="exportAllData()">📦 完整備份 (JSON)</button>
             <button class="btn-secondary" onclick="importData()">📥 完整還原 (JSON)</button>
+            <button class="btn-warning" onclick="cleanOrphans()">🧹 清理殘留檔案 (GC)</button>
             <button class="btn-danger" onclick="clearAllData()">⚠️ 清空所有資料</button>
           </div>
         </div>
+
+        <hr class="divider" style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+
+        <div class="settings-section">
+          <h3>模組設定匯入/匯出 (取代模式)</h3>
+          <p class="hint" style="color:#666; font-size:14px; margin-bottom:15px;">
+            注意：匯入設定檔將會<b>完全覆蓋</b>現有的該類別設定，請謹慎使用。
+          </p>
+          
+          <div class="list-item" style="padding:10px 0; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;">
+              <div class="item-content"><b>評估動作 (Assessment Actions)</b></div>
+              <div class="item-actions" style="display:flex; gap:8px;">
+                  <button class="btn-secondary" style="padding:4px 8px; font-size:13px;" onclick="exportConfig('action')">匯出</button>
+                  <button class="btn-primary" style="padding:4px 8px; font-size:13px; background-color:#f59e0b; border-color:#f59e0b;" onclick="importConfig('action')">匯入取代</button>
+              </div>
+          </div>
+
+          <div class="list-item" style="padding:10px 0; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;">
+              <div class="item-content"><b>肌群標籤 (Muscle Tags)</b></div>
+              <div class="item-actions" style="display:flex; gap:8px;">
+                  <button class="btn-secondary" style="padding:4px 8px; font-size:13px;" onclick="exportConfig('muscle')">匯出</button>
+                  <button class="btn-primary" style="padding:4px 8px; font-size:13px; background-color:#f59e0b; border-color:#f59e0b;" onclick="importConfig('muscle')">匯入取代</button>
+              </div>
+          </div>
+
+          <div class="list-item" style="padding:10px 0; display:flex; justify-content:space-between; align-items:center;">
+              <div class="item-content"><b>服務模板 (Templates)</b></div>
+              <div class="item-actions" style="display:flex; gap:8px;">
+                  <button class="btn-secondary" style="padding:4px 8px; font-size:13px;" onclick="exportConfig('template')">匯出</button>
+                  <button class="btn-primary" style="padding:4px 8px; font-size:13px; background-color:#f59e0b; border-color:#f59e0b;" onclick="importConfig('template')">匯入取代</button>
+              </div>
+          </div>
+        </div>
+        
+        <input type="file" id="config-import-input" style="display:none" accept=".json">
       </div>
     </main>
   </div>

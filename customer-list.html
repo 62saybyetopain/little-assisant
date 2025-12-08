@@ -19,7 +19,41 @@
       z-index: 10;
       box-shadow: var(--shadow-sm);
     }
+    /* ===== 工具列 (排序/篩選) ===== */
+    .tool-bar {
+      padding: 10px 16px;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between; /* 若未來有其他按鈕可左右排開 */
+      align-items: center;
+      position: sticky;
+      top: 70px; /* 根據 search-container 高度調整，讓它跟著置頂 */
+      z-index: 9;
+    }
 
+    .sort-select {
+      padding: 6px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 20px;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-size: 14px;
+      outline: none;
+      cursor: pointer;
+      /* 移除預設箭頭樣式 (選用) */
+      -webkit-appearance: none; 
+      appearance: none;
+      background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23007CB2%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
+      background-repeat: no-repeat;
+      background-position: right .7em top 50%;
+      background-size: .65em auto;
+      padding-right: 2em; /* 為箭頭留空間 */
+    }
+
+    .sort-select:focus {
+      border-color: var(--primary-color);
+    }
     .search-box {
       position: relative;
       max-width: 768px;
@@ -179,6 +213,33 @@
     .form-row .form-group {
       flex: 1;
     }
+   /* ===== 遷移失敗警告橫幅 ===== */
+    .migration-alert {
+      background-color: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffeeba;
+      padding: 12px 16px;
+      margin: 10px 16px 0 16px; /* 放在工具列下方 */
+      border-radius: 8px;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      font-size: 14px;
+      line-height: 1.5;
+      animation: fadeIn 0.5s ease-in;
+    }
+    .migration-alert .icon {
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    .migration-alert strong {
+      display: block;
+      margin-bottom: 2px;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
   </style>
 </head>
 <body>
@@ -196,6 +257,22 @@
         ⚙️
       </button>
     </div>
+  </div>
+  <div class="tool-bar">
+    <select id="sort-select" class="sort-select">
+      <option value="newest">📅 依建檔時間 (新→舊)</option>
+      <option value="recent">🕒 依最近服務 (新→舊)</option>
+      <option value="frequent">🔥 依服務次數 (多→少)</option>
+    </select>
+    
+    <span id="list-count" style="font-size: 12px; color: #666;">載入中...</span>
+  </div>
+
+  <div class="customer-list" id="customer-list">
+    </div>
+
+  <div class="load-more-container" id="load-more-container">
+    <button class="btn-load-more" id="btn-load-more">載入更多...</button>
   </div>
 
   <div class="customer-list" id="customer-list">
@@ -288,41 +365,62 @@
       const els = {
         list: document.getElementById('customer-list'),
         searchInput: document.getElementById('search-input'),
+        sortSelect: document.getElementById('sort-select'), 
+        listCount: document.getElementById('list-count'),   
         addBtn: document.getElementById('add-customer-btn'),
         modal: document.getElementById('add-customer-modal'),
         modalClose: document.getElementById('modal-close-btn'),
         cancelBtn: document.getElementById('cancel-btn'),
-        form: document.getElementById('add-customer-form')
+        form: document.getElementById('add-customer-form'),
+        loadMoreContainer: document.getElementById('load-more-container'),
+        loadMoreBtn: document.getElementById('btn-load-more')
       };
 
-      // 3. 渲染列表函式
-      const renderList = (customers) => {
-        if (!customers || customers.length === 0) {
-          els.list.innerHTML = `
-            <div class="empty-state">
-              <div class="empty-state-icon">👥</div>
-              <h3 class="empty-state-title">尚無顧客資料</h3>
-              <p class="empty-state-description">點擊右下角「+」按鈕新增您的第一位顧客</p>
-            </div>
-          `;
-          return;
-        }
+      // 3. 狀態管理 (定義全域狀態)
+      const PAGE_SIZE = 30; // 每次載入 20 筆
+      let state = {
+        allData: [],        // 所有的資料 (已排序、已過濾)
+        displayedCount: 0,  // 目前已渲染的筆數
+        keyword: '',        // 目前搜尋關鍵字
+        sortBy: 'newest'    // 目前排序方式
+      };
 
-        els.list.innerHTML = customers.map(c => {
-          const tagsHtml = [
+      // 4. 輔助函式：排序邏輯
+      const sortCustomers = (customers, sortType) => {
+        return [...customers].sort((a, b) => {
+          switch (sortType) {
+            case 'newest': // 建檔由新到舊
+              return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+            case 'recent': // 最近服務
+              const dateA = new Date(a.stats?.lastVisit || a.updatedAt || 0);
+              const dateB = new Date(b.stats?.lastVisit || b.updatedAt || 0);
+              return dateB - dateA;
+            case 'frequent': // 服務次數
+              const countA = a.stats?.totalServices || 0;
+              const countB = b.stats?.totalServices || 0;
+              return countB - countA;
+            default:
+              return 0;
+          }
+        });
+      };
+
+      // 5. 輔助函式：生成單張卡片 HTML
+      const generateCardHtml = (c) => {
+        const tagsHtml = [
             ...(c.healthTags || []).slice(0, 2).map(t => `<span class="tag health">${t}</span>`),
             ...(c.personalityTags || []).slice(0, 2).map(t => `<span class="tag personality">${t}</span>`)
           ].join('');
 
-          const serviceCount = c.stats ? c.stats.totalServices : 0;
-          
-          return `
+        const serviceCount = c.stats ? c.stats.totalServices : 0;
+        
+        return `
             <div class="customer-card" onclick="window.location.href='customer-profile.html?id=${c.id}'">
               <div class="customer-header">
                 <div class="customer-name">
                   ${c.name} <span style="font-size:0.8em; color:#666; font-weight:normal">(${c.nickname || '-'})</span>
                 </div>
-                <div class="customer-phone">***${c.phoneLastThree}</div>
+                <div class="customer-phone">***${c.phoneLastThree || '---'}</div>
               </div>
               
               ${tagsHtml ? `<div class="customer-tags">${tagsHtml}</div>` : ''}
@@ -337,33 +435,135 @@
               </div>
             </div>
           `;
-        }).join('');
       };
 
-      // 4. 資料載入
+      // 6. 核心函式：批次渲染 (Load More 邏輯)
+      const renderBatch = (isAppend = false) => {
+        const total = state.allData.length;
+        
+        // 處理無資料狀態
+        if (total === 0) {
+           els.list.innerHTML = `
+            <div class="empty-state">
+              <div class="empty-state-icon">👥</div>
+              <h3 class="empty-state-title">尚無顧客資料</h3>
+              <p class="empty-state-description">點擊右下角「+」按鈕添加您的顧客資訊</p>
+            </div>
+          `;
+          els.loadMoreContainer.style.display = 'none';
+          return;
+        }
+
+        // 計算這一批要渲染的範圍
+        const start = state.displayedCount;
+        const end = Math.min(start + PAGE_SIZE, total);
+        const chunk = state.allData.slice(start, end);
+
+        // 生成 HTML
+        const html = chunk.map(generateCardHtml).join('');
+
+        if (isAppend) {
+          // 增量渲染 (點擊載入更多時)
+          els.list.insertAdjacentHTML('beforeend', html);
+        } else {
+          // 初始渲染 (搜尋或排序時)
+          els.list.innerHTML = html;
+          // 只有在非增量渲染時才回到頂部 (體驗較好)
+          if(start === 0) els.list.scrollTop = 0; 
+        }
+
+        // 更新計數器
+        state.displayedCount = end;
+
+        // 控制「載入更多」按鈕顯示
+        if (state.displayedCount < total) {
+          els.loadMoreContainer.style.display = 'block';
+          els.loadMoreBtn.textContent = `載入更多 (${state.displayedCount}/${total})`;
+        } else {
+          els.loadMoreContainer.style.display = 'none';
+        }
+      };
+
+      // 7. 資料載入流程
       const refreshData = () => {
         try {
-          const customers = window.AppCustomerManager.getAllCustomers();
-          renderList(customers);
+          // A. 獲取原始資料
+          let customers = window.AppCustomerManager.getAllCustomers();
+          
+          // 偵測遷移失敗狀態 -------------------------------------------
+          const migrationFailed = customers.some(c => c.status === 'migration_failed');
+          const alertContainer = document.getElementById('migration-alert-container');
+          
+          // 如果偵測到失敗，且警告還沒顯示過，就插入警告
+          if (migrationFailed) {
+              if (!alertContainer) {
+                  const alertHtml = `
+                    <div id="migration-alert-container" class="migration-alert">
+                        <span class="icon">⚠️</span>
+                        <div>
+                            <strong>系統儲存空間不足</strong>
+                            資料遷移暫時取消，目前運行於「相容模式」。<br>
+                            建議前往「系統設定」執行備份並清理空間。
+                        </div>
+                    </div>
+                  `;
+                  // 插入在工具列(tool-bar)的後面
+                  document.querySelector('.tool-bar').insertAdjacentHTML('afterend', alertHtml);
+              }
+          } else {
+              // 如果狀態恢復正常，移除警告
+              if (alertContainer) alertContainer.remove();
+          }
+          
+          // B. 搜尋過濾
+          if (state.keyword) {
+            customers = window.AppCustomerManager.searchCustomers(state.keyword);
+          }
+
+          // C. 執行排序
+          customers = sortCustomers(customers, state.sortBy);
+
+          // D. 更新狀態
+          state.allData = customers;
+          state.displayedCount = 0; // 重置已顯示數量
+          
+          // E. 更新右上角筆數顯示
+          if (els.listCount) els.listCount.textContent = `共 ${customers.length} 位`;
+
+          // F. 執行第一次渲染
+          renderBatch(false);
+
         } catch (e) {
           console.error('Load error:', e);
           window.showToast?.('讀取資料失敗', 'error');
         }
       };
 
-      // 5. 搜尋功能
+      // 8. 事件綁定
+      // 搜尋 (防抖動)
       const handleSearch = window.debounce((e) => {
-        const keyword = e.target.value.trim();
-        const results = window.AppCustomerManager.searchCustomers(keyword);
-        renderList(results);
+        state.keyword = e.target.value.trim();
+        refreshData();
       }, 300);
 
       els.searchInput.addEventListener('input', handleSearch);
 
-      // 6. Modal 操作
+      // 排序切換
+      els.sortSelect.addEventListener('change', (e) => {
+        state.sortBy = e.target.value;
+        refreshData();
+      });
+
+      // 載入更多按鈕
+      els.loadMoreBtn.addEventListener('click', () => {
+        renderBatch(true);
+      });
+
+      // 9. Modal 操作 
       const openModal = () => {
         els.modal.classList.add('modal-show');
-        els.form.querySelector('input[name="name"]').focus();
+        const firstInput = els.form.querySelector('input[name="name"]');
+        if(firstInput) firstInput.focus();
       };
 
       const closeModal = () => {
@@ -381,11 +581,10 @@
         if (e.target === els.modal) closeModal();
       });
 
-      // 7. 表單驗證與提交
+      // 10. 表單驗證與提交
       if (window.FormValidator) {
         const validator = new FormValidator('add-customer-form', {
           name: { required: true, maxLength: 50 },
-          // 根據您的需求，以下改為選填
           nickname: { required: false, maxLength: 20 },
           phoneLastThree: { required: false, pattern: /^(\d{3})?$/, patternMessage: '需為3位數字' }
         });
@@ -409,7 +608,7 @@
         };
       }
 
-      // 8. 首次執行
+      // 11. 啟動程式
       refreshData();
       
       // 檢查儲存空間
