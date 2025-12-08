@@ -176,13 +176,13 @@
 
     // ===== 初始化 =====
     document.addEventListener('DOMContentLoaded', () => {
-      setTimeout(() => {
+      console.log('🚀 顧客檔案頁面等待核心就緒...');
+      const bootPage = () => {
         if (!customerId) {
           showToast('無效的客戶 ID', 'error');
           setTimeout(() => window.location.href = 'customer-list.html', 1500);
           return;
         }
-        
         if (!window.AppCustomerManager || !window.AppRecordManager) {
              console.error('Managers not loaded');
              showToast('系統載入失敗，請重新整理', 'error');
@@ -191,7 +191,13 @@
 
         loadCustomerProfile();
         attachEventListeners();
-      }, 100);
+      };
+    //監聽 app-ready 事件
+      if (window.isAppReady) {
+        bootPage();
+      } else {
+        document.addEventListener('app-ready', bootPage);
+      }
     });
 
     // ===== 全域函式: 跳轉新增頁面 =====

@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="styles/main.css">
   <link rel="stylesheet" href="styles/settings.css">
 <style>
-    /* [Developer Fix] 針對 Modal 高度溢出與固定 Footer 的修正樣式 */
+    /* 針對 Modal 高度溢出與固定 Footer 的修正樣式 */
     
     /* 1. 設定 Modal 容器為 Flex Column，並限制最大高度 */
     .modal-content {
@@ -113,13 +113,6 @@
           <input type="search" id="assessment-search" placeholder="搜尋動作...">
         </div>
         <div id="assessment-list" class="settings-list"></div>
-        <div class="settings-section">
-            <h3>匯出/匯入</h3>
-            <div style="display:flex; gap:10px;">
-                <button class="btn-secondary" onclick="exportAssessments()">匯出 CSV</button>
-                <button class="btn-secondary" onclick="alert('請使用系統維護頁面的完整備份功能')">匯入 CSV</button>
-            </div>
-        </div>
       </div>
 
       <div id="panel-muscle" class="tab-panel">
@@ -193,7 +186,6 @@
           </div>
         </div>
       </div>
-      </div>
       <div id="panel-system" class="tab-panel">
         <div class="panel-header"><h2>系統維護</h2></div>
         
@@ -224,7 +216,8 @@
           <div class="list-item" style="padding:10px 0; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;">
               <div class="item-content"><b>評估動作 (Assessment Actions)</b></div>
               <div class="item-actions" style="display:flex; gap:8px;">
-                  <button class="btn-secondary" style="padding:4px 8px; font-size:13px;" onclick="exportConfig('action')">匯出</button>
+                  <button class="btn-secondary" style="padding:4px 8px; font-size:13px;" onclick="exportAssessments()">匯出 CSV</button>
+                  <button class="btn-secondary" style="padding:4px 8px; font-size:13px;" onclick="exportConfig('action')">匯出 JSON</button>
                   <button class="btn-primary" style="padding:4px 8px; font-size:13px; background-color:#f59e0b; border-color:#f59e0b;" onclick="importConfig('action')">匯入取代</button>
               </div>
           </div>

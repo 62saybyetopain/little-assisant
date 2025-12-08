@@ -354,6 +354,10 @@
     document.addEventListener('DOMContentLoaded', () => {
       console.log('🚀 顧客列表頁面初始化...');
 
+      // 定義初始化函式
+      const bootPage = () => {
+        console.log('🚀 核心已就緒，開始初始化顧客列表...');
+
       // 1. 檢查依賴
       if (!window.AppCustomerManager) {
         console.error('❌ CustomerManager 未初始化');
@@ -377,7 +381,7 @@
       };
 
       // 3. 狀態管理 (定義全域狀態)
-      const PAGE_SIZE = 30; // 每次載入 20 筆
+      const PAGE_SIZE = 30; 
       let state = {
         allData: [],        // 所有的資料 (已排序、已過濾)
         displayedCount: 0,  // 目前已渲染的筆數
@@ -490,7 +494,7 @@
           // A. 獲取原始資料
           let customers = window.AppCustomerManager.getAllCustomers();
           
-          // 偵測遷移失敗狀態 -------------------------------------------
+          // 偵測遷移失敗狀態 
           const migrationFailed = customers.some(c => c.status === 'migration_failed');
           const alertContainer = document.getElementById('migration-alert-container');
           
@@ -615,6 +619,13 @@
       const storageWarning = window.AppStorage.checkStorageWarning();
       if (storageWarning) {
         window.showToast?.(storageWarning.message, 'warning', 5000);
+      }
+    });
+      //監聽 app-ready 事件，確保依賴已載入
+      if (window.isAppReady) {
+        bootPage();
+      } else {
+        document.addEventListener('app-ready', bootPage);
       }
     });
   </script>

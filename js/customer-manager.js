@@ -70,7 +70,7 @@ class CustomerManager {
   getAllCustomers() {
     try {
       // 改為讀取索引
-      const index = this.storage.loadCustomerIndex();
+      const index = this.storage.loadCustomerIndex()|| [];
       // 按更新時間倒序
       return index.sort((a, b) => {
     const dateA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;

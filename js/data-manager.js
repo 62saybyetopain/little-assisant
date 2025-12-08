@@ -559,18 +559,23 @@ class TemplateManager {
 }
 
 // ================================================================
-// 5. DataExportService - 資料匯出匯入服務
+// 5. DataExportService - 資料匯出匯入服務 (v4.0 Unified CSV)
 // ================================================================
-
 class DataExportService {
   constructor() {
     this.storage = window.AppStorage;
+    // 定義 12 個固定欄位
+    this.CSV_HEADERS = [
+      "DataType", "ID", "Name", "Category_Or_Symptom", "BodyParts", 
+      "Description", "Tpl_Complaints", "Tpl_Findings", "Tpl_Treatments", 
+      "Tpl_Recommendations", "Rel_MuscleIDs", "Rel_ActionIDs"
+    ];
   }
 
   exportAllData() {
     try {
       const data = {
-        version: '3.1',
+        version: '4.0',
         exportedAt: new Date().toISOString(),
         // 核心設定
         tags: this.storage.load('tags') || [],
@@ -601,26 +606,6 @@ class DataExportService {
     } catch (error) { return { success: false, error: error.message }; }
   }
 
-  exportAssessmentsToCSV() {
-    try {
-        const actions = this.storage.load('assessmentActions') || [];
-        if (actions.length === 0) return { success: false, error: '無資料可匯出' };
-        
-        const headers = ['id', 'name', 'bodyPart', 'description'];
-        const escapeCSV = (field) => {
-            if (field === null || field === undefined) return '""'; 
-            let stringValue = Array.isArray(field) ? field.join('|') : String(field);
-            stringValue = stringValue.replace(/"/g, '""');
-            return `"${stringValue}"`;
-        };
-
-        const rows = actions.map(a => 
-            [escapeCSV(a.id), escapeCSV(a.name), escapeCSV(a.bodyPart), escapeCSV(a.description)].join(',')
-        );
-        const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\n');
-        return { success: true, csv: csvContent };
-    } catch (e) { return { success: false, error: e.message }; }
-  }
 
   /**
    * 匯入資料 (含回滾機制)
@@ -641,7 +626,7 @@ class DataExportService {
     try {
       if (!jsonData.version) throw new Error('檔案格式錯誤');
 
-      // [P0 關鍵防護] 檢查資料完整性
+      // 檢查資料完整性
       // 如果匯入包中有顧客索引，但卻完全沒有詳細資料，視為「壞檔」或「傳輸不全」
       const hasIndex = jsonData.customerIndex && jsonData.customerIndex.length > 0;
       const hasDetails = jsonData.customerDetails && Object.keys(jsonData.customerDetails).length > 0;
@@ -680,46 +665,189 @@ class DataExportService {
       return { success: false, error: error.message };
     }
   }
-/**
-   *匯出特定模組設定 (CSV/JSON)
-   * type: 'action' | 'muscle' | 'template'
-   */
-  exportConfig(type) {
-      let data = [];
-      let filename = '';
-      
-      if (type === 'action') {
-          data = this.storage.load('assessmentActions') || [];
-          filename = 'assessments.json';
-      } else if (type === 'muscle') {
-          data = this.storage.load('tags') || [];
-          filename = 'muscle_tags.json';
-      } else if (type === 'template') {
-          data = this.storage.load('serviceTemplates') || [];
-          filename = 'templates.json';
-      }
+// === 統一設定檔 CSV 匯出 ===
+  
+  exportUnifiedConfigCSV() {
+    try {
+      const rows = [];
+      // 加入標題列 (含防呆註解)
+      rows.push(["# DO_NOT_CHANGE_HEADER", ...this.CSV_HEADERS].join(','));
 
-      return { success: true, data: JSON.stringify(data, null, 2), filename };
+      const escape = (val) => {
+        if (val === null || val === undefined) return '""';
+        let str = String(val).replace(/"/g, '""'); // 轉義雙引號
+        return `"${str}"`;
+      };
+
+      // 1. 處理肌群標籤 (TAG)
+      const tags = this.storage.load('tags') || [];
+      tags.forEach(t => {
+        rows.push([
+          '""',
+          '"TAG"', // DataType
+          escape(t.id),
+          escape(t.name),
+          escape(t.category), // Category_Or_Symptom
+          escape(t.relatedBodyParts ? t.relatedBodyParts.join('|') : ''), // BodyParts
+          escape(t.description || ''), // Description
+          '""','""','""','""','""','""' // Template 欄位留空
+        ].join(','));
+      });
+
+      // 2. 處理評估動作 (ACTION)
+      const actions = this.storage.load('assessmentActions') || [];
+      actions.forEach(a => {
+        const bp = Array.isArray(a.bodyPart) ? a.bodyPart.join('|') : (a.bodyPart || '');
+        rows.push([
+          '""',
+          '"ACTION"',
+          escape(a.id),
+          escape(a.name),
+          escape(a.bodyPart), // Category_Or_Symptom (借用)
+          escape(bp), // BodyParts
+          escape(a.description || ''),
+          '""','""','""','""','""','""'
+        ].join(','));
+      });
+
+      // 3. 處理服務模板 (TEMPLATE)
+      const templates = this.storage.load('serviceTemplates') || [];
+      templates.forEach(t => {
+        const ti = t.textItems || {};
+        const toStr = (arr) => Array.isArray(arr) ? arr.join('|') : (arr || '');
+        
+        rows.push([
+          '""',
+          '"TEMPLATE"',
+          escape(t.id),
+          escape(t.name),
+          escape(t.symptomTag || ''), // Category_Or_Symptom
+          escape(t.relatedBodyParts ? t.relatedBodyParts.join('|') : ''),
+          '""', // Description 留空
+          escape(toStr(ti.complaints)),
+          escape(toStr(ti.findings)),
+          escape(toStr(ti.treatments)),
+          escape(toStr(ti.recommendations)),
+          escape(t.relatedMuscles ? t.relatedMuscles.join('|') : ''),
+          escape(t.relatedAssessments ? t.relatedAssessments.join('|') : '')
+        ].join(','));
+      });
+
+      const csvContent = '\uFEFF' + rows.join('\n'); // 加入 BOM
+      return { success: true, csv: csvContent, filename: 'system_config_unified.csv' };
+
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
   }
 
-  /**
-   * 匯入並取代特定模組設定
-   */
-  importConfig(type, jsonData) {
-      try {
-          if (!Array.isArray(jsonData)) throw new Error('格式錯誤：必須是陣列');
-          
-          let key = '';
-          if (type === 'action') key = 'assessmentActions';
-          else if (type === 'muscle') key = 'tags';
-          else if (type === 'template') key = 'serviceTemplates';
-          
-          // 直接覆蓋 (Replace)
-          this.storage.save(key, jsonData, { source: 'local' });
-          return { success: true };
-      } catch (e) {
-          return { success: false, error: e.message };
+  // === 統一設定檔 CSV 匯入 ===
+
+  importUnifiedConfigCSV(csvContent) {
+    console.group('📥 執行統一設定匯入...');
+    try {
+      const lines = csvContent.split(/\r?\n/).filter(line => line.trim() !== '');
+      if (lines.length < 2) throw new Error('檔案內容為空');
+
+      // 1. 驗證標題列
+      const headerLine = lines[0];
+      const headers = this._parseCSVLine(headerLine);
+      
+      // 寬鬆檢查：只要包含關鍵欄位即可
+      if (!headers.includes('DataType') || !headers.includes('ID') || !headers.includes('Rel_MuscleIDs')) {
+          throw new Error('CSV 格式錯誤：標題列欄位不符，請確認使用正確的匯出檔案。');
       }
+
+      // 2. 解析資料並分類
+      const parsedData = { tags: [], actions: [], templates: [] };
+      
+      for (let i = 1; i < lines.length; i++) {
+        const cols = this._parseCSVLine(lines[i]);
+        if (cols.length < 2) continue;
+
+        // cols[0] 是註解, cols[1] 是 DataType, cols[2] 是 ID...
+        const type = cols[1]; 
+        const id = cols[2];
+        const name = cols[3];
+        
+        if (!type || !id || !name) continue;
+
+        const bodyParts = cols[5] ? cols[5].split('|').filter(x=>x) : [];
+
+        if (type === 'TAG') {
+            parsedData.tags.push({
+                id, name, 
+                category: cols[4] || 'muscleGroup',
+                relatedBodyParts: bodyParts,
+                description: cols[6] || '',
+                isCustom: true, usageCount: 0
+            });
+        } else if (type === 'ACTION') {
+            parsedData.actions.push({
+                id, name,
+                bodyPart: bodyParts, // 優先使用 BodyParts 欄位
+                description: cols[6] || '',
+                isCustom: true
+            });
+        } else if (type === 'TEMPLATE') {
+            const splitLines = (str) => str ? str.split('|') : [];
+            parsedData.templates.push({
+                id, name,
+                symptomTag: cols[4] || '',
+                relatedBodyParts: bodyParts,
+                textItems: {
+                    complaints: splitLines(cols[7]),
+                    findings: splitLines(cols[8]),
+                    treatments: splitLines(cols[9]),
+                    recommendations: splitLines(cols[10])
+                },
+                relatedMuscles: cols[11] ? cols[11].split('|') : [],
+                relatedAssessments: cols[12] ? cols[12].split('|') : []
+            });
+        }
+      }
+
+      // 3. 原子性寫入 (Atomic Write)
+      const opts = { source: 'local' }; 
+      
+      this.storage.save('tags', parsedData.tags, opts);
+      this.storage.save('assessmentActions', parsedData.actions, opts);
+      this.storage.save('serviceTemplates', parsedData.templates, opts);
+
+      console.log(`✅ 匯入完成：Tags(${parsedData.tags.length}), Actions(${parsedData.actions.length}), Templates(${parsedData.templates.length})`);
+      console.groupEnd();
+      return { success: true, stats: parsedData };
+
+    } catch (e) {
+      console.error(e);
+      console.groupEnd();
+      return { success: false, error: e.message };
+    }
+  }
+
+  // 簡易 CSV 解析器
+  _parseCSVLine(text) {
+    const ret = [];
+    let startValueIndex = 0;
+    let quote = false;
+    for (let i = 0; i < text.length; i++) {
+        const cc = text[i];
+        if (cc === '"') { quote = !quote; }
+        else if (cc === ',' && !quote) {
+            let val = text.substring(startValueIndex, i).trim();
+            if (val.startsWith('"') && val.endsWith('"')) {
+                val = val.slice(1, -1).replace(/""/g, '"');
+            }
+            ret.push(val);
+            startValueIndex = i + 1;
+        }
+    }
+    let val = text.substring(startValueIndex).trim();
+    if (val.startsWith('"') && val.endsWith('"')) {
+        val = val.slice(1, -1).replace(/""/g, '"');
+    }
+    ret.push(val);
+    return ret;
   }
 }
 // ================================================================

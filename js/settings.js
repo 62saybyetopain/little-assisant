@@ -153,6 +153,8 @@ const SettingsApp = {
   },
 
   init() {
+ //幽靈元素防護：如果當前頁面不是設定頁 (沒有 .settings-main 容器)，直接退出
+   if (!document.querySelector('.settings-main')) return;
     console.log('🚀 SettingsApp initializing (Defensive Mode)...');
     
     // 檢查依賴
@@ -165,6 +167,7 @@ const SettingsApp = {
 
     // 1. 初始化隱藏檔案輸入框 (for Import)
     this.createHiddenFileInput();
+    this.createUnifiedImportInput();
 
     // 2. 渲染複選框群組 (加入防禦)
     this.renderCheckboxes('muscle-bodyparts', 'muscle-part');
@@ -784,7 +787,42 @@ const SettingsApp = {
   importData() {
     document.getElementById('import-file-input').click();
   },
+// === 一設定檔匯出/匯入 ===
+  
+  exportUnifiedConfig() {
+    const result = window.AppDataExportService.exportUnifiedConfigCSV();
+    if (result.success) {
+      this.downloadFile(result.csv, result.filename, 'text/csv');
+    } else {
+      alert('匯出失敗: ' + result.error);
+    }
+  },
 
+  importUnifiedConfig() {
+    const input = document.getElementById('unified-import-input');
+    if (input) input.click();
+  },
+
+  handleUnifiedImport(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const csv = ev.target.result;
+      // 呼叫 DataManager 中的 importUnifiedConfigCSV
+      const result = window.AppDataExportService.importUnifiedConfigCSV(csv);
+      
+      if (result.success) {
+        alert(`匯入成功！\n已更新：\n肌群標籤: ${result.stats.tags.length} 筆\n評估動作: ${result.stats.actions.length} 筆\n服務模板: ${result.stats.templates.length} 筆`);
+        location.reload(); // 重新整理頁面以套用變更
+      } else {
+        alert('匯入失敗: ' + result.error);
+      }
+      e.target.value = ''; // 重置 input
+    };
+    reader.readAsText(file);
+  },
   handleFileImport(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -819,7 +857,17 @@ const SettingsApp = {
       document.body.appendChild(input);
     }
   },
-
+  createUnifiedImportInput() {
+    if (!document.getElementById('unified-import-input')) {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.id = 'unified-import-input';
+      input.style.display = 'none';
+      input.accept = '.csv';
+      input.onchange = (e) => this.handleUnifiedImport(e);
+      document.body.appendChild(input);
+    }
+  },
   clearAllData() {
     if (confirm('【嚴重警告】\n此操作將永久刪除所有資料且無法復原！\n確定要清空嗎？')) {
       localStorage.clear();
@@ -965,6 +1013,7 @@ window.copyFullId = () => {
       });
   }
 };
+
 // 自動選色邏輯 (全域函式，供 HTML onchange 呼叫)
 window.autoSelectColor = (mode) => {
   // mode: 'add' or 'edit'
@@ -1030,17 +1079,11 @@ window.showEditTemplateModal = (id) => SettingsApp.showEditTemplateModal(id);
 window.updateTemplate = (e) => SettingsApp.updateTemplate(e);
 window.cleanOrphans = () => SettingsApp.cleanOrphans();
 
-window.copyFullId = () => {
-  const idText = document.getElementById('p2p-full-id').textContent;
-  
-  if (idText && idText !== '載入中...') {
-      navigator.clipboard.writeText(idText).then(() => {
-          SettingsApp.showToast('完整 ID 已複製', 'success');
-      }).catch(() => {
-          alert('複製失敗，請手動選取複製');
-      });
-  }
-};
+//綁定統一匯出入接口
+window.exportUnifiedConfig = () => SettingsApp.exportUnifiedConfig();
+window.importUnifiedConfig = () => SettingsApp.importUnifiedConfig();
+
+
 window.connectToPeer = () => {
   const targetId = document.getElementById('p2p-target-id').value.trim();
   if (!targetId) return alert('請輸入對方 ID');
