@@ -1,7 +1,6 @@
 /**
  * service-record.css - 步驟導航與表單樣式
- * 版本：v1.0
- * 建立日期：2024-12-20
+ * 版本：v1.1
  * 
  * 主要元件：
  * - 步驟導航指示器
@@ -118,7 +117,7 @@ body {
   width: calc(100% - 80px);
   height: 2px;
   background-color: var(--border-light);
-  z-index: -1;
+  z-index: var(--z-negative);
   transition: background-color var(--transition-base);
 }
 
@@ -553,7 +552,7 @@ textarea:invalid ~ .form-error {
   position: fixed;
   top: var(--spacing-lg);
   right: var(--spacing-lg);
-  z-index: 1000;
+  z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);

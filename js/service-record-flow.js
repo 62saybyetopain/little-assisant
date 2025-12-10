@@ -1,12 +1,13 @@
 /**
  * service-record-flow.js - 流程控制層
- * 版本：v2.1
+ * 版本：v2.4 
  * 職責：
  * - 控制服務紀錄的五步驟流程
  * - 管理資料暫存與驗證
  * - 對接 UI 層與 Data 層
  * - 處理模板自動觸發與套用
  * V2.2修正：UI閃爍、儲存鎖死問題、未存檔攔截
+ * V2.3 XSS
  */
 
 const SERVICE_RECORD_STEPS = {
@@ -15,35 +16,42 @@ const SERVICE_RECORD_STEPS = {
     stepKey: 'chiefComplaint',
     title: '主訴',
     description: '描述客戶主要的症狀或問題',
-    requiredFields: [] 
+    // [FormValidator] 定義驗證規則
+    validationRules: {
+      complaint: { required: false, requiredMessage: '主訴內容不可為空' }
+    }
   },
   SYMPTOMS: {
     stepNumber: 2,
     stepKey: 'symptoms',
     title: '症狀評估',
     description: '詳細記錄症狀、肌群標籤與評估',
-    requiredFields: [] 
+    validationRules: {} // Step 2 為複雜 UI，不使用 FormValidator
   },
   ASSESSMENT: {
     stepNumber: 3,
     stepKey: 'assessment',
     title: '評估結果',
     description: '整理評估結果與初步診斷',
-    requiredFields: [] 
+    validationRules: {
+      findings: { required: false, requiredMessage: '請輸入初步診斷與發現' }
+    }
   },
   TREATMENT: {
     stepNumber: 4,
     stepKey: 'treatment',
     title: '處理方案',
     description: '建議治療方案與處理方式',
-    requiredFields: [] 
+    validationRules: {
+      'treatment-plan': { required: false, requiredMessage: '請輸入治療計畫' }
+    }
   },
   FEEDBACK: {
     stepNumber: 5,
     stepKey: 'feedback',
     title: '客戶反饋',
     description: '記錄客戶反應與後續建議',
-    requiredFields: [] 
+    validationRules: {} // 反饋為選填
   }
 };
 
@@ -54,7 +62,8 @@ class ServiceRecordFlow {
     this.customerId = null;
     this.recordId = null;
     this.isLocked = false; 
-    this.stepContainers = new Map(); 
+    this.stepContainers = new Map();
+    this.stepValidators = new Map(); 
 
 // 模板相關暫存
     this.currentTemplateCandidates = [];
@@ -301,6 +310,9 @@ class ServiceRecordFlow {
   }
 
   async initializeStepUI(stepNumber) {
+    // [FormValidator] 初始化該步驟的驗證器
+    this.initStepValidator(stepNumber);
+
     switch (stepNumber) {
       case 1: 
         this.initializeChiefComplaintUI();
@@ -317,6 +329,24 @@ class ServiceRecordFlow {
       case 5: 
         this.initializeFeedbackUI();
         break;
+    }
+  }
+
+  // [FormValidator] 初始化驗證器實例
+  initStepValidator(stepNumber) {
+    if (this.stepValidators.has(stepNumber)) return; // 已初始化過
+
+    const stepConfig = Object.values(SERVICE_RECORD_STEPS).find(s => s.stepNumber === stepNumber);
+    if (!stepConfig || !stepConfig.validationRules || Object.keys(stepConfig.validationRules).length === 0) return;
+
+    // 尋找容器 ID (HTML 中需對應設置 id="step-form-X")
+    const formId = `step-form-${stepNumber}`;
+    const formEl = document.getElementById(formId);
+
+    if (formEl && window.FormValidator) {
+      const validator = new FormValidator(formId, stepConfig.validationRules);
+      this.stepValidators.set(stepNumber, validator);
+      console.log(`Validator initialized for step ${stepNumber}`);
     }
   }
 
@@ -350,15 +380,19 @@ class ServiceRecordFlow {
 
     container.innerHTML = selectedTags.map(tag => {
         // 從 ID 找名稱 (兼容 tag 為物件或 ID 字串)
-        const tagName = typeof tag === 'string' ? this.getTagNameById(tag) : tag.name;
+        const rawTagName = typeof tag === 'string' ? this.getTagNameById(tag) : tag.name;
         const tagId = typeof tag === 'string' ? tag : tag.id;
+        
+        // XSS 防護：轉義顯示名稱
+        const safeTagName = window.escapeHtml(rawTagName);
+        const safeTagId = window.escapeHtml(tagId);
         
         return `
             <div class="palpation-chip" 
-                 onclick="window.appServiceRecordFlow.openPalpationModal('${tagId}', '${tagName}')"
+                 onclick="window.appServiceRecordFlow.openPalpationModal('${safeTagId}', '${safeTagName}')"
                  style="background: white; border: 1px solid #cbd5e1; border-radius: 16px; padding: 6px 12px; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s;">
                 <span style="width: 8px; height: 8px; background: #3b82f6; border-radius: 50%; display: inline-block;"></span>
-                ${tagName}
+                ${safeTagName}
             </div>
         `;
     }).join('');
@@ -460,6 +494,22 @@ class ServiceRecordFlow {
     if (nsInput) nsInput.value = this.tempRecord.steps.feedback.nextSteps || '';
   }
   async validateCurrentStep() {
+    // 1. 如果該步驟有設定 Validator，優先使用 Validator 檢查
+    const validator = this.stepValidators.get(this.currentStep);
+    if (validator) {
+      const isValid = validator.validateAll();
+      if (!isValid) {
+        // FormValidator 會自動顯示紅框與錯誤訊息，這裡只需中斷流程
+        if(window.showToast) window.showToast('請檢查必填欄位', 'warning');
+        return false;
+      }
+    }
+
+    // 2. Step 2 (Body Diagram) 特殊檢查
+    if (this.currentStep === 2) {
+        }
+    }
+
     return true; 
   }
 
@@ -667,7 +717,7 @@ class ServiceRecordFlow {
 
         el.innerHTML = arr.map((text, idx) => `
             <label class="checkbox-item">
-                <input type="checkbox" checked value="${this._escape(text)}"> ${this._escape(text)}
+                <input type="checkbox" checked value="${window.escapeHtml(text)}"> ${window.escapeHtml(text)}
             </label>
         `).join('');
     };
@@ -704,7 +754,7 @@ class ServiceRecordFlow {
 
         el.innerHTML = items.map(item => `
             <label class="checkbox-item">
-                <input type="checkbox" checked value="${item.id}" data-type="struct"> ${this._escape(item.name)}
+                <input type="checkbox" checked value="${item.id}" data-type="struct"> ${window.escapeHtml(item.name)}
             </label>
         `).join('');
     };
@@ -772,10 +822,6 @@ class ServiceRecordFlow {
       this.collectStepData(this.currentStep);
   }
 
-  _escape(str) {
-      if (!str) return '';
-      return str.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  }
   onMuscleTagsUpdated(detail) {
     this.tempRecord.steps.symptoms.muscleTags = detail.selectedTags || [];
     this.markStepDirty(2);

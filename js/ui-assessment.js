@@ -1,5 +1,5 @@
 /**
- * ui-assessment.js - 互動層模組 (v2.0 修正版)
+ * ui-assessment.js - 互動層模組 (v2.1 修正版)
  * 職責：
  * - 管理人體圖示互動（BodyDiagram）
  * - 智能篩選肌群標籤（MuscleTagSelector）
@@ -573,6 +573,6 @@ window.dismissHint = function(hintId) {
   if (hint) hint.style.display = 'none';
 };
 
-// 初始化全域實例
-window.AppUIAssessment = new UIAssessment();
-window.appUIAssessment = window.AppUIAssessment;
+// 移除自動初始化，改由需要的頁面自行實例化
+// 確保類別可被全域存取
+window.UIAssessment = UIAssessment;

@@ -92,7 +92,35 @@ class SyncManager {
   // 主動連線到目標 ID
   connectTo(remoteId) {
     if (!this.peer) return;
+    
+    // UI 提示：開始連線
+    if (window.showToast) window.showToast('正在嘗試連線...', 'info');
+
     const conn = this.peer.connect(remoteId);
+    
+    // [新增] 設定連線逾時計時器 (10秒)
+    const timeoutTimer = setTimeout(() => {
+        // 如果 10 秒後尚未標記為已連線
+        if (!this.isConnected) {
+            console.warn('⚠️ [P2P] Connection timed out (10s)');
+            conn.close(); // 強制關閉嘗試中的連線
+            
+            // 更新 UI 為錯誤狀態
+            this.updateUIStatus('error', '連線逾時');
+            if (window.showToast) window.showToast('連線逾時 (10秒)，請檢查網路或 ID 是否正確', 'error');
+        }
+    }, 10000);
+
+    // 當連線成功開啟時，清除計時器
+    conn.on('open', () => {
+        clearTimeout(timeoutTimer);
+    });
+    
+    // 當發生錯誤時，也要清除計時器 (避免重複報錯)
+    conn.on('error', () => {
+        clearTimeout(timeoutTimer);
+    });
+
     this.setupConnection(conn);
   }
 
@@ -105,8 +133,12 @@ class SyncManager {
       console.log('✅ [P2P] 連線成功!');
       this.updateUIStatus('connected', conn.peer);
       
-      // 連線建立後，發送握手確認
-      this.send({ type: this.MSG_TYPES.HANDSHAKE, message: 'Connected' });
+      //連線建立後，發送握手確認 (含本機時間戳記)
+      this.send({ 
+          type: this.MSG_TYPES.HANDSHAKE, 
+          message: 'Connected',
+          timestamp: Date.now() 
+      });
     });
 
     conn.on('data', (data) => {
@@ -134,6 +166,25 @@ class SyncManager {
 
     switch (payload.type) {
       case this.MSG_TYPES.HANDSHAKE:
+        // 時間同步檢查
+        if (payload.timestamp) {
+            const timeDiff = Math.abs(Date.now() - payload.timestamp);
+            
+            // 若誤差超過 60 秒
+            if (timeDiff > 60000) { 
+                const diffSec = Math.round(timeDiff / 1000);
+                const msg = `⚠️ 警告：雙方設備時間相差約 ${diffSec} 秒，可能導致同步判斷錯誤`;
+                
+                console.warn(`[Sync] Time drift detected: ${diffSec}s`);
+                
+                // 改用非侵入式 Toast 提示 (顯示 10秒)
+                if (typeof window.showToast === 'function') {
+                    window.showToast(msg, 'warning', 10000);
+                }
+                // 移除 alert 與 conn.close()，允許連線繼續
+            }
+        }
+        
         console.log('🤝 握手成功');
         break;
 
@@ -147,18 +198,48 @@ class SyncManager {
     }
   }
 
-  // 處理全量匯入
+  // 處理全量匯入：改走智慧分析流程
   handleFullSyncImport(jsonData) {
-    if (confirm('收到遠端同步請求，確定要覆蓋本機資料嗎？')) {
-      if (window.AppDataExportService) {
-        const result = window.AppDataExportService.importData(jsonData, { source: 'remote' });
-        if (result.success) {
-          alert('同步成功！');
-          location.reload();
-        } else {
-          alert('同步失敗: ' + result.error);
-        }
+    // 檢查依賴是否存在
+    if (!window.AppDataExportService || !window.SettingsApp) {
+      console.error('Core modules missing');
+      if (window.showToast) window.showToast('系統模組未載入，無法執行同步', 'error');
+      return;
+    }
+
+    try {
+      console.log('🔄 P2P 接收到資料，開始分析...');
+      
+      // 1. 呼叫 DataManager 進行分析 (不寫入)
+      // 需要先標準化資料 (確保格式正確)
+      let normalizedData = jsonData;
+      if (window.AppDataExportService.normalizeImportData) {
+          normalizedData = window.AppDataExportService.normalizeImportData(jsonData);
       }
+      
+      const analysis = window.AppDataExportService.analyzeImport(normalizedData);
+
+      // 2. 判斷是否有變動
+      const hasChanges = analysis.new.length > 0 || analysis.newer.length > 0 || analysis.older.length > 0;
+
+      if (!hasChanges) {
+          window.SettingsApp.showToast('同步完成：資料已是最新，無需更新', 'success');
+          return;
+      }
+
+      // 3. 呼叫 SettingsApp 顯示決策視窗 (交由人類決定)
+      // 注意：這裡我們直接打開設定頁的 Modal，如果使用者當前不在設定頁，可能需要跳轉或處理
+      if (window.SettingsApp.showImportDecisionModal) {
+          // 如果當前不是設定頁，可以考慮跳轉，或者假設使用者正在操作同步介面
+          // 這裡直接呼叫，前提是 settings.js 已載入且 DOM 存在
+          window.SettingsApp.showImportDecisionModal(analysis, normalizedData);
+      } else {
+          alert('UI 介面尚未就緒，無法顯示決策視窗');
+      }
+
+    } catch (err) {
+      console.error('Sync Analysis Failed:', err);
+      if (window.showToast) window.showToast(`同步分析失敗: ${err.message}`, 'error');
     }
   }
 
@@ -182,7 +263,10 @@ class SyncManager {
 
   // 觸發全量同步 (將本機資料推送到對方)
   pushFullSync() {
-    if (!this.isConnected) return alert('尚未連線，無法推送資料');
+    if (!this.isConnected) {
+    if (window.showToast) window.showToast('尚未連線，無法推送資料', 'warning');
+    return;
+}
     
     // 使用 storage.js 提供的 exportAllData
     const exportDataJson = window.AppStorage.exportAllData();
@@ -192,7 +276,7 @@ class SyncManager {
       type: this.MSG_TYPES.FULL_SYNC,
       data: exportData
     });
-    alert('已發送全量資料，請在對方設備確認。');
+    if (window.showToast) window.showToast('已發送全量資料，請在對方設備確認', 'success');
   }
 
   // 廣播單筆更新 (供 storage.js 呼叫)

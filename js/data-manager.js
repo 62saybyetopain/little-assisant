@@ -560,7 +560,7 @@ class TemplateManager {
 }
 
 // ================================================================
-// 5. DataExportService - 資料匯出匯入服務 (v4.0 Unified CSV)
+// 5. DataExportService - 資料匯出匯入服務 (v4.1 Unified CSV)
 // ================================================================
 class DataExportService {
   constructor() {
@@ -607,226 +607,331 @@ class DataExportService {
     } catch (error) { return { success: false, error: error.message }; }
   }
 
+  // ==========================================
+  //顧客資料 JSON 專用邏輯 
+  // ==========================================
+
+  exportCustomerJSON() {
+    try {
+      // 匯出一個乾淨的陣列，不包含系統設定，只包含顧客與其病歷
+      const index = this.storage.load('customerIndex') || [];
+      // 讀取所有顧客詳細資料 (包含服務紀錄)
+      const customers = index.map(idx => this.storage.load(`customer_${idx.id}`)).filter(Boolean);
+      
+      return { 
+          success: true, 
+          data: customers, // 直接給陣列，方便人類編輯 (如 VS Code)
+          filename: `customers_full_${new Date().toISOString().slice(0,10)}.json` 
+      };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  }
 
   /**
-   * 匯入資料 (含回滾機制)
-   * 防止匯入壞檔導致資料庫清空後無法復原
+   * 資料標準化 (Normalize)
+   * 將「純陣列」或「舊版備份」轉換為系統標準的 { customerDetails: {...} } 格式
+   * 這樣 analyzeImport 就可以通用，進行黃/藍/綠燈分析
    */
-  importData(jsonData, options = { source: 'local' }) {
-    console.group('📦 執行安全匯入...');
+  normalizeImportData(rawData) {
+      const standardFormat = {
+          version: '4.0',
+          customerDetails: {},
+          customerIndex: [] // 分析時暫時不需要索引，但保持結構完整
+      };
+
+      let customersArray = [];
+
+      // 判斷輸入格式
+      if (Array.isArray(rawData)) {
+          // 情境 1: 使用者匯入的是 [Customer, Customer, ...] (exportCustomerJSON 的產出)
+          customersArray = rawData;
+      } else if (rawData.customerDetails) {
+          // 情境 2: 使用者匯入的是完整系統備份 (Backup JSON) - 已經是標準格式
+          return rawData; 
+      } else if (rawData.customers && Array.isArray(rawData.customers)) {
+          // 情境 3: 舊版備份格式
+          customersArray = rawData.customers;
+      }
+
+      // 轉換為標準 Map 結構 (customer_ID => Data)
+      customersArray.forEach(c => {
+          if (c && c.id) {
+              standardFormat.customerDetails[`customer_${c.id}`] = c;
+          }
+      });
+
+      return standardFormat;
+  }
+
+  // ==========================================
+  // [核心] 智慧匯入邏輯 (Smart Merge)
+  // ==========================================
+
+  /**
+   * 階段 1: 分析差異
+   * 回傳: { new:[], newer:[], older:[], identical:[] }
+   */
+  analyzeImport(jsonData) {
+    const analysis = {
+        new: [],            // 本地沒有
+        newer: [],          // 遠端較新 (建議更新)
+        older: [],          // 遠端較舊 (衝突)
+        identical: []       // 完全相同
+    };
+
+    if (!jsonData.customerDetails) return analysis;
+
+    Object.keys(jsonData.customerDetails).forEach(key => {
+        const remoteData = jsonData.customerDetails[key];
+        const localData = this.storage.load(key);
+        
+        // 摘要物件 (供 UI 顯示)
+        const summary = {
+            id: remoteData.id,
+            name: remoteData.name,
+            updatedAt: remoteData.updatedAt
+        };
+
+        if (!localData) {
+            analysis.new.push(summary);
+        } else {
+            // 比對內容 (排除 updatedAt 差異)
+            const rContent = JSON.stringify({ ...remoteData, updatedAt: '' });
+            const lContent = JSON.stringify({ ...localData, updatedAt: '' });
+
+            if (rContent === lContent) {
+                analysis.identical.push(summary);
+            } else {
+                const rTime = new Date(remoteData.updatedAt || 0).getTime();
+                const lTime = new Date(localData.updatedAt || 0).getTime();
+                
+                if (rTime >= lTime) {
+                    analysis.newer.push(summary);
+                } else {
+                    analysis.older.push(summary);
+                }
+            }
+        }
+    });
     
-    // 1. 建立快照
-    const snapshot = {};
-    try {
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        snapshot[key] = localStorage.getItem(key);
-      }
-    } catch (e) { return { success: false, error: '備份失敗，取消匯入' }; }
+    return analysis;
+  }
+
+  /**
+   * 階段 2: 執行匯入 (含備份與強制覆蓋邏輯)
+   * @param {Object} selectionMap - { includeNew, includeNewer, includeOlder }
+   * @param {Object} jsonData - 原始資料
+   * @param {Object} options - { skipBackup: boolean }
+   */
+  executeSmartImport(selectionMap, jsonData, options = { skipBackup: false }) {
+    console.group('🚀 執行智慧匯入...');
+    let count = 0;
+    let skipped = 0;
+    const opts = { source: 'remote' };
 
     try {
-      if (!jsonData.version) throw new Error('檔案格式錯誤');
-
-      // 檢查資料完整性
-      // 如果匯入包中有顧客索引，但卻完全沒有詳細資料，視為「壞檔」或「傳輸不全」
-      const hasIndex = jsonData.customerIndex && jsonData.customerIndex.length > 0;
-      const hasDetails = jsonData.customerDetails && Object.keys(jsonData.customerDetails).length > 0;
-      
-      if (hasIndex && !hasDetails) {
-          throw new Error('❌ 資料完整性檢查失敗：偵測到只有索引但無詳細資料，為防止資料遺失，已拒絕匯入。');
-      }
-
-      // 3. 清空並寫入
-      localStorage.clear();
-      const opts = { source: 'remote' }; // 防止 P2P 回音
-
-      // 寫入設定類
+      // 1. 寫入全域設定 (如果有) - 設定檔通常直接覆蓋
       if (jsonData.tags) this.storage.save('tags', jsonData.tags, opts);
       if (jsonData.assessmentActions) this.storage.save('assessmentActions', jsonData.assessmentActions, opts);
       if (jsonData.serviceTemplates) this.storage.save('serviceTemplates', jsonData.serviceTemplates, opts);
       if (jsonData.appSettings) this.storage.save('appSettings', jsonData.appSettings, opts);
-      
-      // 寫入顧客資料
-      if (jsonData.customerIndex) this.storage.save('customerIndex', jsonData.customerIndex, opts);
+
+      // 2. 處理顧客資料
       if (jsonData.customerDetails) {
         Object.keys(jsonData.customerDetails).forEach(key => {
-          this.storage.save(key, jsonData.customerDetails[key], opts);
+          const remoteData = jsonData.customerDetails[key];
+          const localData = this.storage.load(key);
+          
+          let shouldImport = false;
+          let isConflict = false;
+
+          if (!localData) {
+              // 新增
+              if (selectionMap.includeNew) shouldImport = true;
+          } else {
+              // 衝突比對
+              const rContent = JSON.stringify({ ...remoteData, updatedAt: '' });
+              const lContent = JSON.stringify({ ...localData, updatedAt: '' });
+              
+              if (rContent !== lContent) {
+                  const rTime = new Date(remoteData.updatedAt || 0).getTime();
+                  const lTime = new Date(localData.updatedAt || 0).getTime();
+                  
+                  if (rTime >= lTime) {
+                      if (selectionMap.includeNewer) { shouldImport = true; isConflict = true; }
+                  } else {
+                      if (selectionMap.includeOlder) { shouldImport = true; isConflict = true; }
+                  }
+              }
+          }
+
+          if (shouldImport) {
+              // [關鍵] 備份邏輯
+              if (isConflict && !options.skipBackup) {
+                  const backupResult = this.storage.moveToRecycleBin(remoteData.id); // 注意: 這裡 moveToRecycleBin 會移除原檔
+                  
+                  if (!backupResult.success) {
+                      // 檢查是否為空間不足
+                      if (backupResult.error && backupResult.error.includes('QuotaExceeded')) {
+                          const err = new Error('儲存空間不足，備份失敗');
+                          err.code = 'ERR_BACKUP_QUOTA';
+                          throw err;
+                      }
+                      // 其他錯誤則忽略，繼續嘗試覆蓋
+                      console.warn(`備份失敗 (${remoteData.name})，嘗試直接覆蓋...`, backupResult.error);
+                  }
+              } else if (isConflict && options.skipBackup) {
+                  console.warn(`跳過備份，強制覆蓋: ${remoteData.name}`);
+
+              }
+
+              // 執行寫入
+              this.storage.save(key, remoteData, opts);
+              count++;
+          } else {
+              skipped++;
+          }
         });
       }
 
-      console.log('✅ 匯入成功');
+      // 3. 重建索引
+      this.rebuildIndexFromFiles();
+
+      console.log(`匯入完成: ${count} 筆, 略過: ${skipped} 筆`);
       console.groupEnd();
-      return { success: true };
+      return { success: true, count, skipped };
 
     } catch (error) {
-      console.error('❌ 匯入失敗，還原快照:', error);
-      localStorage.clear();
-      Object.keys(snapshot).forEach(key => localStorage.setItem(key, snapshot[key]));
+      console.error('匯入中斷:', error);
       console.groupEnd();
-      return { success: false, error: error.message };
+      throw error; // 拋出給 UI 層處理 (如顯示重試對話框)
     }
   }
-// === 統一設定檔 CSV 匯出 ===
+
+  rebuildIndexFromFiles() {
+      const newIndex = [];
+      for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('customer_')) {
+              try {
+                  const c = JSON.parse(localStorage.getItem(key));
+                  newIndex.push({
+                      id: c.id,
+                      name: c.name,
+                      nickname: c.nickname,
+                      phoneLastThree: c.phoneLastThree,
+                      status: 'active',
+                      updatedAt: c.updatedAt,
+                      stats: { totalServices: c.serviceRecords ? c.serviceRecords.length : 0 }
+                  });
+              } catch(e) {}
+          }
+      }
+      newIndex.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+      this.storage.save('customerIndex', newIndex, { source: 'local' });
+  }
+
+  // ==========================================
+  // 統一設定檔 CSV (Unified Config)
+  // ==========================================
   
   exportUnifiedConfigCSV() {
     try {
       const rows = [];
-      // 加入標題列 (含防呆註解)
       rows.push(["# DO_NOT_CHANGE_HEADER", ...this.CSV_HEADERS].join(','));
 
       const escape = (val) => {
         if (val === null || val === undefined) return '""';
-        let str = String(val).replace(/"/g, '""'); // 轉義雙引號
+        let str = String(val).replace(/"/g, '""');
         return `"${str}"`;
       };
 
-      // 1. 處理肌群標籤 (TAG)
       const tags = this.storage.load('tags') || [];
       tags.forEach(t => {
         rows.push([
-          '""',
-          '"TAG"', // DataType
-          escape(t.id),
-          escape(t.name),
-          escape(t.category), // Category_Or_Symptom
-          escape(t.relatedBodyParts ? t.relatedBodyParts.join('|') : ''), // BodyParts
-          escape(t.description || ''), // Description
-          '""','""','""','""','""','""' // Template 欄位留空
+          '""', '"TAG"', escape(t.id), escape(t.name),
+          escape(t.category), escape(t.relatedBodyParts ? t.relatedBodyParts.join('|') : ''),
+          escape(t.description || ''), '""','""','""','""','""','""'
         ].join(','));
       });
 
-      // 2. 處理評估動作 (ACTION)
       const actions = this.storage.load('assessmentActions') || [];
       actions.forEach(a => {
         const bp = Array.isArray(a.bodyPart) ? a.bodyPart.join('|') : (a.bodyPart || '');
         rows.push([
-          '""',
-          '"ACTION"',
-          escape(a.id),
-          escape(a.name),
-          escape(a.bodyPart), // Category_Or_Symptom (借用)
-          escape(bp), // BodyParts
-          escape(a.description || ''),
+          '""', '"ACTION"', escape(a.id), escape(a.name),
+          escape(a.bodyPart), escape(bp), escape(a.description || ''),
           '""','""','""','""','""','""'
         ].join(','));
       });
 
-      // 3. 處理服務模板 (TEMPLATE)
       const templates = this.storage.load('serviceTemplates') || [];
       templates.forEach(t => {
         const ti = t.textItems || {};
         const toStr = (arr) => Array.isArray(arr) ? arr.join('|') : (arr || '');
-        
         rows.push([
-          '""',
-          '"TEMPLATE"',
-          escape(t.id),
-          escape(t.name),
-          escape(t.symptomTag || ''), // Category_Or_Symptom
-          escape(t.relatedBodyParts ? t.relatedBodyParts.join('|') : ''),
-          '""', // Description 留空
-          escape(toStr(ti.complaints)),
-          escape(toStr(ti.findings)),
-          escape(toStr(ti.treatments)),
-          escape(toStr(ti.recommendations)),
+          '""', '"TEMPLATE"', escape(t.id), escape(t.name),
+          escape(t.symptomTag || ''), escape(t.relatedBodyParts ? t.relatedBodyParts.join('|') : ''),
+          '""', escape(toStr(ti.complaints)), escape(toStr(ti.findings)),
+          escape(toStr(ti.treatments)), escape(toStr(ti.recommendations)),
           escape(t.relatedMuscles ? t.relatedMuscles.join('|') : ''),
           escape(t.relatedAssessments ? t.relatedAssessments.join('|') : '')
         ].join(','));
       });
 
-      const csvContent = '\uFEFF' + rows.join('\n'); // 加入 BOM
+      const csvContent = '\uFEFF' + rows.join('\n');
       return { success: true, csv: csvContent, filename: 'system_config_unified.csv' };
-
-    } catch (e) {
-      return { success: false, error: e.message };
-    }
+    } catch (e) { return { success: false, error: e.message }; }
   }
 
-  // === 統一設定檔 CSV 匯入 ===
-
   importUnifiedConfigCSV(csvContent) {
+    // 簡易版保護：設定檔直接覆蓋 (原子寫入)
     console.group('📥 執行統一設定匯入...');
     try {
       const lines = csvContent.split(/\r?\n/).filter(line => line.trim() !== '');
       if (lines.length < 2) throw new Error('檔案內容為空');
 
-      // 1. 驗證標題列
-      const headerLine = lines[0];
-      const headers = this._parseCSVLine(headerLine);
-      
-      // 寬鬆檢查：只要包含關鍵欄位即可
-      if (!headers.includes('DataType') || !headers.includes('ID') || !headers.includes('Rel_MuscleIDs')) {
-          throw new Error('CSV 格式錯誤：標題列欄位不符，請確認使用正確的匯出檔案。');
-      }
+      const headers = this._parseCSVLine(lines[0]);
+      if (!headers.includes('DataType')) throw new Error('CSV 格式錯誤');
 
-      // 2. 解析資料並分類
       const parsedData = { tags: [], actions: [], templates: [] };
       
       for (let i = 1; i < lines.length; i++) {
         const cols = this._parseCSVLine(lines[i]);
         if (cols.length < 2) continue;
-
-        // cols[0] 是註解, cols[1] 是 DataType, cols[2] 是 ID...
-        const type = cols[1]; 
-        const id = cols[2];
-        const name = cols[3];
-        
+        const type = cols[1]; const id = cols[2]; const name = cols[3];
         if (!type || !id || !name) continue;
 
         const bodyParts = cols[5] ? cols[5].split('|').filter(x=>x) : [];
 
         if (type === 'TAG') {
-            parsedData.tags.push({
-                id, name, 
-                category: cols[4] || 'muscleGroup',
-                relatedBodyParts: bodyParts,
-                description: cols[6] || '',
-                isCustom: true, usageCount: 0
-            });
+            parsedData.tags.push({ id, name, category: cols[4]||'muscleGroup', relatedBodyParts: bodyParts, description: cols[6]||'', isCustom: true, usageCount: 0 });
         } else if (type === 'ACTION') {
-            parsedData.actions.push({
-                id, name,
-                bodyPart: bodyParts, // 優先使用 BodyParts 欄位
-                description: cols[6] || '',
-                isCustom: true
-            });
+            parsedData.actions.push({ id, name, bodyPart: bodyParts, description: cols[6]||'', isCustom: true });
         } else if (type === 'TEMPLATE') {
-            const splitLines = (str) => str ? str.split('|') : [];
+            const split = (s) => s ? s.split('|') : [];
             parsedData.templates.push({
-                id, name,
-                symptomTag: cols[4] || '',
-                relatedBodyParts: bodyParts,
-                textItems: {
-                    complaints: splitLines(cols[7]),
-                    findings: splitLines(cols[8]),
-                    treatments: splitLines(cols[9]),
-                    recommendations: splitLines(cols[10])
-                },
-                relatedMuscles: cols[11] ? cols[11].split('|') : [],
-                relatedAssessments: cols[12] ? cols[12].split('|') : []
+                id, name, symptomTag: cols[4]||'', relatedBodyParts: bodyParts,
+                textItems: { complaints: split(cols[7]), findings: split(cols[8]), treatments: split(cols[9]), recommendations: split(cols[10]) },
+                relatedMuscles: cols[11]?cols[11].split('|'):[], relatedAssessments: cols[12]?cols[12].split('|'):[]
             });
         }
       }
 
-      // 3. 原子性寫入 (Atomic Write)
-      const opts = { source: 'local' }; 
-      
+      const opts = { source: 'local' };
       this.storage.save('tags', parsedData.tags, opts);
       this.storage.save('assessmentActions', parsedData.actions, opts);
       this.storage.save('serviceTemplates', parsedData.templates, opts);
 
-      console.log(`✅ 匯入完成：Tags(${parsedData.tags.length}), Actions(${parsedData.actions.length}), Templates(${parsedData.templates.length})`);
       console.groupEnd();
       return { success: true, stats: parsedData };
-
     } catch (e) {
-      console.error(e);
       console.groupEnd();
       return { success: false, error: e.message };
     }
   }
 
-  // 簡易 CSV 解析器
   _parseCSVLine(text) {
     const ret = [];
     let startValueIndex = 0;
@@ -836,21 +941,18 @@ class DataExportService {
         if (cc === '"') { quote = !quote; }
         else if (cc === ',' && !quote) {
             let val = text.substring(startValueIndex, i).trim();
-            if (val.startsWith('"') && val.endsWith('"')) {
-                val = val.slice(1, -1).replace(/""/g, '"');
-            }
+            if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1).replace(/""/g, '"');
             ret.push(val);
             startValueIndex = i + 1;
         }
     }
     let val = text.substring(startValueIndex).trim();
-    if (val.startsWith('"') && val.endsWith('"')) {
-        val = val.slice(1, -1).replace(/""/g, '"');
-    }
+    if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1).replace(/""/g, '"');
     ret.push(val);
     return ret;
   }
 }
+  
 // ================================================================
 // DataManager 主入口 (等待依賴注入)
 // ================================================================

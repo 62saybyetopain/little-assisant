@@ -31,7 +31,7 @@
     .modal-header, .modal-footer {
       flex-shrink: 0;
       background: #fff; /* 確保背景不透明 */
-      z-index: 10;
+      z-index: var(--z-local);
     }
 
     /* 4. 設定中間區域可捲動 */
@@ -86,6 +86,63 @@
     }
     .status-row { margin-top: 10px; font-size: 14px; }
     .hint { color: #6b7280; font-size: 14px; margin-bottom: 10px; }
+   
+    /* === 資料匯入決策視窗樣式 === */
+    .diff-section {
+      border: 2px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+      background-color: #fff;
+    }
+
+    .diff-section h4 {
+      margin: 0 0 8px 0;
+      font-size: 14px;
+      font-weight: 700;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* 區塊 1: (綠色) */
+    #import-section-new {
+      border-color: #86efac;
+      background-color: #f0fdf4;
+    }
+    #import-section-new h4 { color: #15803d; }
+
+    /* 區塊 2: (藍色) */
+    #import-section-update {
+      border-color: #93c5fd;
+      background-color: #eff6ff;
+    }
+    #import-section-update h4 { color: #1d4ed8; }
+
+    /* 區塊 3: 衝突 (黃色/琥珀色) */
+    #import-section-conflict {
+      border-color: #fcd34d;
+      background-color: #fffbeb;
+    }
+    #import-section-conflict h4 { color: #b45309; }
+
+    /* 列表內容樣式 */
+    .diff-list {
+      max-height: 150px;
+      overflow-y: auto;
+      background: rgba(255,255,255,0.6);
+      border: 1px solid rgba(0,0,0,0.05);
+      border-radius: 4px;
+      padding: 4px 8px;
+    }
+
+    .diff-item {
+      font-size: 13px;
+      padding: 4px 0;
+      border-bottom: 1px solid #eee;
+      color: #4b5563;
+    }
+    .diff-item:last-child { border-bottom: none; }
   </style>
 </head>
 <body>
@@ -226,7 +283,19 @@
           </div>
         </div>
         <hr class="divider" style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
-
+        <div class="settings-section">
+          <h3>顧客資料進階管理 (JSON)</h3>
+          <p class="hint" style="color:#666; font-size:14px; margin-bottom:15px;">
+            將顧客資料匯出為 <b>JSON 格式</b> (包含所有服務紀錄)。<br>
+            適合進行完整備份、外部深度編輯或移機。匯入時系統會自動比對版本進行防護。
+          </p>
+          <div class="action-buttons" style="display:flex; gap:10px;">
+            <button class="btn-secondary" onclick="exportCustomerJSON()">📤 匯出顧客資料 (JSON)</button>
+            <button class="btn-primary" style="background-color:#7c3aed; border-color:#7c3aed;" onclick="importCustomerJSON()">📥 匯入顧客資料 (JSON)</button>
+          </div>
+        </div>
+        
+        <hr class="divider" style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
         <div class="settings-section">
           <h3>系統資料 (CSV 格式)</h3>
           <p class="hint" style="color:#666; font-size:14px; margin-bottom:15px;">
@@ -248,6 +317,7 @@
         
         <input type="file" id="import-file-input" style="display:none" accept=".json">
         <input type="file" id="unified-import-input" style="display:none" accept=".csv">
+        <input type="file" id="customer-import-json" style="display:none" accept=".json">
       </div>
     </main>
   </div>
@@ -550,6 +620,50 @@
           <button type="submit" class="btn-primary">更新模板</button>
         </div>
       </form>
+    </div>
+  </div>
+  <div id="modal-import-decision" class="modal">
+    <div class="modal-content" style="max-width: 500px;">
+      <div class="modal-header">
+        <h2>資料同步衝突處理</h2>
+        <button class="close-btn" onclick="closeModal('modal-import-decision')">×</button>
+      </div>
+      
+      <div class="modal-body">
+        <p class="hint">系統分析了匯入資料與現有資料的差異，請勾選您想要執行的操作：</p>
+
+        <div id="import-section-new" class="diff-section">
+          <h4>
+            <span>🟢 新增資料</span>
+            <label><input type="checkbox" checked> 全選</label>
+          </h4>
+          <div class="diff-list"></div>
+        </div>
+
+        <div id="import-section-update" class="diff-section">
+          <h4>
+            <span>🔵 資料更新 (遠端較新)</span>
+            <label><input type="checkbox" checked> 全選</label>
+          </h4>
+          <div class="diff-list"></div>
+        </div>
+
+        <div id="import-section-conflict" class="diff-section">
+          <h4>
+            <span>⚠️ 衝突警告 (遠端較舊)</span>
+            <label><input type="checkbox"> 全選</label>
+          </h4>
+          <div class="diff-list"></div>
+          <div style="font-size:12px; color:#b45309; margin-top:4px;">
+            注意：此區塊的資料比您目前的版本舊。若勾選，將會用舊資料覆蓋新資料。
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" onclick="closeModal('modal-import-decision')">取消</button>
+        <button type="button" class="btn-primary" onclick="confirmImportDecision()">確認執行</button>
+      </div>
     </div>
   </div>
 </body>

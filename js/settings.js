@@ -1,5 +1,5 @@
 /**
- * settings.js - 系統設定頁面控制器(v2.6 Rescue)
+ * settings.js - 系統設定頁面控制器(v4.3)
  * 職責：
  * 1. 管理設定頁面的標籤頁切換與 UI 狀態
  * 2. 串接 AppDataManager 進行 CRUD (評估動作、肌群標籤)
@@ -20,6 +20,7 @@
  * v2.6處理 P2P 同步操作
  * v2.7身體部位分類改良
  * V3.0加入 Lazy Check (惰性檢查) 與 Guard Clause (防衛語句)防止因為 DOM 元素缺失導致 JS 執行中斷
+ * 「決策視窗」的渲染與「備份失敗重試」的邏輯，並補齊顧客 CSV 的相關功能
  */
 
 // 定義身體部位
@@ -168,6 +169,7 @@ const SettingsApp = {
     // 1. 初始化隱藏檔案輸入框 (for Import)
     this.createHiddenFileInput();
     this.createUnifiedImportInput();
+    this.createCustomerJSONInput(); //初始化顧客 JSON 輸入框
 
     // 2. 渲染複選框群組 (加入防禦)
     this.renderCheckboxes('muscle-bodyparts', 'muscle-part');
@@ -247,10 +249,10 @@ const SettingsApp = {
       <div class="list-item">
         <div class="item-content">
           <div class="item-title">
-            ${this.escape(item.name)}
+            ${window.escapeHtml(item.name)}
             <span class="badge">${this.getPartNames(item.bodyPart)}</span>
           </div>
-          <div class="item-desc">${this.escape(item.description)}</div>
+          <div class="item-desc">${window.escapeHtml(item.description)}</div>
         </div>
         <div class="item-actions">
           ${!item.isDefault ? `
@@ -371,8 +373,8 @@ const SettingsApp = {
       <div class="list-item">
         <div class="item-content">
           <div class="item-title">
-            ${this.escape(item.name)}
-            ${item.symptomTag ? `<span class="badge" style="background:#8b5cf6">症狀: ${this.escape(item.symptomTag)}</span>` : ''}
+            ${window.escapeHtml(item.name)}
+            ${item.symptomTag ? `<span class="badge" style="background:#8b5cf6">症狀: ${window.escapeHtml(item.symptomTag)}</span>` : ''}
           </div>
           <div class="item-desc">觸發部位: ${this.getPartNames(item.relatedBodyParts)}</div>
         </div>
@@ -526,7 +528,7 @@ const SettingsApp = {
     el.innerHTML = dataList.map(item => `
         <label class="checkbox-item" style="display:flex; align-items:center; margin-bottom:4px;">
           <input type="checkbox" name="${name}" value="${item.id}"> 
-          <span style="margin-left:6px;">${this.escape(item.name)}</span>
+          <span style="margin-left:6px;">${window.escapeHtml(item.name)}</span>
         </label>
     `).join('');
   },
@@ -570,7 +572,7 @@ const SettingsApp = {
         <div class="item-content">
           <div class="item-title">
             <span class="tag-color-dot" style="background:${item.color || '#3b82f6'}"></span>
-            ${this.escape(item.name)}
+            ${window.escapeHtml(item.name)}
           </div>
           <div class="item-desc">部位: ${this.getPartNames(item.relatedBodyParts)}</div>
         </div>
@@ -710,9 +712,10 @@ const SettingsApp = {
     const mode = name === 'muscle-part' ? "'add'" : (name === 'edit-muscle-part' ? "'edit'" : "null");
     const eventHandler = (mode !== "null" && containerId.includes('muscle')) ? `onchange="autoSelectColor(${mode})"` : "";
 
+    // 加上 escape 確保一致性
     el.innerHTML = SIMPLIFIED_BODY_PARTS.map(p => `
       <label class="checkbox-item">
-        <input type="checkbox" name="${name}" value="${p.id}" ${eventHandler}> ${p.name}
+        <input type="checkbox" name="${name}" value="${p.id}" ${eventHandler}> ${window.escapeHtml(p.name)}
       </label>
     `).join('');
   },
@@ -832,6 +835,26 @@ const SettingsApp = {
     };
     reader.readAsText(file);
   },
+  // ==========================================
+  // [核心] 資料匯出與匯入流程 (JSON / CSV / P2P)
+  // ==========================================
+
+  // --- 1. 完整備份 (JSON) ---
+  
+  exportAllData() {
+    const result = window.AppDataExportService.exportAllData();
+    if (result.success) {
+      const fileName = `osteopathy-backup-${new Date().toISOString().slice(0,10)}.json`;
+      this.downloadFile(JSON.stringify(result.data, null, 2), fileName, 'application/json');
+    } else {
+      alert('匯出失敗: ' + result.error);
+    }
+  },
+
+  importData() {
+    document.getElementById('import-file-input').click();
+  },
+
   handleFileImport(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -840,17 +863,19 @@ const SettingsApp = {
     reader.onload = ev => {
       try {
         const json = JSON.parse(ev.target.result);
-        const result = window.AppDataExportService.importData(json);
-        if (result.success) {
-          alert('還原成功，系統將重新整理。');
-          location.reload();
+        // [修改] 改為呼叫分析介面，而非直接匯入
+        if (window.AppDataExportService.analyzeImport) {
+            const analysis = window.AppDataExportService.analyzeImport(json);
+            this.showImportDecisionModal(analysis, json); // 顯示決策視窗
         } else {
-          alert('還原失敗: ' + result.error);
+            // 相容舊版 (若 DataManager 未更新)
+            const result = window.AppDataExportService.importData(json);
+            if (result.success) { alert('還原成功'); location.reload(); }
         }
       } catch (err) {
-        alert('檔案格式錯誤');
+        alert('檔案解析失敗: ' + err.message);
       }
-      e.target.value = ''; // 重置 input
+      e.target.value = '';
     };
     reader.readAsText(file);
   },
@@ -866,16 +891,204 @@ const SettingsApp = {
       document.body.appendChild(input);
     }
   },
-  createUnifiedImportInput() {
-    if (!document.getElementById('unified-import-input')) {
+ // ==========================================
+  //  顧客資料管理
+  // ==========================================
+
+  createCustomerJSONInput() {
+    if (!document.getElementById('customer-import-json')) {
       const input = document.createElement('input');
       input.type = 'file';
-      input.id = 'unified-import-input';
+      input.id = 'customer-import-json';
       input.style.display = 'none';
-      input.accept = '.csv';
-      input.onchange = (e) => this.handleUnifiedImport(e);
+      input.accept = '.json';
+      input.onchange = (e) => this.handleCustomerJSONImport(e);
       document.body.appendChild(input);
     }
+  },
+
+  exportCustomerJSON() {
+    // 檢查 DataManager 是否支援
+    if (window.AppDataExportService && window.AppDataExportService.exportCustomerJSON) {
+        const result = window.AppDataExportService.exportCustomerJSON();
+        if (result.success) {
+            // 匯出完整 JSON 陣列
+            this.downloadFile(JSON.stringify(result.data, null, 2), result.filename, 'application/json');
+        } else {
+            alert('匯出失敗: ' + result.error);
+        }
+    } else {
+        alert('核心尚未更新 (缺少 exportCustomerJSON)');
+    }
+  },
+
+  importCustomerJSON() {
+    const input = document.getElementById('customer-import-json');
+    if (input) input.click();
+  },
+
+  handleCustomerJSONImport(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = ev => {
+        try {
+            const json = JSON.parse(ev.target.result);
+            if (window.AppDataExportService && window.AppDataExportService.analyzeImport) {
+                // 1. 標準化資料 (將陣列轉為標準匯入格式)
+                const normalized = window.AppDataExportService.normalizeImportData(json);
+                // 2. 執行分析
+                const analysis = window.AppDataExportService.analyzeImport(normalized);
+                // 3. 顯示決策視窗
+                this.showImportDecisionModal(analysis, normalized);
+            } else {
+                alert('核心尚未更新，無法執行分析匯入');
+            }
+        } catch (err) {
+            alert('JSON 解析失敗: ' + err.message);
+        }
+        e.target.value = ''; // 重置
+    };
+    reader.readAsText(file);
+  },
+  
+  // --- 3. 智慧決策視窗 (Smart Merge UI) ---
+
+  /**
+   * 顯示匯入決策視窗
+   * @param {Object} analysis - { new:[], newer:[], older:[], identical:[] }
+   * @param {Object} sourceData - 原始匯入資料 (用於傳遞給執行函式)
+   */
+  showImportDecisionModal(analysis, sourceData) {
+    // 暫存資料供執行時使用
+    this.state.pendingImportData = sourceData;
+
+    const modal = document.getElementById('modal-import-decision');
+    if (!modal) {
+        // 若 HTML 未更新，降級為傳統 Confirm
+        if (confirm(`分析完成：\n新增 ${analysis.new.length} 筆\n更新 ${analysis.newer.length} 筆\n衝突(舊蓋新) ${analysis.older.length} 筆\n\n確定要匯入嗎？`)) {
+            this.handleImportConfirm(); // 嘗試執行
+        }
+        return;
+    }
+
+    // 輔助渲染函式
+    const renderSection = (sectionId, items, isChecked = true) => {
+        const section = document.getElementById(sectionId);
+        const list = section.querySelector('.diff-list') || section.querySelector('.data-list') || document.createElement('div');
+        if (!list.className) list.className = 'diff-list'; // 確保樣式
+        
+        // 如果該區塊原本沒有 list 容器，插入一個
+        if (!section.querySelector('.diff-list')) section.appendChild(list);
+
+        if (items.length === 0) {
+            section.style.display = 'none';
+            // 清空 Checkbox 防止誤判
+            const cb = section.querySelector('input[type="checkbox"]');
+            if(cb) cb.checked = false;
+        } else {
+            section.style.display = 'block';
+            const cb = section.querySelector('input[type="checkbox"]');
+            if(cb) cb.checked = isChecked;
+
+            // 渲染列表 (最多顯示 5 筆摘要)
+            const previewItems = items.slice(0, 5);
+            list.innerHTML = previewItems.map(item => `
+                <div class="diff-item" style="font-size:13px; padding:4px 0; border-bottom:1px solid #eee;">
+                    <span style="font-weight:bold;">${window.escapeHtml(item.name)}</span>
+                    <span style="color:#666; margin-left:8px;">(${item.id})</span>
+                    ${item.updatedAt ? `<div style="font-size:11px; color:#999;">更新: ${new Date(item.updatedAt).toLocaleString()}</div>` : ''}
+                </div>
+            `).join('');
+            
+            if (items.length > 5) {
+                list.innerHTML += `<div style="text-align:center; font-size:12px; color:#666; padding:5px;">... 還有 ${items.length - 5} 筆</div>`;
+            }
+        }
+    };
+
+    // 渲染三個區塊
+    renderSection('import-section-new', analysis.new, true);      // 綠燈：預設勾選
+    renderSection('import-section-update', analysis.newer, true); // 藍燈：預設勾選
+    renderSection('import-section-conflict', analysis.older, false); // 黃燈：預設不勾選 (保護)
+
+    // 如果全部都沒資料 (只有 identical)
+    if (analysis.new.length === 0 && analysis.newer.length === 0 && analysis.older.length === 0) {
+        alert('比對完成：資料內容完全一致，無需匯入。');
+        return;
+    }
+
+    this.openModal('modal-import-decision');
+  },
+
+  /**
+   * 執行匯入 (含重試邏輯)
+   */
+  handleImportConfirm() {
+    const sourceData = this.state.pendingImportData;
+    if (!sourceData) return;
+
+    // 收集使用者勾選的區塊
+    const selectionMap = {
+        includeNew: document.querySelector('#import-section-new input[type="checkbox"]')?.checked || false,
+        includeNewer: document.querySelector('#import-section-update input[type="checkbox"]')?.checked || false,
+        includeOlder: document.querySelector('#import-section-conflict input[type="checkbox"]')?.checked || false
+    };
+
+    if (!selectionMap.includeNew && !selectionMap.includeNewer && !selectionMap.includeOlder) {
+        alert('未選擇任何資料，取消匯入。');
+        this.closeModal('modal-import-decision');
+        return;
+    }
+
+    // 執行邏輯 (含 Retry)
+    try {
+        if(window.showLoading) window.showLoading('匯入中 (正在備份舊資料)...');
+        
+        // 第一次嘗試：標準模式 (skipBackup: false)
+        const result = window.AppDataManager.executeSmartImport(selectionMap, sourceData, { skipBackup: false });
+        
+        this.handleImportSuccess(result);
+
+    } catch (error) {
+        if(window.hideLoading) window.hideLoading();
+
+        // 捕捉容量不足錯誤 (ERR_BACKUP_QUOTA)
+        if (error.code === 'ERR_BACKUP_QUOTA' || error.message.includes('QuotaExceeded')) {
+            const confirmForce = confirm(
+                '⚠️ 儲存空間嚴重不足，無法建立安全備份！\n\n' +
+                '系統無法將舊資料移入回收桶。\n' +
+                '您希望「跳過備份」並強制覆蓋現有資料嗎？\n\n' +
+                '(注意：此操作無法復原，被覆蓋的資料將永久遺失)'
+            );
+
+            if (confirmForce) {
+                try {
+                    if(window.showLoading) window.showLoading('強制匯入中...');
+                    // 第二次嘗試：強制模式
+                    const result = window.AppDataManager.executeSmartImport(selectionMap, sourceData, { skipBackup: true });
+                    this.handleImportSuccess(result);
+                } catch (forceError) {
+                    if(window.hideLoading) window.hideLoading();
+                    alert('強制匯入仍然失敗: ' + forceError.message);
+                }
+            }
+        } else {
+            alert('匯入發生錯誤: ' + error.message);
+        }
+    }
+  },
+
+  handleImportSuccess(result) {
+      if(window.hideLoading) window.hideLoading();
+      this.closeModal('modal-import-decision');
+      this.state.pendingImportData = null; // 清理記憶體
+      
+      let msg = `匯入完成！\n成功寫入: ${result.count} 筆`;
+      if (result.skipped > 0) msg += `\n略過: ${result.skipped} 筆`;
+      alert(msg);
+      location.reload();
   },
   clearAllData() {
     if (confirm('【嚴重警告】\n此操作將永久刪除所有資料且無法復原！\n確定要清空嗎？')) {
@@ -990,14 +1203,6 @@ const SettingsApp = {
     }, 3000);
   },
 
-  escape(str) {
-    if (!str) return '';
-    return str.replace(/&/g, "&amp;")
-              .replace(/</g, "&lt;")
-              .replace(/>/g, "&gt;")
-              .replace(/"/g, "&quot;")
-              .replace(/'/g, "&#039;");
-  }
 };
 
 // 全域綁定與啟動
@@ -1096,7 +1301,10 @@ window.cleanOrphans = () => SettingsApp.cleanOrphans();
 //綁定統一匯出入接口
 window.exportUnifiedConfig = () => SettingsApp.exportUnifiedConfig();
 window.importUnifiedConfig = () => SettingsApp.importUnifiedConfig();
-
+window.exportCustomerJSON = () => SettingsApp.exportCustomerJSON();
+window.importCustomerJSON = () => SettingsApp.importCustomerJSON();
+// 綁定決策視窗的確認按鈕
+window.confirmImportDecision = () => SettingsApp.handleImportConfirm();
 
 window.connectToPeer = () => {
   const targetId = document.getElementById('p2p-target-id').value.trim();

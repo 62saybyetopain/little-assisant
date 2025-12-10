@@ -1,8 +1,21 @@
 /**
- * LocalStorage 封裝服務 (v4.0)
+ * LocalStorage 封裝服務 (v4.1)
  * 支援分級儲存策略 (Index vs Detail) 與自動遷移
  * 新增交易機制以及更新基礎存取方法
  */
+// [V4.1新增] 安全序列化函式：防止循環引用導致 JSON.stringify 崩潰 (作為底層防呆機制)
+const safeStringify = (obj) => {
+  const seen = new WeakSet();
+  return JSON.stringify(obj, (key, value) => {
+    if (typeof value === 'object' && value !== null) {
+      if (seen.has(value)) {
+        return '[Circular]'; // 發現循環引用，標記並跳過，防止崩潰
+      }
+      seen.add(value);
+    }
+    return value;
+  });
+};
 
 class StorageService {
   constructor() {
@@ -56,8 +69,13 @@ class StorageService {
     try {
       operations.forEach(op => {
         if (op.type === 'save') {
-          // 直接操作 localStorage，不透過 this.save 以避免巢狀廣播
-          localStorage.setItem(op.key, JSON.stringify(op.value));
+          try {
+            // 使用 safeStringify 防止循環引用導致整個交易崩潰
+            localStorage.setItem(op.key, safeStringify(op.value));
+          } catch (e) {
+            // 捕捉 QuotaExceededError 或其他底層寫入錯誤
+            throw new Error(`寫入失敗 (${op.key}): ${e.message}`);
+          }
         } else if (op.type === 'remove') {
           localStorage.removeItem(op.key);
         }
@@ -97,8 +115,9 @@ class StorageService {
 
       console.groupEnd();
       
-      if (error.name === 'QuotaExceededError') {
-        return { success: false, error: 'QUOTA_EXCEEDED', message: '儲存空間不足' };
+      if (error.name === 'QuotaExceededError' || error.message.includes('QuotaExceeded')) {
+        //統一錯誤代碼字串，與 DataManager 的判斷邏輯 (includes('QuotaExceeded')) 保持一致
+        return { success: false, error: 'QuotaExceededError', message: '儲存空間不足，交易已取消' };
       }
       return { success: false, error: 'TRANS_FAILED', message: error.message };
     }

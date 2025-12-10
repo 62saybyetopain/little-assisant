@@ -23,12 +23,13 @@
     <div class="step-navigation"></div>
 
     <div data-step="1" class="step-container">
+      <div data-step="1" class="step-container" id="step-form-1">
       <h2>主訴</h2>
       <p class="step-description">描述客戶主要的症狀或問題</p>
 
-      <div class="form-group">
+      <div class="form-group field-group">
         <label class="form-label">
-          主訴內容
+          主訴內容 <span style="color:red">*</span>
         </label>
         <textarea 
           name="complaint" 
@@ -36,6 +37,7 @@
           placeholder="請輸入客戶的主訴症狀，如：肩膀酸痛、腰部不適等"
           rows="4">
         </textarea>
+        <span class="error-message"></span>
         <span class="form-help">請簡潔描述客戶的主要症狀</span>
       </div>
 
@@ -137,7 +139,7 @@
       </div>
     </div>
 
-    <div data-step="3" class="step-container">
+    <div data-step="3" class="step-container" id="step-form-3">
       <h2>評估結果</h2>
       <p class="step-description">整理評估結果與初步診斷</p>
 
@@ -160,9 +162,9 @@
         </div>
       </div>
 
-      <div class="form-group">
+      <div class="form-group field-group">
         <label class="form-label">
-          初步診斷與發現
+          初步診斷與發現 <span style="color:red">*</span>
         </label>
         <textarea 
           name="findings" 
@@ -170,6 +172,7 @@
           placeholder="根據評估結果，記錄初步診斷和主要發現"
           rows="5">
         </textarea>
+        <span class="error-message"></span>
         <span class="form-help">總結評估的主要發現和初步診斷</span>
       </div>
 
@@ -178,13 +181,13 @@
       </div>
     </div>
 
-    <div data-step="4" class="step-container">
+    <div data-step="4" class="step-container" id="step-form-4">
       <h2>處理方案</h2>
       <p class="step-description">建議治療方案與處理方式</p>
 
-      <div class="form-group">
+      <div class="form-group field-group">
         <label class="form-label">
-          治療計畫
+          治療計畫 <span style="color:red">*</span>
         </label>
         <textarea 
           name="treatment-plan" 
@@ -192,6 +195,7 @@
           placeholder="詳述建議的治療方案、手法、頻率等"
           rows="5">
         </textarea>
+        <span class="error-message"></span>
       </div>
 
       <div class="form-group">
@@ -319,7 +323,7 @@
   <script src="js/customer-manager.js"></script>
   <script src="js/data-manager.js"></script>
   <script src="js/ui.js"></script> <script src="js/app.js"></script>
-
+  <script src="js/form-validator.js"></script>
   <script src="js/ui-assessment.js"></script>
 
   <script src="js/service-record-flow.js"></script>
@@ -360,11 +364,17 @@
 
         document.getElementById('page-title').textContent = `新增服務紀錄 - ${customer.name}`;
         document.getElementById('customer-subtitle').textContent = 
-          `客戶：${customer.name} | 暱稱：${customer.nickname} | 電話末三碼：***${customer.phoneLastThree}`;
+          `客戶：${customer.name} | 暱稱：${customer.nickname} | 電話末三碼：${customer.phoneLastThree}`;
 
-        if (window.AppUIAssessment) {
-          console.log('🔄 初始化 UIAssessment...');
-          await window.AppUIAssessment.init({
+        // [Lazy Init] 僅在此頁面實例化 UIAssessment
+        if (typeof UIAssessment !== 'undefined') {
+          console.log('🔄 初始化 UIAssessment (Lazy Load)...');
+          
+          // 建立實例並綁定到全域變數 (供 ServiceRecordFlow 呼叫)
+          window.appUIAssessment = new UIAssessment();
+          window.AppUIAssessment = window.appUIAssessment; // 維持相容性
+
+          await window.appUIAssessment.init({
             bodyDiagramId: 'body-diagram-front',
             muscleTagContainerId: 'muscle-tags-container',
             assessmentContainerId: 'assessment-container'
@@ -440,7 +450,7 @@
       border-bottom: 1px solid var(--border-light);
       position: sticky;
       top: 0;
-      z-index: 20;
+      z-index: var(--z-sticky);
       box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
     }
 
@@ -535,7 +545,7 @@
       width: 100%;
       height: 100%;
       background: rgba(0, 0, 0, 0.5);
-      z-index: 1000;
+      z-index: var(--z-overlay);
       align-items: center;
       justify-content: center;
     }

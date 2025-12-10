@@ -1,7 +1,7 @@
 /**
  * 全局樣式
- * 專案: 整復師客戶資料管理系統
- * 版本: v1.0
+ * 專案: 客戶資料管理系統
+ * 版本: v2.0
  */
 
 /* CSS Variables */
@@ -41,6 +41,14 @@
   --transition-fast: 150ms ease;
   --transition-normal: 300ms ease;
   --transition-slow: 500ms ease;
+/* === Z-Index 層級管理系統 === */
+  --z-negative: -1;
+  --z-normal: 1;
+  --z-local: 10;       /* 局部元件層級 (如：卡片內按鈕、次級置頂) */
+  --z-sticky: 100;     /* 固定標頭 (Header) */
+  --z-fab: 500;        /* 懸浮動作按鈕 (FAB) */
+  --z-overlay: 1000;   /* 遮罩層 (Loading, Modal) */
+  --z-toast: 9999;     /* 全域通知 (最高層級) */
 }
 
 /* Reset */
@@ -94,7 +102,7 @@ button {
   padding: var(--spacing-sm);
   position: sticky;
   top: 0;
-  z-index: 100;
+  z-index: var(--z-sticky);
 }
 
 .header-content {

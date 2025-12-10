@@ -254,3 +254,17 @@ window.addEventListener('unhandledrejection', (e) => {
     showToast('資料載入失敗', 'error', 5000);
   }
 });
+
+/**
+ * XSS 防護跳脫函式
+ * 將特殊字元轉換為 HTML 實體
+ */
+window.escapeHtml = (str) => {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+};

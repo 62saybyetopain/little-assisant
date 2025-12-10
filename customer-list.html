@@ -16,7 +16,7 @@
       border-bottom: 1px solid var(--border-color);
       position: sticky;
       top: 0;
-      z-index: 10;
+      z-index: var(--z-sticky);
       box-shadow: var(--shadow-sm);
     }
     /* ===== 工具列 (排序/篩選) ===== */
@@ -29,7 +29,7 @@
       align-items: center;
       position: sticky;
       top: 70px; /* 根據 search-container 高度調整，讓它跟著置頂 */
-      z-index: 9;
+      z-index: var(--z-local);
     }
 
     .sort-select {
@@ -175,7 +175,7 @@
       color: #dc3545;
       opacity: 0.6;
       transition: all 0.2s;
-      z-index: 2; /* 確保在最上層 */
+      z-index: var(--z-normal); /* 確保在最上層 */
     }
 
     .delete-card-btn:hover {
@@ -209,7 +209,7 @@
       box-shadow: var(--shadow-lg);
       cursor: pointer;
       transition: all 0.2s;
-      z-index: 100;
+      z-index: var(--z-fab);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -226,7 +226,7 @@
 
     /* Modal 特定修正 */
     .modal-overlay {
-      z-index: 11000;
+      z-index: var(--z-overlay);
     }
     
     /* 確保 Modal 顯示時不透明 */
@@ -445,22 +445,29 @@
 
       // 5. 輔助函式：生成單張卡片 HTML
       const generateCardHtml = (c) => {
+        // [Security] 使用 window.escapeHtml 包裹所有輸出變數
+        const safeName = window.escapeHtml(c.name);
+        const safeNickname = window.escapeHtml(c.nickname || '-');
+        const safePhone = window.escapeHtml(c.phoneLastThree || '---');
+        const safeId = window.escapeHtml(c.id);
+
         const tagsHtml = [
-            ...(c.healthTags || []).slice(0, 2).map(t => `<span class="tag health">${t}</span>`),
-            ...(c.personalityTags || []).slice(0, 2).map(t => `<span class="tag personality">${t}</span>`)
+            ...(c.healthTags || []).slice(0, 2).map(t => `<span class="tag health">${window.escapeHtml(t)}</span>`),
+            ...(c.personalityTags || []).slice(0, 2).map(t => `<span class="tag personality">${window.escapeHtml(t)}</span>`)
           ].join('');
 
         const serviceCount = c.stats ? c.stats.totalServices : 0;
         
+        // 注意: onclick 中的參數仍建議避免包含單引號，但在這層防護下 script 標籤已被轉義
         return `
-            <div class="customer-card" onclick="window.location.href='customer-profile.html?id=${c.id}'">
-              <button class="delete-card-btn" onclick="handleDeleteCustomer(event, '${c.id}', '${c.name}')" title="移至回收桶">🗑️</button>
+            <div class="customer-card" onclick="window.location.href='customer-profile.html?id=${safeId}'">
+              <button class="delete-card-btn" onclick="handleDeleteCustomer(event, '${safeId}', '${safeName}')" title="移至回收桶">🗑️</button>
               
               <div class="customer-header">
                 <div class="customer-name">
-                  ${c.name} <span style="font-size:0.8em; color:#666; font-weight:normal">(${c.nickname || '-'})</span>
+                  ${safeName} <span style="font-size:0.8em; color:#666; font-weight:normal">(${safeNickname})</span>
                 </div>
-                <div class="customer-phone">***${c.phoneLastThree || '---'}</div>
+                <div class="customer-phone">***${safePhone}</div>
               </div>
               
               ${tagsHtml ? `<div class="customer-tags">${tagsHtml}</div>` : ''}
