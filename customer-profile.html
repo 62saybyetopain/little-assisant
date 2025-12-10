@@ -307,6 +307,39 @@
       renderRecords(false);
     }
 
+    function getRecordText(record) {
+      // 優先讀取 v2.1 (Steps) 結構
+      if (record.steps?.chiefComplaint?.complaint) return record.steps.chiefComplaint.complaint;
+      // 其次 v2.0 結構
+      if (record.chiefComplaint?.notes) return record.chiefComplaint.notes;
+      // 最後 v1.0 結構
+      return record.complaint || '';
+    }
+
+    function getRecordBodyParts(record) {
+      if (record.steps?.chiefComplaint?.bodyParts?.length > 0) return record.steps.chiefComplaint.bodyParts;
+      if (record.chiefComplaint?.bodyParts?.length > 0) return record.chiefComplaint.bodyParts;
+      return record.bodyParts || [];
+    }
+
+    function applyFilters() {
+      const searchText = document.getElementById('search-input').value.toLowerCase();
+      const sortOrder = document.getElementById('sort-select').value;
+
+      filteredRecords = allRecords.filter(record => {
+        // 使用統一讀取器
+        const note = getRecordText(record);
+        return note.toLowerCase().includes(searchText);
+      });
+
+      if (sortOrder === 'oldest') {
+        filteredRecords.sort((a, b) => new Date(a.createdAt || a.date) - new Date(b.createdAt || b.date));
+      } else {
+        filteredRecords.sort((a, b) => new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date));
+      }
+      renderRecords(false);
+    }
+
     function renderRecords(isAppend = false) {
       const container = document.getElementById('records-container');
       const trigger = document.getElementById('load-more-trigger');
@@ -337,7 +370,11 @@
         return;
       }
 
-      const html = nextBatch.map(record => `
+      const html = nextBatch.map(record => {
+        const summaryText = getRecordText(record) || '無主訴紀錄';
+        const bodyParts = getRecordBodyParts(record);
+        
+        return `
         <div class="record-item" onclick="viewRecord('${record.id}')">
           <div class="record-header">
             <div class="record-date">${formatDateTime(record.createdAt || record.date)}</div>
@@ -348,15 +385,15 @@
             </div>
           </div>
           <div class="record-summary">
-            <strong>主訴：</strong> ${(record.chiefComplaint?.notes || record.complaint || '無紀錄').substring(0, 100)}
+            <strong>主訴：</strong> ${summaryText.substring(0, 100)}${summaryText.length > 100 ? '...' : ''}
           </div>
-          ${(record.chiefComplaint?.bodyParts || record.bodyParts || []).length > 0 ? `
+          ${bodyParts.length > 0 ? `
             <div class="record-parts">
-              ${(record.chiefComplaint?.bodyParts || record.bodyParts).map(part => `<span class="part-tag">${part}</span>`).join('')}
+              ${bodyParts.map(part => `<span class="part-tag">${part}</span>`).join('')}
             </div>
           ` : ''}
         </div>
-      `).join('');
+      `}).join('');
 
       container.insertAdjacentHTML('beforeend', html);
       displayedRecords = [...displayedRecords, ...nextBatch];
@@ -416,22 +453,6 @@
       observer.observe(trigger);
     }
 
-    function applyFilters() {
-      const searchText = document.getElementById('search-input').value.toLowerCase();
-      const sortOrder = document.getElementById('sort-select').value;
-
-      filteredRecords = allRecords.filter(record => {
-        const note = record.chiefComplaint?.notes || record.complaint || '';
-        return note.toLowerCase().includes(searchText);
-      });
-
-      if (sortOrder === 'oldest') {
-        filteredRecords.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-      } else {
-        filteredRecords.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-      }
-      renderRecords(false);
-    }
 
     // ===== 事件監聽整合 =====
     function attachEventListeners() {

@@ -153,7 +153,41 @@
       font-size: 13px;
       color: var(--text-secondary);
     }
+    /* 卡片刪除按鈕 */
+    .customer-card {
+      position: relative; /* 確保絕對定位相對於卡片 */
+    }
+    
+    .delete-card-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 32px;
+      height: 32px;
+      border: none;
+      background: rgba(255, 255, 255, 0.8);
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      color: #dc3545;
+      opacity: 0.6;
+      transition: all 0.2s;
+      z-index: 2; /* 確保在最上層 */
+    }
 
+    .delete-card-btn:hover {
+      background: #fee2e2;
+      opacity: 1;
+      transform: scale(1.1);
+    }
+    
+    /* 確保標題不被按鈕蓋住 */
+    .customer-header {
+      padding-right: 30px; 
+    }
     .stat-item {
       display: flex;
       align-items: center;
@@ -420,6 +454,8 @@
         
         return `
             <div class="customer-card" onclick="window.location.href='customer-profile.html?id=${c.id}'">
+              <button class="delete-card-btn" onclick="handleDeleteCustomer(event, '${c.id}', '${c.name}')" title="移至回收桶">🗑️</button>
+              
               <div class="customer-header">
                 <div class="customer-name">
                   ${c.name} <span style="font-size:0.8em; color:#666; font-weight:normal">(${c.nickname || '-'})</span>
@@ -440,7 +476,22 @@
             </div>
           `;
       };
-
+     // 定義全域刪除處理函式 (供 HTML onclick 使用)
+      window.handleDeleteCustomer = (event, id, name) => {
+        event.stopPropagation(); // 阻止冒泡，避免觸發卡片點擊跳轉
+        
+        if (confirm(`確定要將「${name}」移至回收桶嗎？\n(您稍後仍可在設定頁還原)`)) {
+          const result = window.AppCustomerManager.deleteCustomer(id);
+          
+          if (result.success) {
+            window.showToast?.('已移入回收桶', 'success');
+            // 重新整理列表
+            refreshData(); 
+          } else {
+            window.showToast?.(`刪除失敗：${result.error}`, 'error');
+          }
+        }
+      };
       // 6. 核心函式：批次渲染 (Load More 邏輯)
       const renderBatch = (isAppend = false) => {
         const total = state.allData.length;

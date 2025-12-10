@@ -6,6 +6,7 @@
  * - 管理資料暫存與驗證
  * - 對接 UI 層與 Data 層
  * - 處理模板自動觸發與套用
+ * V2.2修正：UI閃爍、儲存鎖死問題、未存檔攔截
  */
 
 const SERVICE_RECORD_STEPS = {
@@ -55,8 +56,11 @@ class ServiceRecordFlow {
     this.isLocked = false; 
     this.stepContainers = new Map(); 
 
-// [P2] 模板相關暫存
+// 模板相關暫存
     this.currentTemplateCandidates = [];
+// 未存檔狀態追蹤
+    this.hasUnsavedChanges = false;
+
   }
 
   async init(customerId, recordId = null) {
@@ -111,6 +115,9 @@ class ServiceRecordFlow {
       this.attachUIEventListeners();
       this.initializeNavigation();
       
+      // 監聽所有輸入變更，標記為未存檔
+      this.attachDirtyMonitor();
+      
       await this.goToStep(1);
 
       return true;
@@ -135,6 +142,28 @@ class ServiceRecordFlow {
         feedback: {}
       }
     };
+  }
+
+// 監聽輸入變更
+  attachDirtyMonitor() {
+    document.querySelectorAll('input, textarea, select').forEach(el => {
+       if (el.dataset.dirtyMonitored) return;
+        el.addEventListener('input', () => {
+            this.hasUnsavedChanges = true;
+        });
+        el.dataset.dirtyMonitored = 'true';
+    });
+  }
+
+  // 處理返回按鈕
+  handleBackNavigation() {
+    if (this.hasUnsavedChanges) {
+        if (confirm('您有尚未儲存的變更，確定要離開嗎？\n(離開後未儲存的內容可能會遺失)')) {
+            window.location.href = `customer-profile.html?id=${this.customerId}`;
+        }
+    } else {
+        window.location.href = `customer-profile.html?id=${this.customerId}`;
+    }
   }
 
   cacheStepContainers() {
@@ -291,86 +320,145 @@ class ServiceRecordFlow {
     }
   }
 
-  initializeChiefComplaintUI() {
-    const container = this.stepContainers.get(1);
-    if (!container) return;
-
-    const complaint = this.tempRecord.steps.chiefComplaint.complaint || '';
-    const complaintInput = container.querySelector('textarea[name="complaint"]');
-    if (complaintInput) {
-      complaintInput.value = complaint;
-      complaintInput.addEventListener('change', () => {
-        this.tempRecord.steps.chiefComplaint.complaint = complaintInput.value;
-      });
-    }
-  }
-
   initializeAssessmentUI() {
     const container = this.stepContainers.get(3);
     if (!container) return;
-
-    const summary = this.generateAssessmentSummary();
-    const summaryContainer = container.querySelector('#assessment-summary-content');
-    if (summaryContainer) {
-      summaryContainer.innerHTML = summary;
-    } else {
-        const summaryClassContainer = container.querySelector('.assessment-summary-content');
-        if (summaryClassContainer) summaryClassContainer.innerHTML = summary;
-    }
     
-    const findingsInput = container.querySelector('textarea[name="findings"]');
-    if (findingsInput) {
-      findingsInput.value = this.tempRecord.steps.assessment.findings || '';
+    // 更新摘要
+    const sContainer = container.querySelector('#assessment-summary-content') || container.querySelector('.assessment-summary-content');
+    if (sContainer) sContainer.innerHTML = this.generateAssessmentSummary();
+    
+    // 渲染觸診肌群 Chips (依賴 Step 2 的選擇)
+    this.renderPalpationChips();
+
+    // 綁定輸入框
+    const fInput = container.querySelector('textarea[name="findings"]');
+    if (fInput) fInput.value = this.tempRecord.steps.assessment.findings || '';
+  }
+    // 以下觸診相關方法
+  renderPalpationChips() {
+    const container = document.getElementById('palpation-chips-container');
+    if (!container) return;
+
+    // 取得 Step 2 選中的肌群
+    const selectedTags = this.tempRecord.steps.symptoms.muscleTags || [];
+    
+    if (selectedTags.length === 0) {
+        container.innerHTML = '<span style="color:#999; font-size:12px;">Step 2 尚未選擇相關肌群</span>';
+        return;
     }
+
+    container.innerHTML = selectedTags.map(tag => {
+        // 從 ID 找名稱 (兼容 tag 為物件或 ID 字串)
+        const tagName = typeof tag === 'string' ? this.getTagNameById(tag) : tag.name;
+        const tagId = typeof tag === 'string' ? tag : tag.id;
+        
+        return `
+            <div class="palpation-chip" 
+                 onclick="window.appServiceRecordFlow.openPalpationModal('${tagId}', '${tagName}')"
+                 style="background: white; border: 1px solid #cbd5e1; border-radius: 16px; padding: 6px 12px; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s;">
+                <span style="width: 8px; height: 8px; background: #3b82f6; border-radius: 50%; display: inline-block;"></span>
+                ${tagName}
+            </div>
+        `;
+    }).join('');
   }
 
+  getTagNameById(id) {
+     if (window.AppTagManager) {
+         const tag = window.AppTagManager.getTagById(id);
+         return tag ? tag.name : id;
+     }
+     return id;
+  }
+
+  openPalpationModal(muscleId = '', muscleName = '') {
+      const modal = document.getElementById('modal-palpation-details');
+      if (!modal) return;
+
+      // 重置表單
+      document.getElementById('palpation-target-muscle').value = muscleName; 
+      document.getElementById('palpation-modal-title').textContent = muscleName ? `標記狀態：${muscleName}` : '自訂觸診紀錄';
+      document.getElementById('palpation-note').value = '';
+      
+      // 重置側別 (預設左側)
+      document.querySelectorAll('input[name="palpation-side"]').forEach(r => r.checked = (r.value === '左側'));
+      
+      // 重置 Checkbox
+      document.querySelectorAll('input[name="palpation-status"]').forEach(c => c.checked = false);
+
+      if (!muscleName) {
+           document.getElementById('palpation-note').placeholder = "請輸入部位與狀態...";
+      } else {
+           document.getElementById('palpation-note').placeholder = "例如：傳導痛至手臂...";
+      }
+
+      window.openModal('modal-palpation-details');
+  }
+
+  savePalpationDetails() {
+      const muscleName = document.getElementById('palpation-target-muscle').value;
+      const side = document.querySelector('input[name="palpation-side"]:checked').value;
+      const statuses = Array.from(document.querySelectorAll('input[name="palpation-status"]:checked')).map(cb => cb.value);
+      const note = document.getElementById('palpation-note').value.trim();
+
+      // 格式化文字： "上斜方肌 (左側): 高張, 壓痛. 備註: xxx"
+      let text = muscleName ? `${muscleName}` : '';
+      if (muscleName) text += ` (${side})`;
+      
+      const details = [];
+      if (statuses.length > 0) details.push(statuses.join(', '));
+      if (note) details.push(note); 
+
+      if (details.length > 0) {
+          text += `: ${details.join('. ')}`;
+      } else if (!muscleName && note) {
+          text = note; // 純備註模式
+      }
+
+      // 寫入 Textarea
+      const textarea = document.querySelector('textarea[name="findings"]');
+      if (textarea && text) {
+          const currentVal = textarea.value.trim();
+          textarea.value = currentVal ? `${currentVal}\n${text}` : text;
+          
+          // 觸發 dirty check 讓系統知道資料變更了
+          textarea.dispatchEvent(new Event('input'));
+          this.hasUnsavedChanges = true;
+      }
+
+      window.closeModal('modal-palpation-details');
+  }
   initializeTreatmentUI() {
     const container = this.stepContainers.get(4);
     if (!container) return;
-
-    const treatmentInput = container.querySelector('textarea[name="treatment-plan"]');
-    if (treatmentInput) {
-      // [Auto-fill] 如果處理計畫是空的，自動帶入主訴部位作為建議開頭
-      if (!this.tempRecord.steps.treatment.treatmentPlan) {
-          const bodyParts = this.tempRecord.steps.chiefComplaint.bodyParts || [];
-          if (bodyParts.length > 0) {
-              const partNames = bodyParts.map(id => {
-                  const map = {
-                      'neck': '頸部', 'left-shoulder': '左肩', 'right-shoulder': '右肩',
-                      'upper-back': '上背', 'lower-back': '下背/腰', 'chest': '胸部',
-                      'left-arm': '左手', 'right-arm': '右手', 'left-leg': '左腿', 'right-leg': '右腿'
-                  };
-                  return map[id] || id;
-              });
-              treatmentInput.value = `針對 ${partNames.join('、')} 進行放鬆與調整。\n`;
-              this.tempRecord.steps.treatment.treatmentPlan = treatmentInput.value;
-          }
+    
+    const tInput = container.querySelector('textarea[name="treatment-plan"]');
+    if (tInput) {
+      // 自動填入邏輯 (Auto-fill)
+      if (!this.tempRecord.steps.treatment.treatmentPlan && this.tempRecord.steps.chiefComplaint.bodyParts?.length > 0) {
+         const parts = this.tempRecord.steps.chiefComplaint.bodyParts.join('、');
+         tInput.value = `針對 ${parts} 進行處理。\n`;
+         this.tempRecord.steps.treatment.treatmentPlan = tInput.value;
       } else {
-          treatmentInput.value = this.tempRecord.steps.treatment.treatmentPlan;
+         tInput.value = this.tempRecord.steps.treatment.treatmentPlan || '';
       }
     }
     
-    const recommendInput = container.querySelector('textarea[name="recommendations"]');
-    if (recommendInput) {
-      recommendInput.value = this.tempRecord.steps.treatment.recommendations || '';
-    }
+    const rInput = container.querySelector('textarea[name="recommendations"]');
+    if (rInput) rInput.value = this.tempRecord.steps.treatment.recommendations || '';
   }
 
   initializeFeedbackUI() {
     const container = this.stepContainers.get(5);
     if (!container) return;
-
-    const feedbackInput = container.querySelector('textarea[name="feedback"]');
-    if (feedbackInput) {
-      feedbackInput.value = this.tempRecord.steps.feedback.clientFeedback || '';
-    }
     
-    const nextStepInput = container.querySelector('textarea[name="next-steps"]');
-    if (nextStepInput) {
-      nextStepInput.value = this.tempRecord.steps.feedback.nextSteps || '';
-    }
+    const fbInput = container.querySelector('textarea[name="feedback"]');
+    if (fbInput) fbInput.value = this.tempRecord.steps.feedback.clientFeedback || '';
+    
+    const nsInput = container.querySelector('textarea[name="next-steps"]');
+    if (nsInput) nsInput.value = this.tempRecord.steps.feedback.nextSteps || '';
   }
-
   async validateCurrentStep() {
     return true; 
   }
@@ -481,25 +569,36 @@ class ServiceRecordFlow {
   async handleSaveRecord() {
     if (this.isLocked) return;
 
+    if(window.showLoading) window.showLoading('儲存中...');
+
     try {
       this.isLocked = true;
-      await this.collectStepData(5);
+      
+      // 強制收集當前最後一步的數據
+      await this.collectStepData(this.currentStep);
+
+      if (!window.appDataManager || !window.appDataManager.record) {
+          throw new Error('資料庫未連線');
+      }
 
       const result = await window.appDataManager.record.saveRecord(this.tempRecord);
 
       if (result.success) {
-        window.showAlert('服務紀錄已成功保存', 'success');
+        // 儲存成功，重置髒檢查狀態
+        this.hasUnsavedChanges = false;
         await this.clearTempRecord();
+        if(window.hideLoading) window.hideLoading();
         this.dispatchRecordSaved(result.recordId);
       } else {
-        window.showAlert(`保存失敗：${result.error}`, 'error');
+        throw new Error(result.error);
       }
 
-      this.isLocked = false;
-
     } catch (error) {
-      console.error('Failed to save record:', error);
-      window.showAlert('保存過程中發生錯誤', 'error');
+      console.error('Save failed:', error);
+      if(window.hideLoading) window.hideLoading();
+      if(window.showAlert) window.showAlert(`保存失敗：${error.message}`, 'error');
+      else alert(`保存失敗：${error.message}`);
+    } finally {
       this.isLocked = false;
     }
   }
@@ -508,16 +607,16 @@ class ServiceRecordFlow {
     this.tempRecord.steps.symptoms.bodyParts = detail.selectedParts || [];
     this.tempRecord.steps.chiefComplaint.bodyParts = detail.selectedParts || [];
     this.markStepDirty(2);
-    // [P2] 模板觸發邏輯：如果是新選取的部位 (clickedPart) 且是選取狀態
+    this.hasUnsavedChanges = true;
+    // 模板觸發邏輯：如果是新選取的部位 (clickedPart) 且是選取狀態
     // 假設 UI 層在 detail 中提供了 clickedPart 和 isSelected
     // 如果沒有 clickedPart，則不觸發，避免載入舊紀錄時瘋狂彈窗
-    const triggerPart = detail.clickedPart; 
-    
+    const triggerPart = detail.clickedPart;     
     if (triggerPart && detail.isSelected && window.AppTemplateManager) {
         this.checkAndShowTemplates(triggerPart);
     }
   }
-// [P2] 檢查並顯示模板 Modal
+// 檢查並顯示模板 Modal
   async checkAndShowTemplates(bodyPartId) {
     const templates = window.AppTemplateManager.findTemplatesByBodyPart(bodyPartId);
     
@@ -533,7 +632,7 @@ class ServiceRecordFlow {
     }
   }
 
-  // [P2] 渲染模板 Modal 內容
+  // 渲染模板 Modal 內容
   renderTemplateModal(template) {
     if (!template) return;
 
@@ -621,7 +720,7 @@ class ServiceRecordFlow {
       }
   }
 
-  // [P2] 執行模板套用
+  // 執行模板套用
   handleTemplateApply() {
       // 1. 收集文字內容並追加到對應欄位
       const appendText = (containerId, targetTextareaName) => {
@@ -666,6 +765,8 @@ class ServiceRecordFlow {
       // 3. 關閉 Modal
       window.closeModal('modal-template-selector');
       window.showAlert('模板已套用', 'success');
+  
+      this.hasUnsavedChanges = true;
       
       // 4. 強制收集一次當前步驟資料確保同步
       this.collectStepData(this.currentStep);
@@ -678,11 +779,13 @@ class ServiceRecordFlow {
   onMuscleTagsUpdated(detail) {
     this.tempRecord.steps.symptoms.muscleTags = detail.selectedTags || [];
     this.markStepDirty(2);
+    this.hasUnsavedChanges = true;
   }
 
   onAssessmentResultsUpdated(detail) {
     this.tempRecord.steps.symptoms.assessmentResults = detail.results || [];
     this.markStepDirty(2);
+    this.hasUnsavedChanges = true;
   }
 
   markStepDirty(stepNumber) {

@@ -10,9 +10,9 @@
 </head>
 <body>
   <div class="page-header">
-    <button class="back-btn" onclick="history.back()">
-      ← 返回
-    </button>
+    <button class="back-btn" onclick="window.appServiceRecordFlow.handleBackNavigation()">
+  ← 返回
+</button>
     <div class="header-title">
       <h1 id="page-title">新增服務紀錄</h1>
       <p class="header-subtitle" id="customer-subtitle">載入中...</p>
@@ -145,6 +145,18 @@
         <h3>評估結果摘要</h3>
         <div id="assessment-summary-content" class="assessment-summary-content">
           <p class="hint">暫無評估結果，請返回上一步完成評估</p>
+        </div>
+      </div>
+      <div class="section-divider">
+        <h3>觸診與肌群狀態 (Step 2 選取)</h3>
+      </div>
+      
+      <div class="palpation-section" style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 20px;">
+        <p class="hint" style="font-size: 13px; color: #64748b; margin-bottom: 10px;">點擊下方肌群標籤可詳細記錄狀態 (將寫入下方診斷欄位)</p>
+        <div id="palpation-chips-container" style="display: flex; flex-wrap: wrap; gap: 8px;">
+          </div>
+        <div style="margin-top: 10px;">
+            <button type="button" class="btn-secondary" style="font-size: 12px; padding: 4px 8px;" onclick="window.appServiceRecordFlow.openPalpationModal()">+ 自訂手動輸入</button>
         </div>
       </div>
 
@@ -306,7 +318,7 @@
   <script src="js/storage.js"></script>
   <script src="js/customer-manager.js"></script>
   <script src="js/data-manager.js"></script>
-  <script src="js/app.js"></script>
+  <script src="js/ui.js"></script> <script src="js/app.js"></script>
 
   <script src="js/ui-assessment.js"></script>
 
@@ -514,7 +526,7 @@
         font-size: 12px;
       }
     }
-/* [新增] 模板選擇器 Modal 特定樣式 */
+/* 模板選擇器 Modal 特定樣式 */
     .modal {
       display: none;
       position: fixed;
@@ -669,6 +681,106 @@
     .step-indicator {
         cursor: pointer; 
     }
+   
+    <div id="modal-palpation-details" class="modal">
+    <div class="modal-content" style="max-width: 450px;">
+      <div class="modal-header">
+        <h2 id="palpation-modal-title">肌群狀態標記</h2>
+        <button class="close-btn" onclick="closeModal('modal-palpation-details')">×</button>
+      </div>
+      
+      <div class="modal-body">
+        <input type="hidden" id="palpation-target-muscle">
+        
+        <div class="form-group">
+            <label class="form-label">選擇側別</label>
+            <div style="display: flex; gap: 10px;">
+                <label><input type="radio" name="palpation-side" value="左側" checked> 左側 (L)</label>
+                <label><input type="radio" name="palpation-side" value="右側"> 右側 (R)</label>
+                <label><input type="radio" name="palpation-side" value="雙側"> 雙側 (Bi)</label>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label" style="border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 10px;">肌肉狀態 (Muscle State)</label>
+            <div class="checkbox-list">
+                <label class="checkbox-item" title="定義：靜止張力過高 (Resting Tone)，包含保護性收縮、離心緊繃。">
+                    <input type="checkbox" name="palpation-status" value="高張 (Hypertonic)"> 
+                    <span style="font-weight:bold; color:#e11d48;">高張 (Hypertonic)</span> 
+                    <span style="font-size:12px;color:#666;">- 需放鬆/抑制</span>
+                </label>
+                
+                <label class="checkbox-item" title="定義：物理長度變短，ROM受限。">
+                    <input type="checkbox" name="palpation-status" value="短縮 (Shortened)"> 
+                    <span style="font-weight:bold; color:#d97706;">結構短縮 (Shortened)</span>
+                    <span style="font-size:12px;color:#666;">- 需伸展/重塑</span>
+                </label>
+                <label class="checkbox-item" title="定義：肌肉被拉長且緊繃。">
+                    <input type="checkbox" name="palpation-status" value="閉鎖拉長 (Locked Long)"> 
+                    <span style="font-weight:bold; color:#7c3aed;">閉鎖拉長 (Locked Long)</span>
+                    <span style="font-size:12px;color:#666;">- 需啟動/訓練</span>
+                </label>
+                <label class="checkbox-item" title="定義：肌肉被拉長且無力/抑制。">
+                    <input type="checkbox" name="palpation-status" value="被拉長/無力 (Long/Weak)"> 
+                    <span style="font-weight:bold; color:#2563eb;">被拉長/無力 (Long/Weak)</span>
+                    <span style="font-size:12px;color:#666;">- 需啟動/訓練</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label" style="border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 10px;">觸診質地 (Texture)</label>
+            <div class="checkbox-list">
+                <label class="checkbox-item" title="肌肉纖維的功能性攣縮，可能有跳動反應">
+                    <input type="checkbox" name="palpation-status" value="緊繃帶 (Taut Band)"> 緊繃帶 (Taut Band)
+                </label>
+                
+                <label class="checkbox-item" title="結締組織增生，像疤痕一樣硬，無彈性">
+                    <input type="checkbox" name="palpation-status" value="纖維化 (Fibrotic)"> 纖維化 (Fibrotic)
+                </label>
+                
+                <label class="checkbox-item" title="層次間滑動性差，皮推不動">
+                    <input type="checkbox" name="palpation-status" value="沾黏 (Adhesion)"> 筋膜沾黏 (Adhesion)
+                </label>
+
+                <label class="checkbox-item" title="缺乏彈性，整體變硬">
+                    <input type="checkbox" name="palpation-status" value="僵硬 (Stiff)"> 僵硬 (Stiff)
+                </label>
+
+                 <label class="checkbox-item" title="液體堆積">
+                    <input type="checkbox" name="palpation-status" value="水腫 (Edema)"> 水腫 (Edema)
+                </label>
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label class="form-label" style="border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 10px;">症狀發現 (Symptoms)</label>
+            <div class="checkbox-list">
+                <label class="checkbox-item" title="紅腫熱痛">
+                    <input type="checkbox" name="palpation-status" value="急性發炎 (Acute Inflammation)"> 急性發炎 (Acute Inflammation)
+                </label>
+
+                <label class="checkbox-item">
+                    <input type="checkbox" name="palpation-status" value="局部壓痛 (Tender)"> 局部壓痛 (Tender)
+                </label>
+                <label class="checkbox-item" title="按壓有傳導痛">
+                    <input type="checkbox" name="palpation-status" value="激痛點 (Trigger Point)"> 激痛點 (Trigger Point)
+                </label>
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label class="form-label">補充備註</label>
+            <input type="text" id="palpation-note" class="form-textarea" placeholder="例如：傳導痛至手臂...">
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" onclick="closeModal('modal-palpation-details')">取消</button>
+        <button type="button" class="btn-primary" onclick="window.appServiceRecordFlow.savePalpationDetails()">確認寫入</button>
+      </div>
+    </div>
+  </div>
   </style>
 </body>
 </html>

@@ -277,6 +277,12 @@ const SettingsApp = {
     document.querySelectorAll('input[name="edit-assessment-part"]').forEach(cb => {
         cb.checked = parts.includes(cb.value);
     });
+    
+    // 渲染並勾選關聯肌群
+    const muscleTags = window.AppTagManager.getTagsByCategory('muscleGroup');
+    const displayTags = Array.isArray(muscleTags) ? muscleTags : (muscleTags.data || []);
+    this.renderRelatedCheckboxes('edit-assessment-rel-muscles', 'edit-assessment-muscle', displayTags);
+    this.setCheckedValues('edit-assessment-muscle', action.relatedMuscles);
 
     this.openModal('modal-edit-assessment');
   },
@@ -291,7 +297,8 @@ const SettingsApp = {
     if (!name) return alert('請輸入動作名稱');
     if (parts.length === 0) return alert('請至少選擇一個部位');
 
-    const result = window.AppAssessmentManager.updateAction(id, { name, bodyPart: parts, description: desc });
+    const relatedMuscles = this.getCheckedValues('edit-assessment-muscle');
+    const result = window.AppAssessmentManager.updateAction(id, { name, bodyPart: parts, description: desc, relatedMuscles });
     
     if (result.success) {
       this.closeModal('modal-edit-assessment');
@@ -311,11 +318,13 @@ const SettingsApp = {
 
     if (!name) return alert('請輸入動作名稱');
     if (parts.length === 0) return alert('請至少選擇一個部位');
-
+    
+    const relatedMuscles = this.getCheckedValues('assessment-muscle'); // 收集肌群 ID
     const result = window.AppAssessmentManager.addAction({
       name,
       bodyPart: parts, // 支援陣列
       description: desc
+      relatedMuscles: relatedMuscles // 傳入 DataManager
     });
 
     if (result.success) {
@@ -895,6 +904,11 @@ const SettingsApp = {
   // === Modal 控制 ===
   showAddAssessmentModal() {
     document.getElementById('form-add-assessment').reset();
+    // 渲染肌群選項
+    const muscleTags = window.AppTagManager.getTagsByCategory('muscleGroup');
+    const displayTags = Array.isArray(muscleTags) ? muscleTags : (muscleTags.data || []);
+    this.renderRelatedCheckboxes('assessment-rel-muscles', 'assessment-muscle', displayTags);
+
     this.openModal('modal-add-assessment');
   },
 

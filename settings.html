@@ -190,7 +190,7 @@
         <div class="panel-header"><h2>系統維護</h2></div>
         
         <div class="settings-section">
-          <h3>資料備份與還原 (完整)</h3>
+          <h3>資料備份與維護</h3>
           <div class="storage-usage" style="margin-bottom:15px;">
             <span class="label">儲存空間：</span>
             <div class="progress-bar"><div id="storage-progress" class="progress-fill" style="width: 0%"></div></div>
@@ -198,48 +198,56 @@
           </div>
           
           <div class="action-buttons">
-            <button class="btn-secondary" onclick="exportAllData()">📦 完整備份 (JSON)</button>
-            <button class="btn-secondary" onclick="importData()">📥 完整還原 (JSON)</button>
-            <button class="btn-warning" onclick="cleanOrphans()">🧹 清理殘留檔案 (GC)</button>
+            <button class="btn-secondary" onclick="exportAllData()">📦 完整備份</button>
+            <button class="btn-secondary" onclick="importData()">📥 匯入備份</button>
+            <button class="btn-primary" style="background-color:#0ea5e9; border-color:#0ea5e9;" onclick="fixIndices()">🛡️ 系統診斷與修復</button>
             <button class="btn-danger" onclick="clearAllData()">⚠️ 清空所有資料</button>
           </div>
+          <p class="hint" style="margin-top:10px;">提示：「系統診斷」將掃描並修復索引錯誤，並將殘留的無主檔案移入回收桶。</p>
         </div>
 
         <hr class="divider" style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
 
         <div class="settings-section">
-          <h3>模組設定匯入/匯出 (取代模式)</h3>
+          <h3>🗑️ 回收桶管理</h3>
+          <div style="display:flex; justify-content:space-between; align-items:center; background:#f9fafb; padding:15px; border-radius:8px; border:1px solid #e5e7eb;">
+            <div>
+              <div style="font-weight:bold; font-size:16px;">
+                項目數量：<span id="recycle-count" style="color:#2563eb;">0</span> 筆
+              </div>
+              <div style="font-size:12px; color:#666; margin-top:4px;">
+                包含手動刪除與診斷回收的檔案。
+              </div>
+            </div>
+            <div style="display:flex; gap:10px;">
+              <button class="btn-secondary" onclick="showRecycleBinModal()">👁️ 檢視 / 還原</button>
+              <button class="btn-danger" onclick="emptyRecycleBin()">🗑️ 全部清空</button>
+            </div>
+          </div>
+        </div>
+        <hr class="divider" style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+
+        <div class="settings-section">
+          <h3>系統資料 (CSV 格式)</h3>
           <p class="hint" style="color:#666; font-size:14px; margin-bottom:15px;">
-            注意：匯入設定檔將會<b>完全覆蓋</b>現有的該類別設定，請謹慎使用。
+            將「評估動作」、「肌群標籤」與「服務模板」進行匯出、匯入。<br>
+            適合用於大量編輯或在不同裝置間共用設定。
           </p>
           
-          <div class="list-item" style="padding:10px 0; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;">
-              <div class="item-content"><b>評估動作 (Assessment Actions)</b></div>
-              <div class="item-actions" style="display:flex; gap:8px;">
-                  <button class="btn-secondary" style="padding:4px 8px; font-size:13px;" onclick="exportAssessments()">匯出 CSV</button>
-                  <button class="btn-secondary" style="padding:4px 8px; font-size:13px;" onclick="exportConfig('action')">匯出 JSON</button>
-                  <button class="btn-primary" style="padding:4px 8px; font-size:13px; background-color:#f59e0b; border-color:#f59e0b;" onclick="importConfig('action')">匯入取代</button>
+          <div class="list-item" style="padding:15px 0; display:flex; justify-content:space-between; align-items:center;">
+              <div class="item-content">
+                <div style="font-weight:bold; margin-bottom:4px;">系統設定總表 (Unified Config)</div>
+                <div style="font-size:12px; color:#666;">包含：Tags, Actions, Templates</div>
               </div>
-          </div>
-
-          <div class="list-item" style="padding:10px 0; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;">
-              <div class="item-content"><b>肌群標籤 (Muscle Tags)</b></div>
-              <div class="item-actions" style="display:flex; gap:8px;">
-                  <button class="btn-secondary" style="padding:4px 8px; font-size:13px;" onclick="exportConfig('muscle')">匯出</button>
-                  <button class="btn-primary" style="padding:4px 8px; font-size:13px; background-color:#f59e0b; border-color:#f59e0b;" onclick="importConfig('muscle')">匯入取代</button>
-              </div>
-          </div>
-
-          <div class="list-item" style="padding:10px 0; display:flex; justify-content:space-between; align-items:center;">
-              <div class="item-content"><b>服務模板 (Templates)</b></div>
-              <div class="item-actions" style="display:flex; gap:8px;">
-                  <button class="btn-secondary" style="padding:4px 8px; font-size:13px;" onclick="exportConfig('template')">匯出</button>
-                  <button class="btn-primary" style="padding:4px 8px; font-size:13px; background-color:#f59e0b; border-color:#f59e0b;" onclick="importConfig('template')">匯入取代</button>
+              <div class="item-actions" style="display:flex; gap:10px;">
+                  <button class="btn-secondary" onclick="exportUnifiedConfig()">📤 匯出 CSV</button>
+                  <button class="btn-primary" style="background-color:#f59e0b; border-color:#f59e0b;" onclick="importUnifiedConfig()">📥 匯入取代</button>
               </div>
           </div>
         </div>
         
-        <input type="file" id="config-import-input" style="display:none" accept=".json">
+        <input type="file" id="import-file-input" style="display:none" accept=".json">
+        <input type="file" id="unified-import-input" style="display:none" accept=".csv">
       </div>
     </main>
   </div>
@@ -258,6 +266,10 @@
         <div class="form-group">
           <label>所屬部位 * (可複選)</label>
           <div id="assessment-bodyparts-check" class="checkbox-group"></div>
+        </div>
+        <div class="form-group">
+          <label>關聯肌群</label>
+          <div id="assessment-rel-muscles" class="checkbox-group scrollable-checkboxes" style="max-height: 150px; overflow-y: auto; border: 1px solid #eee; padding: 8px;"></div>
         </div>
         <div class="form-group">
           <label>描述</label>
@@ -338,6 +350,10 @@
         <div class="form-group">
           <label>所屬部位 * (可複選)</label>
           <div id="edit-assessment-bodyparts-check" class="checkbox-group"></div>
+        </div>
+        <div class="form-group">
+          <label>關聯肌群</label>
+          <div id="edit-assessment-rel-muscles" class="checkbox-group scrollable-checkboxes" style="max-height: 150px; overflow-y: auto; border: 1px solid #eee; padding: 8px;"></div>
         </div>
         <div class="form-group">
           <label>描述</label>

@@ -1,5 +1,5 @@
 /**
- * 顧客管理模組 (Customer Manager) - v3.0
+ * 顧客管理模組 (Customer Manager) - v4.0
  * 整合 StorageService 的分級儲存策略 (Index + Detail)
  * 改用 executeTransaction 確保寫入的一致性
  */
@@ -181,7 +181,7 @@ class CustomerManager {
     }
   }
 
-  // [P0] 使用交易機制的更新方法
+  // 使用交易機制的更新方法
   updateCustomer(customerId, updatedData) {
     const validation = this.validate(updatedData);
     if (!validation.isValid) return { success: false, errors: validation.errors };
@@ -235,34 +235,33 @@ class CustomerManager {
     }
   }
 
-  // [P0] 使用交易機制的刪除方法
+  // 使用回收桶機制的刪除方法 (邏輯刪除)
   deleteCustomer(customerId) {
+    if (typeof this.storage.moveToRecycleBin !== 'function') {
+      return { success: false, error: '系統核心尚未更新' };
+    }
     try {
-      // 1. 準備新的索引 (移除該顧客)
-      const index = this.storage.loadCustomerIndex() || [];
-      const newIndex = index.filter(c => c.id !== customerId);
-      
-      // 如果過濾後長度沒變，代表本來就不存在
-      if (index.length === newIndex.length) {
-        return { success: false, error: '找不到該顧客' };
-      }
-
-      // 2. [關鍵] 執行原子性交易
-      // 同時刪除 Detail 檔並更新 Index
-      const result = this.storage.executeTransaction([
-        { type: 'remove', key: `customer_${customerId}` },
-        { type: 'save', key: this.storage.KEYS.CUSTOMER_INDEX, value: newIndex }
-      ]);
-
-      if (result.success) {
-        return { success: true };
-      } else {
-        return { success: false, error: result.message || '刪除失敗' };
-      }
-
+      // 呼叫底層 API 將資料移入回收桶
+      const result = this.storage.moveToRecycleBin(customerId);
+      return result.success ? { success: true } : { success: false, error: result.error };
     } catch (error) {
-      console.error('Delete customer error:', error);
-      return { success: false, error: '刪除顧客失敗:' + error.message };
+      console.error('Delete error:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * 從回收桶還原顧客
+   */
+  restoreCustomer(customerId) {
+    if (typeof this.storage.restoreFromRecycleBin !== 'function') {
+      return { success: false, error: '系統核心尚未更新' };
+    }
+    try {
+      const result = this.storage.restoreFromRecycleBin(customerId);
+      return result.success ? { success: true } : { success: false, error: result.error };
+    } catch (error) {
+      return { success: false, error: error.message };
     }
   }
 

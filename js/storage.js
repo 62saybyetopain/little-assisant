@@ -1,5 +1,5 @@
 /**
- * LocalStorage 封裝服務 (v3.0)
+ * LocalStorage 封裝服務 (v4.0)
  * 支援分級儲存策略 (Index vs Detail) 與自動遷移
  * 新增交易機制以及更新基礎存取方法
  */
@@ -14,10 +14,10 @@ class StorageService {
     this.KEYS = {
       CUSTOMER_INDEX: 'customerIndex',     // 輕量索引
       SETTINGS: 'appSettings',             // 系統設定
-      LEGACY_CUSTOMERS: 'customers'        // 舊版資料 Key (用於遷移)
+      LEGACY_CUSTOMERS: 'customers',       // 舊版資料 Key (用於遷移)
+      RECYCLE_BIN: 'recycleBinIndex'       // [新增] 回收桶索引
     };
-  }
-
+}
   checkAvailability() {
     try {
       const test = '__storage_test__';
@@ -30,7 +30,7 @@ class StorageService {
     }
   }
   // ==========================================
-  // [P0] 核心交易機制 (Atomic Transaction)
+  // 核心交易機制 (Atomic Transaction)
   // 防止寫入 Index 成功但寫入 Detail 失敗導致的資料不一致
   // ==========================================
   executeTransaction(operations) {
@@ -379,55 +379,239 @@ class StorageService {
     }
     return null;
   }
-/**
-   * 垃圾回收機制 (Vacuum / GC)
-   * 用途：掃描並刪除沒有對應索引的「孤兒檔案」，釋放空間。
-   * 觸發時機：App 啟動後背景執行、或使用者手動執行。
-   */
-  vacuum() {
-    console.groupCollapsed('🧹 [System] 執行垃圾回收 (GC)...');
-    try {
-      // 1. 取得所有合法的 ID 清單
-      const index = this.loadCustomerIndex() || [];
-      const validIds = new Set(index.map(c => c.id));
-      let removedCount = 0;
-      let totalFreed = 0;
+  
+  // ==========================================
+  // 5. 回收桶與系統診斷機制 (Unified Maintenance)
+  // ==========================================
 
-      // 2. 遍歷 localStorage 尋找孤兒
-      for (let i = localStorage.length - 1; i >= 0; i--) {
-        const key = localStorage.key(i);
-        
-        // 只檢查顧客檔案 (customer_ 開頭)
-        if (key && key.startsWith('customer_')) {
-          const id = key.replace('customer_', '');
-          
-          // 如果這個 ID 不在合法清單中，它就是孤兒 (Orphan)
-          if (!validIds.has(id)) {
-            const size = localStorage.getItem(key).length;
-            console.warn(`🗑️ 發現殘留檔案: ${key} (${(size/1024).toFixed(2)} KB)，正在移除...`);
-            
-            localStorage.removeItem(key);
-            removedCount++;
-            totalFreed += size;
-          }
-        }
+  /**
+   * 將顧客移入回收桶 (邏輯刪除)
+   * @param {string} customerId 
+   */
+  moveToRecycleBin(customerId) {
+    try {
+      const index = this.loadCustomerIndex() || [];
+      const customerData = this.loadCustomerDetail(customerId);
+      const recycleBin = this.load(this.KEYS.RECYCLE_BIN) || [];
+      const now = new Date().toISOString();
+
+      const operations = [];
+
+      // 1. 如果檔案存在，將其更名為 trash_{id} 以便備份
+      if (customerData) {
+        operations.push({ type: 'save', key: `trash_${customerId}`, value: customerData });
+        operations.push({ type: 'remove', key: `customer_${customerId}` });
       }
-      
-      const freedKB = (totalFreed / 1024).toFixed(2);
-      if (removedCount > 0) {
-        console.log(`✅ 清理完成：共移除 ${removedCount} 個檔案，釋放 ${freedKB} KB 空間。`);
-      } else {
-        console.log('✨ 系統很乾淨，無需清理。');
-      }
-      
-      console.groupEnd();
-      return { success: true, removedCount, freedKB };
+
+      // 2. 從正式索引移除
+      const newIndex = index.filter(c => c.id !== customerId);
+      operations.push({ type: 'save', key: this.KEYS.CUSTOMER_INDEX, value: newIndex });
+
+      // 3. 加入回收桶索引
+      const indexEntry = index.find(c => c.id === customerId);
+      const name = customerData?.name || indexEntry?.name || '未知顧客';
+
+      recycleBin.unshift({
+        id: customerId,
+        name: name,
+        deletedAt: now,
+        reason: 'user_delete',
+        hasFile: !!customerData
+      });
+      operations.push({ type: 'save', key: this.KEYS.RECYCLE_BIN, value: recycleBin });
+
+      return this.executeTransaction(operations);
 
     } catch (e) {
-      console.error('❌ 垃圾回收失敗:', e);
+      console.error('Move to recycle bin failed:', e);
+      return { success: false, error: e.message };
+    }
+  }
+
+  /**
+   * 從回收桶還原
+   */
+  restoreFromRecycleBin(customerId) {
+    try {
+      const recycleBin = this.load(this.KEYS.RECYCLE_BIN) || [];
+      const trashKey = `trash_${customerId}`;
+      const trashData = this.load(trashKey);
+      
+      if (!trashData) {
+        return { success: false, error: '還原失敗：備份檔案已遺失' };
+      }
+
+      const index = this.loadCustomerIndex() || [];
+      const operations = [];
+
+      // 1. 恢復實體檔案 trash_{id} -> customer_{id}
+      operations.push({ type: 'save', key: `customer_${customerId}`, value: trashData });
+      operations.push({ type: 'remove', key: trashKey });
+
+      // 2. 重建索引項目
+      const restoredEntry = {
+        id: trashData.id,
+        name: trashData.name,
+        nickname: trashData.nickname || '',
+        phoneLastThree: trashData.phoneLastThree || '',
+        status: 'active',
+        updatedAt: new Date().toISOString(),
+        stats: { totalServices: trashData.serviceRecords ? trashData.serviceRecords.length : 0 }
+      };
+      
+      const newIndex = [restoredEntry, ...index];
+      operations.push({ type: 'save', key: this.KEYS.CUSTOMER_INDEX, value: newIndex });
+
+      // 3. 從回收桶索引移除
+      const newRecycleBin = recycleBin.filter(item => item.id !== customerId);
+      operations.push({ type: 'save', key: this.KEYS.RECYCLE_BIN, value: newRecycleBin });
+
+      return this.executeTransaction(operations);
+
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  /**
+   * 清空回收桶
+   */
+  emptyRecycleBin() {
+    try {
+      const recycleBin = this.load(this.KEYS.RECYCLE_BIN) || [];
+      if (recycleBin.length === 0) return { success: true };
+
+      const operations = [];
+      recycleBin.forEach(item => {
+        if (item.hasFile) {
+          operations.push({ type: 'remove', key: `trash_${item.id}` });
+        }
+      });
+      operations.push({ type: 'remove', key: this.KEYS.RECYCLE_BIN });
+
+      return this.executeTransaction(operations);
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  /**
+   * 系統診斷與修復 (Unified Fix & Vacuum)
+   * 包含：
+   * 1. 修復壞掉的索引連結 (Broken Links)
+   * 2. 安全回收無主的孤兒檔案 (Orphans) -> 取代舊的 Vacuum
+   * 3. 清理真正的系統垃圾 (Temp files)
+   */
+  fixBrokenIndices() {
+    console.group('🔧 執行系統全域診斷...');
+    try {
+      const index = this.loadCustomerIndex() || [];
+      const recycleBin = this.load(this.KEYS.RECYCLE_BIN) || [];
+      const operations = [];
+      const now = new Date().toISOString();
+      let stats = { fixedLinks: 0, recoveredOrphans: 0, cleanedTrash: 0 };
+
+      // === 步驟 1：修復無效索引 (Broken Links) ===
+      const validIndex = [];
+      index.forEach(entry => {
+        const fileKey = `customer_${entry.id}`;
+        if (localStorage.getItem(fileKey) === null) {
+          console.warn(`⚠️ 發現無效連結: ${entry.name}，標記為檔案遺失。`);
+          if (!recycleBin.some(r => r.id === entry.id)) {
+            recycleBin.unshift({
+              id: entry.id, name: entry.name, deletedAt: now,
+              reason: 'missing_file', hasFile: false 
+            });
+          }
+          stats.fixedLinks++;
+        } else {
+          validIndex.push(entry);
+        }
+      });
+
+      // === 步驟 2：安全回收孤兒檔案 (Safe Vacuum) ===
+      const validIds = new Set(validIndex.map(c => c.id));
+      
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        
+        // 針對顧客檔案執行安全回收
+        if (key && key.startsWith('customer_')) {
+          const id = key.replace('customer_', '');
+          if (!validIds.has(id)) {
+            console.warn(`👻 發現走失檔案: ${key}，正在移入回收桶...`);
+            
+            // 讀取內容以獲取名稱
+            let orphanName = '迷路小羊';
+            let orphanData = null;
+            try {
+              orphanData = JSON.parse(localStorage.getItem(key));
+              if (orphanData?.name) orphanName = orphanData.name;
+            } catch(e) {}
+
+            // 移入回收桶 (更名)
+            if (orphanData) {
+              operations.push({ type: 'save', key: `trash_${id}`, value: orphanData });
+              operations.push({ type: 'remove', key: key });
+            } else {
+              operations.push({ type: 'remove', key: key }); // 壞檔直接刪
+            }
+
+            if (!recycleBin.some(r => r.id === id)) {
+              recycleBin.unshift({
+                id: id, name: orphanName, deletedAt: now,
+                reason: 'orphan_recovered', hasFile: !!orphanData
+              });
+            }
+            stats.recoveredOrphans++;
+          }
+        }
+
+        // === 步驟 3：清理過期的暫存檔 (True Vacuum) ===
+        // 例如暫存的服務紀錄，若超過30天則刪除
+        if (key === 'tempServiceRecord') {
+           try {
+             const temp = JSON.parse(localStorage.getItem(key));
+             const savedTime = new Date(temp.savedAt).getTime();
+             const oneDay = 30 * 24 * 60 * 60 * 1000;
+             if (Date.now() - savedTime > oneDay) {
+                 operations.push({ type: 'remove', key: key });
+                 stats.cleanedTrash++;
+                 console.log('🧹 清除過期暫存檔');
+             }
+           } catch(e) {
+               operations.push({ type: 'remove', key: key }); // 格式錯誤直接刪
+           }
+        }
+      }
+
+      // 執行變更
+      if (stats.fixedLinks > 0 || stats.recoveredOrphans > 0 || stats.cleanedTrash > 0) {
+        operations.push({ type: 'save', key: this.KEYS.CUSTOMER_INDEX, value: validIndex });
+        operations.push({ type: 'save', key: this.KEYS.RECYCLE_BIN, value: recycleBin });
+        
+        this.executeTransaction(operations);
+        console.log(`✅ 診斷完成: 修復連結 ${stats.fixedLinks}, 回收孤兒 ${stats.recoveredOrphans}, 清理垃圾 ${stats.cleanedTrash}`);
+        console.groupEnd();
+        return { success: true, stats };
+      }
+
+      console.log('✨ 系統健康，無需修復。');
+      console.groupEnd();
+      return { success: true, stats: { fixedLinks:0, recoveredOrphans:0, cleanedTrash:0 } };
+
+    } catch (e) {
+      console.error('診斷失敗:', e);
       console.groupEnd();
       return { success: false, error: e.message };
     }
+  }
+
+  /**
+   * 取得回收桶內容
+   */
+  getRecycleBin() {
+    return this.load(this.KEYS.RECYCLE_BIN) || [];
   }
 }
 

@@ -165,13 +165,13 @@ class AssessmentManager {
     if (existing && existing.length > 0) return;
 
     const defaultActions = [
-      { id: 'act_01', bodyPart: 'neck', name: '頸部旋轉測試', description: '測試頸椎左右旋轉角度', order: 1 },
-      { id: 'act_02', bodyPart: 'neck', name: '椎間孔擠壓測試', description: '測試神經根壓迫', order: 2 },
-      { id: 'act_03', bodyPart: 'shoulder', name: 'Apley 抓背測試', description: '測試肩關節活動度', order: 1 },
-      { id: 'act_04', bodyPart: 'shoulder', name: '空罐測試', description: '測試棘上肌肌力', order: 2 },
-      { id: 'act_05', bodyPart: 'lower-back', name: '直腿抬高測試', description: '測試坐骨神經痛', order: 1 },
-      { id: 'act_06', bodyPart: 'lower-back', name: 'Slump Test', description: '測試神經張力', order: 2 },
-      { id: 'act_07', bodyPart: 'knee', name: '抽屜測試', description: '測試十字韌帶', order: 1 }
+      { id: 'act_01', bodyPart: 'neck', name: '頸部旋轉測試', description: '測試頸椎左右旋轉角度', order: 1, relatedMuscles: ['tag_m_01', 'tag_m_02'] },
+      { id: 'act_02', bodyPart: 'neck', name: '椎間孔擠壓測試', description: '測試神經根壓迫', order: 2, relatedMuscles: ['tag_m_01'] },
+      { id: 'act_03', bodyPart: 'shoulder', name: 'Apley 抓背測試', description: '測試肩關節活動度', order: 1, relatedMuscles: ['tag_m_03', 'tag_m_04'] },
+      { id: 'act_04', bodyPart: 'shoulder', name: '空罐測試', description: '測試棘上肌肌力', order: 2, relatedMuscles: ['tag_m_04'] },
+      { id: 'act_05', bodyPart: 'lower-back', name: '直腿抬高測試', description: '測試坐骨神經痛', order: 1, relatedMuscles: ['tag_m_07'] },
+      { id: 'act_06', bodyPart: 'lower-back', name: 'Slump Test', description: '測試神經張力', order: 2, relatedMuscles: ['tag_m_05'] },
+      { id: 'act_07', bodyPart: 'knee', name: '抽屜測試', description: '測試十字韌帶', order: 1, relatedMuscles: ['tag_m_08'] }
     ];
 
     this.storage.save(this.key, defaultActions);
@@ -205,6 +205,7 @@ class AssessmentManager {
       const newAction = {
         id: `act_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
         ...actionData,
+        relatedMuscles: actionData.relatedMuscles || [],
         isCustom: true,
         isDefault: false,
         createdAt: new Date().toISOString()
