@@ -123,6 +123,11 @@ const COLOR_DEF_MAP = [
   { hex: '#67e8f9', family: 'cyan', type: 'phasic', name: '踝部 (相位肌)' },
   { hex: '#c2410c', family: 'orange', type: 'stabilizer', name: '足部 (穩定肌)' },
   { hex: '#fdba74', family: 'orange', type: 'phasic', name: '足部 (相位肌)' }, 
+
+  // --- 特殊組織色系 ---
+  { hex: '#eab308', family: 'nerve', type: 'nerve', name: '神經 (Nerve)' },       // 鮮明黃色
+  { hex: '#6b7280', family: 'ligament', type: 'ligament', name: '韌帶 (Ligament)' }, // 中性灰色
+  { hex: '#ec4899', family: 'fascia', type: 'fascia', name: '筋膜 (Fascia)' },     // 亮粉紅色 (區隔紅色系)
   { hex: '#000000', family: 'other', type: 'other', name: '特殊/其他' },
 ];
 
@@ -1130,6 +1135,22 @@ const SettingsApp = {
     // 預設選取第一個顏色
     const firstColor = document.querySelector('.color-option');
     if (firstColor) this.selectColor(COLORS_DEF[0], firstColor);
+    
+    // [修正] 更新 Radio Group HTML 包含新選項 (針對 新增表單)
+    const radioGroup = document.querySelector('#form-add-muscle .radio-group');
+    if (radioGroup) {
+        radioGroup.innerHTML = `
+            <div style="display:flex; flex-wrap:wrap; gap:10px;">
+                <label><input type="radio" name="muscle-type" value="stabilizer" onchange="autoSelectColor('add')"> 穩定肌</label>
+                <label><input type="radio" name="muscle-type" value="phasic" onchange="autoSelectColor('add')"> 相位肌</label>
+                <label><input type="radio" name="muscle-type" value="nerve" onchange="autoSelectColor('add')"> 神經</label>
+                <label><input type="radio" name="muscle-type" value="ligament" onchange="autoSelectColor('add')"> 韌帶</label>
+                <label><input type="radio" name="muscle-type" value="fascia" onchange="autoSelectColor('add')"> 筋膜</label>
+                <label><input type="radio" name="muscle-type" value="other" onchange="autoSelectColor('add')" checked> 其他</label>
+            </div>
+        `;
+    }
+
     this.openModal('modal-add-muscle');
   },
 
@@ -1236,17 +1257,25 @@ window.copyFullId = () => {
 // 自動選色邏輯 (全域函式，供 HTML onchange 呼叫)
 window.autoSelectColor = (mode) => {
   // mode: 'add' or 'edit'
-  const prefix = mode === 'add' ? '' : 'edit-';
   
-  // 1. 取得目前選中的部位 (取第一個)
-  // 注意：name 分別為 'muscle-part' 或 'edit-muscle-part'
+  // 1. 取得目前選中的屬性
+  const typeName = mode === 'add' ? 'muscle-type' : 'edit-muscle-type';
+  const type = document.querySelector(`input[name="${typeName}"]:checked`)?.value || 'other';
+
+  // 特殊組織優先判斷 (無視部位)
+  const specialTypes = ['nerve', 'ligament', 'fascia'];
+  if (specialTypes.includes(type)) {
+      const targetColor = COLOR_DEF_MAP.find(c => c.type === type);
+      if (targetColor) {
+          applyColorSelection(mode, targetColor.hex);
+      }
+      return;
+  }
+
+  // 2. 取得目前選中的部位 (取第一個)
   const partName = mode === 'add' ? 'muscle-part' : 'edit-muscle-part';
   const checkedParts = Array.from(document.querySelectorAll(`input[name="${partName}"]:checked`)).map(cb => cb.value);
   const mainPart = checkedParts.length > 0 ? checkedParts[0] : null;
-
-  // 2. 取得目前選中的屬性
-  const typeName = mode === 'add' ? 'muscle-type' : 'edit-muscle-type';
-  const type = document.querySelector(`input[name="${typeName}"]:checked`)?.value || 'other';
 
   if (!mainPart) return;
 
@@ -1260,20 +1289,23 @@ window.autoSelectColor = (mode) => {
   }
 
   if (targetColor) {
-    // 5. 呼叫 SettingsApp 的選色方法更新 UI
+      applyColorSelection(mode, targetColor.hex);
+  }
+};
+
+// 內部輔助函式：執行 UI 選色更新
+function applyColorSelection(mode, hexColor) {
     const paletteId = mode === 'add' ? 'color-palette' : 'edit-color-palette';
-    // 透過 CSS 選擇器找到對應的色塊元素
-    const paletteItem = document.querySelector(`#${paletteId} .color-option[style*="${targetColor.hex}"]`);
+    const paletteItem = document.querySelector(`#${paletteId} .color-option[style*="${hexColor}"]`);
     
     if (paletteItem) {
         if (mode === 'add') {
-            SettingsApp.selectColor(targetColor.hex, paletteItem);
+            SettingsApp.selectColor(hexColor, paletteItem);
         } else {
-            SettingsApp.selectEditColor(targetColor.hex, paletteItem);
+            SettingsApp.selectEditColor(hexColor, paletteItem);
         }
     }
-  }
-};
+}
 
 // 綁定 HTML onclick 會用到的函式到 window
 window.switchTab = (id) => SettingsApp.switchTab(id);

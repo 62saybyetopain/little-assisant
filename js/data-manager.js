@@ -1,6 +1,6 @@
 /**
  * ================================================================
- * Data Manager - 資料管理核心模組 (v3.0)
+ * Data Manager - 資料管理核心模組 (v3.1)
  * ================================================================
  * 職責：
  * 1. 統一管理 Tag, Record, Assessment 的 CRUD
@@ -36,18 +36,8 @@ class TagManager {
     if (existing && existing.length > 0) return;
     
     const defaultTags = [
-      { id: 'tag_m_01', name: '斜方肌', category: 'muscleGroup', relatedBodyParts: ['neck', 'left-shoulder', 'right-shoulder', 'upper-back'], usageCount: 0 },
-      { id: 'tag_m_02', name: '提肩胛肌', category: 'muscleGroup', relatedBodyParts: ['neck', 'left-shoulder', 'right-shoulder'], usageCount: 0 },
-      { id: 'tag_m_03', name: '胸大肌', category: 'muscleGroup', relatedBodyParts: ['chest', 'left-shoulder', 'right-shoulder'], usageCount: 0 },
-      { id: 'tag_m_04', name: '三角肌', category: 'muscleGroup', relatedBodyParts: ['left-shoulder', 'right-shoulder', 'left-arm', 'right-arm'], usageCount: 0 },
-      { id: 'tag_m_05', name: '豎脊肌', category: 'muscleGroup', relatedBodyParts: ['upper-back', 'lower-back'], usageCount: 0 },
-      { id: 'tag_m_06', name: '腰方肌', category: 'muscleGroup', relatedBodyParts: ['lower-back'], usageCount: 0 },
-      { id: 'tag_m_07', name: '梨狀肌', category: 'muscleGroup', relatedBodyParts: ['hip', 'lower-back'], usageCount: 0 },
-      { id: 'tag_m_08', name: '股四頭肌', category: 'muscleGroup', relatedBodyParts: ['left-leg', 'right-leg', 'left-knee', 'right-knee'], usageCount: 0 },
-      { id: 'tag_m_09', name: '腓腸肌', category: 'muscleGroup', relatedBodyParts: ['left-leg', 'right-leg', 'left-calf', 'right-calf'], usageCount: 0 },
-      { id: 'tag_m_10', name: '髂腰肌', category: 'muscleGroup', relatedBodyParts: ['lower-back', 'hip', 'left-leg', 'right-leg'], usageCount: 0 }
+      { id: 'tag_demo_01', name: '範例肌群 (請匯入資料包)', category: 'muscleGroup', relatedBodyParts: ['neck'], usageCount: 0, color: '#e9d5ff' }
     ];
-
     this.storage.save(this.key, defaultTags);
   }
 
@@ -165,13 +155,7 @@ class AssessmentManager {
     if (existing && existing.length > 0) return;
 
     const defaultActions = [
-      { id: 'act_01', bodyPart: 'neck', name: '頸部旋轉測試', description: '測試頸椎左右旋轉角度', order: 1, relatedMuscles: ['tag_m_01', 'tag_m_02'] },
-      { id: 'act_02', bodyPart: 'neck', name: '椎間孔擠壓測試', description: '測試神經根壓迫', order: 2, relatedMuscles: ['tag_m_01'] },
-      { id: 'act_03', bodyPart: 'shoulder', name: 'Apley 抓背測試', description: '測試肩關節活動度', order: 1, relatedMuscles: ['tag_m_03', 'tag_m_04'] },
-      { id: 'act_04', bodyPart: 'shoulder', name: '空罐測試', description: '測試棘上肌肌力', order: 2, relatedMuscles: ['tag_m_04'] },
-      { id: 'act_05', bodyPart: 'lower-back', name: '直腿抬高測試', description: '測試坐骨神經痛', order: 1, relatedMuscles: ['tag_m_07'] },
-      { id: 'act_06', bodyPart: 'lower-back', name: 'Slump Test', description: '測試神經張力', order: 2, relatedMuscles: ['tag_m_05'] },
-      { id: 'act_07', bodyPart: 'knee', name: '抽屜測試', description: '測試十字韌帶', order: 1, relatedMuscles: ['tag_m_08'] }
+      { id: 'act_demo_01', bodyPart: 'neck', name: '範例評估動作', description: '這是一個範例，請從系統設定匯入完整資料包。', order: 1, relatedMuscles: ['tag_demo_01'] }
     ];
 
     this.storage.save(this.key, defaultActions);
@@ -459,24 +443,7 @@ class TemplateManager {
           findings: ['提肩胛肌明顯緊繃', '頸椎旋轉角度受限 (<45度)', '胸鎖乳突肌壓痛'],
           treatments: ['熱敷放鬆', '激痛點按壓 (Trigger Point)', '頸椎關節鬆動術', '貼紮支撐'],
           recommendations: ['更換合適高度枕頭', '避免長時間低頭滑手機', '每小時頸部伸展', '居家熱敷15分鐘']
-        },
-        relatedMuscles: ['tag_m_01', 'tag_m_02'],
-        relatedAssessments: ['act_01', 'act_02']
-      },
-      {
-        id: 'tpl_default_02',
-        name: '五十肩 (沾黏性肩關節囊炎)',
-        symptomTag: '五十肩',
-        relatedBodyParts: ['left-shoulder', 'right-shoulder'],
-        textItems: {
-          complaints: ['手臂無法高舉過頭', '夜間睡覺壓到肩膀會痛醒', '穿脫衣服困難（內旋受限）'],
-          findings: ['主動/被動關節活動度皆受限', '外轉角度明顯不足', '結節間溝壓痛'],
-          treatments: ['關節囊鬆動術', '深層橫向按摩 (DFM)', 'P.N.F 伸展', '干擾波電療'],
-          recommendations: ['爬牆運動 (Wall Crawl)', '毛巾操 (內旋訓練)', '睡覺時患側墊枕頭', '持續復健勿中斷']
-        },
-        relatedMuscles: ['tag_m_03', 'tag_m_04'],
-        relatedAssessments: ['act_03', 'act_04']
-      }
+        }
     ];
 
     this.storage.save(this.key, defaultTemplates);
