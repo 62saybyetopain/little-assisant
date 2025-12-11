@@ -330,7 +330,7 @@ const SettingsApp = {
     const result = window.AppAssessmentManager.addAction({
       name,
       bodyPart: parts, // 支援陣列
-      description: desc
+      description: desc,
       relatedMuscles: relatedMuscles // 傳入 DataManager
     });
 

@@ -444,6 +444,7 @@ class TemplateManager {
           treatments: ['熱敷放鬆', '激痛點按壓 (Trigger Point)', '頸椎關節鬆動術', '貼紮支撐'],
           recommendations: ['更換合適高度枕頭', '避免長時間低頭滑手機', '每小時頸部伸展', '居家熱敷15分鐘']
         }
+      }
     ];
 
     this.storage.save(this.key, defaultTemplates);
