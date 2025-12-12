@@ -22,8 +22,7 @@
   <div class="page-container">
     <div class="step-navigation"></div>
 
-    <div data-step="1" class="step-container">
-      <div data-step="1" class="step-container" id="step-form-1">
+    <div data-step="1" class="step-container" id="step-form-1">
       <h2>主訴</h2>
       <p class="step-description">描述客戶主要的症狀或問題</p>
 
@@ -243,8 +242,7 @@
       </div>
       <div class="step-actions-bar">
          <button type="button" class="btn-secondary btn-save-record">儲存</button>
-      </div
-    </div>
+      </div> </div>
 
     <div class="step-buttons"></div>
 
@@ -332,77 +330,85 @@
     /**
      * 服務紀錄頁面初始化
      */
-    document.addEventListener('DOMContentLoaded', async () => {
-      console.log('✅ 服務紀錄頁面載入');
+    document.addEventListener('DOMContentLoaded', () => {
+      console.log('✅ 服務紀錄頁面載入 - 等待核心就緒...');
 
-      try {
-        const urlParams = new URLSearchParams(window.location.search);
-        const customerId = urlParams.get('customerId');
+      // 封裝初始化邏輯，確保依賴就緒後才執行 (對應 [P0] 初始化順序問題)
+      const bootPage = async () => {
+        try {
+          const urlParams = new URLSearchParams(window.location.search);
+          const customerId = urlParams.get('customerId');
 
-        if (!customerId) {
-          showAlert('無效的客戶 ID', 'error');
-          setTimeout(() => {
-            window.location.href = 'customer-list.html';
-          }, 2000);
-          return;
-        }
+          if (!customerId) {
+            showAlert('無效的客戶 ID', 'error');
+            setTimeout(() => {
+              window.location.href = 'customer-list.html';
+            }, 2000);
+            return;
+          }
 
-        if (!window.AppCustomerManager) {
-          console.error('❌ 資料管理系統未正確初始化');
-          showAlert('系統初始化失敗，請重新整理頁面', 'error');
-          return;
-        }
+          if (!window.AppCustomerManager) {
+             throw new Error('Manager dependencies missing');
+          }
 
-        const customer = window.AppCustomerManager.getCustomerById(customerId);
-        if (!customer) {
-          showAlert('找不到該客戶', 'error');
-          setTimeout(() => {
-            window.location.href = 'customer-list.html';
-          }, 2000);
-          return;
-        }
+          const customer = window.AppCustomerManager.getCustomerById(customerId);
+          if (!customer) {
+            showAlert('找不到該客戶', 'error');
+            setTimeout(() => {
+              window.location.href = 'customer-list.html';
+            }, 2000);
+            return;
+          }
 
-        document.getElementById('page-title').textContent = `新增服務紀錄 - ${customer.name}`;
-        document.getElementById('customer-subtitle').textContent = 
-          `客戶：${customer.name} | 暱稱：${customer.nickname} | 電話末三碼：${customer.phoneLastThree}`;
+          document.getElementById('page-title').textContent = `新增服務紀錄 - ${customer.name}`;
+          document.getElementById('customer-subtitle').textContent = 
+            `客戶：${customer.name} | 暱稱：${customer.nickname} | 電話末三碼：${customer.phoneLastThree}`;
 
-        // [Lazy Init] 僅在此頁面實例化 UIAssessment
-        if (typeof UIAssessment !== 'undefined') {
-          console.log('🔄 初始化 UIAssessment (Lazy Load)...');
-          
-          // 建立實例並綁定到全域變數 (供 ServiceRecordFlow 呼叫)
-          window.appUIAssessment = new UIAssessment();
-          window.AppUIAssessment = window.appUIAssessment; // 維持相容性
+          // [Lazy Init] 僅在此頁面實例化 UIAssessment
+          if (typeof UIAssessment !== 'undefined') {
+            console.log('🔄 初始化 UIAssessment (Lazy Load)...');
+            
+            // 建立實例並綁定到全域變數 (供 ServiceRecordFlow 呼叫)
+            window.appUIAssessment = new UIAssessment();
+            window.AppUIAssessment = window.appUIAssessment; // 維持相容性
 
-          await window.appUIAssessment.init({
-            bodyDiagramId: 'body-diagram-front',
-            muscleTagContainerId: 'muscle-tags-container',
-            assessmentContainerId: 'assessment-container'
+            await window.appUIAssessment.init({
+              bodyDiagramId: 'body-diagram-front',
+              muscleTagContainerId: 'muscle-tags-container',
+              assessmentContainerId: 'assessment-container'
+            });
+          }
+
+          if (!window.AppServiceRecordFlow) {
+            console.error('❌ ServiceRecordFlow 未定義');
+            return;
+          }
+
+          console.log('🔄 初始化 ServiceRecordFlow...');
+          await window.AppServiceRecordFlow.init(customerId);
+
+          console.log('✅ 頁面初始化完成');
+
+          document.addEventListener('serviceRecordSaved', (e) => {
+            console.log('✅ 服務紀錄已保存：', e.detail.recordId);
+            showAlert('服務紀錄已成功保存！', 'success');
+
+            setTimeout(() => {
+              window.location.href = `customer-profile.html?id=${customerId}`;
+            }, 2000);
           });
+
+        } catch (error) {
+          console.error('❌ 頁面初始化錯誤：', error);
+          showAlert(`初始化錯誤：${error.message}`, 'error');
         }
+      };
 
-        if (!window.AppServiceRecordFlow) {
-          console.error('❌ ServiceRecordFlow 未定義');
-          return;
-        }
-
-        console.log('🔄 初始化 ServiceRecordFlow...');
-        await window.AppServiceRecordFlow.init(customerId);
-
-        console.log('✅ 頁面初始化完成');
-
-        document.addEventListener('serviceRecordSaved', (e) => {
-          console.log('✅ 服務紀錄已保存：', e.detail.recordId);
-          showAlert('服務紀錄已成功保存！', 'success');
-
-          setTimeout(() => {
-            window.location.href = `customer-profile.html?id=${customerId}`;
-          }, 2000);
-        });
-
-      } catch (error) {
-        console.error('❌ 頁面初始化錯誤：', error);
-        showAlert(`初始化錯誤：${error.message}`, 'error');
+      // 檢查 app 狀態，若未就緒則監聽事件
+      if (window.isAppReady) {
+        bootPage();
+      } else {
+        document.addEventListener('app-ready', bootPage);
       }
     });
 
@@ -692,7 +698,8 @@
         cursor: pointer; 
     }
    
-    <div id="modal-palpation-details" class="modal">
+  </style>
+<div id="modal-palpation-details" class="modal">
     <div class="modal-content" style="max-width: 450px;">
       <div class="modal-header">
         <h2 id="palpation-modal-title">肌群狀態標記</h2>
@@ -791,6 +798,5 @@
       </div>
     </div>
   </div>
-  </style>
 </body>
 </html>

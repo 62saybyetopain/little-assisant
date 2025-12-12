@@ -1,5 +1,5 @@
 /**
- * settings.js - 系統設定頁面控制器(v4.3)
+ * settings.js - 系統設定頁面控制器(v4.4)
  * 職責：
  * 1. 管理設定頁面的標籤頁切換與 UI 狀態
  * 2. 串接 AppDataManager 進行 CRUD (評估動作、肌群標籤)
@@ -868,10 +868,12 @@ const SettingsApp = {
     reader.onload = ev => {
       try {
         const json = JSON.parse(ev.target.result);
-        // [修改] 改為呼叫分析介面，而非直接匯入
-        if (window.AppDataExportService.analyzeImport) {
-            const analysis = window.AppDataExportService.analyzeImport(json);
-            this.showImportDecisionModal(analysis, json); // 顯示決策視窗
+        
+        // 匯入前先進行資料標準化，確保舊版備份 (Array結構) 能被正確識別與分析
+        if (window.AppDataExportService && window.AppDataExportService.analyzeImport) {
+            const normalizedData = window.AppDataExportService.normalizeImportData(json);
+            const analysis = window.AppDataExportService.analyzeImport(normalizedData);
+            this.showImportDecisionModal(analysis, normalizedData); 
         } else {
             // 相容舊版 (若 DataManager 未更新)
             const result = window.AppDataExportService.importData(json);
@@ -885,7 +887,7 @@ const SettingsApp = {
     reader.readAsText(file);
   },
 
-  createHiddenFileInput() {
+createHiddenFileInput() {
     if (!document.getElementById('import-file-input')) {
       const input = document.createElement('input');
       input.type = 'file';
@@ -896,7 +898,88 @@ const SettingsApp = {
       document.body.appendChild(input);
     }
   },
- // ==========================================
+
+  // 補完缺失函式：建立統一設定匯入框 
+  // 解決 init() 呼叫此函式時發生的 crash
+  createUnifiedImportInput() {
+    if (!document.getElementById('unified-import-input')) {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.id = 'unified-import-input';
+      input.style.display = 'none';
+      input.accept = '.csv';
+      input.onchange = (e) => this.handleUnifiedImport(e);
+      document.body.appendChild(input);
+    }
+  },
+
+  // 補完缺失函式：回收桶管理視窗 
+  // 串接 storage.js 的 getRecycleBin()
+  showRecycleBinModal() {
+      if (!window.AppStorage) return;
+      
+      const items = window.AppStorage.getRecycleBin();
+      const modal = document.getElementById('modal-recycle-bin'); 
+      const list = document.getElementById('recycle-bin-list');
+      
+      // 防禦性檢查：若 HTML 尚未更新 Modal 結構
+      if (!modal || !list) {
+          alert(`回收桶內容 (${items.length} 筆):\n請聯絡管理員更新 HTML 以顯示完整管理介面。`);
+          return;
+      }
+
+      if (items.length === 0) {
+          list.innerHTML = '<div style="padding:20px; text-align:center; color:#999;">回收桶是空的</div>';
+      } else {
+          // 使用 window.escapeHtml 防止 XSS (對應 [P1] XSS 漏洞)
+          list.innerHTML = items.map(item => `
+              <div class="list-item" style="border-bottom:1px solid #eee; padding:8px; display:flex; justify-content:space-between; align-items:center;">
+                  <div class="item-content">
+                      <div class="item-title" style="font-weight:bold;">${window.escapeHtml(item.name || item.id || '未知資料')}</div>
+                      <div class="item-desc" style="font-size:12px; color:#666;">
+                          刪除時間: ${new Date(item.deletedAt).toLocaleString()}<br>
+                          原始 ID: ${item.originalId || item.id}
+                      </div>
+                  </div>
+                  <div class="item-actions">
+                      <button class="btn-sm btn-primary" onclick="SettingsApp.restoreRecycleItem('${item.id}')">還原</button>
+                  </div>
+              </div>
+          `).join('');
+      }
+      
+      this.openModal('modal-recycle-bin');
+  },
+
+  // 執行還原動作
+  restoreRecycleItem(id) {
+      if (!window.AppStorage) return;
+      if (confirm('確定要還原此資料嗎？')) {
+          const result = window.AppStorage.restoreFromRecycleBin(id);
+          if (result.success) {
+              this.showToast('還原成功', 'success');
+              this.showRecycleBinModal(); // 重新整理列表
+              // 如果還原的是相關設定，重新載入列表
+              if(this.state.currentTab === 'assessment') this.loadAssessmentList();
+              if(this.state.currentTab === 'muscle') this.loadMuscleList();
+              if(this.state.currentTab === 'template') this.loadTemplateList();
+          } else {
+              alert('還原失敗: ' + result.error);
+          }
+      }
+  },
+
+  // 清空回收桶
+  emptyRecycleBin() {
+      if (confirm('確定要清空回收桶嗎？此操作將永久刪除所有檔案，無法復原！')) {
+          if (window.AppStorage) {
+              window.AppStorage.emptyRecycleBin();
+              this.showRecycleBinModal(); // 更新列表為空
+              this.showToast('回收桶已清空', 'success');
+              this.updateStorageInfo(); // 更新空間顯示
+          }
+      }
+  }, // ==========================================
   //  顧客資料管理
   // ==========================================
 
@@ -1102,21 +1185,36 @@ const SettingsApp = {
       location.reload();
     }
   },
-  cleanOrphans() {
+  fixIndices() {
     if (!window.AppStorage) return;
     
-    if (confirm('此操作將掃描系統內部，並刪除「無效的殘留檔案」以釋放空間。\n(不會影響正常的顧客資料)\n\n確定要執行嗎？')) {
-        const result = window.AppStorage.vacuum();
-        if (result.success) {
-            if (result.removedCount > 0) {
-                alert(`掃描完成！\n共清除了 ${result.removedCount} 個殘留檔案，釋放了 ${result.freedKB} KB 空間。`);
-                this.updateStorageInfo(); // 立即更新空間顯示條
+    if (confirm('此操作將掃描並修復資料庫索引，並將異常資料移至「回收桶」。\n(不會影響正常的顧客資料)\n\n確定要執行嗎？')) {
+        if(window.showLoading) window.showLoading('掃描修復中...');
+        
+        // 延遲執行以顯示 Loading
+        setTimeout(() => {
+            // 改用新 API: fixBrokenIndices (對應 storage.js)
+            const result = window.AppStorage.fixBrokenIndices();
+            
+            if(window.hideLoading) window.hideLoading();
+
+            if (result.success) {
+                // 根據 storage.js 回傳的 stats 結構顯示訊息
+                const { fixedLinks, recoveredOrphans, cleanedTrash } = result.stats || { fixedLinks:0, recoveredOrphans:0, cleanedTrash:0 };
+                
+                if (fixedLinks > 0 || recoveredOrphans > 0 || cleanedTrash > 0) {
+                    const msg = `診斷完成！\n- 修復索引連結: ${fixedLinks}\n- 回收孤兒檔案: ${recoveredOrphans}\n- 清理系統垃圾: ${cleanedTrash}\n\n異常資料已移至回收桶，是否立即查看？`;
+                    if (confirm(msg)) {
+                        this.showRecycleBinModal();
+                    }
+                    this.updateStorageInfo(); 
+                } else {
+                    alert('掃描完成。系統索引健康，無異常資料。');
+                }
             } else {
-                alert('掃描完成。系統很健康，沒有發現殘留檔案。');
+                alert('修復失敗: ' + result.error);
             }
-        } else {
-            alert('清理失敗: ' + result.error);
-        }
+        }, 100);
     }
   },
   // === Modal 控制 ===
@@ -1328,7 +1426,11 @@ window.showAddTemplateModal = () => SettingsApp.showAddTemplateModal();
 window.saveTemplate = (e) => SettingsApp.saveTemplate(e);
 window.showEditTemplateModal = (id) => SettingsApp.showEditTemplateModal(id);
 window.updateTemplate = (e) => SettingsApp.updateTemplate(e);
-window.cleanOrphans = () => SettingsApp.cleanOrphans();
+
+window.fixIndices = () => SettingsApp.fixIndices();
+//回收桶相關綁定
+window.openRecycleBin = () => SettingsApp.showRecycleBinModal();
+window.emptyRecycleBin = () => SettingsApp.emptyRecycleBin();
 
 //綁定統一匯出入接口
 window.exportUnifiedConfig = () => SettingsApp.exportUnifiedConfig();

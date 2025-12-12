@@ -277,9 +277,9 @@
               </div>
             </div>
             <div style="display:flex; gap:10px;">
-              <button class="btn-secondary" onclick="showRecycleBinModal()">👁️ 檢視 / 還原</button>
-              <button class="btn-danger" onclick="emptyRecycleBin()">🗑️ 全部清空</button>
-            </div>
+             <button class="btn-secondary" onclick="openRecycleBin()"> 檢視 / 還原</button>
+             <button class="btn-danger" onclick="emptyRecycleBin()"> 全部清空</button>
+           </div>
           </div>
         </div>
         <hr class="divider" style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
@@ -484,7 +484,7 @@
   <script src="js/sync-manager.js"></script> 
   <script src="js/customer-manager.js"></script>
   <script src="js/data-manager.js"></script>
-  <script src="js/app.js"></script>
+  <script src="js/ui.js"></script> <script src="js/app.js"></script>
   <script src="js/settings.js"></script>
   <script>
     function goBack() { window.location.href = 'customer-list.html'; }
@@ -663,6 +663,20 @@
       <div class="modal-footer">
         <button type="button" class="btn-secondary" onclick="closeModal('modal-import-decision')">取消</button>
         <button type="button" class="btn-primary" onclick="confirmImportDecision()">確認執行</button>
+      </div>
+    </div>
+  </div>
+  <div id="modal-recycle-bin" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>回收桶管理</h2>
+        <button class="close-btn" onclick="closeModal('modal-recycle-bin')">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="recycle-bin-list"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" onclick="closeModal('modal-recycle-bin')">關閉</button>
       </div>
     </div>
   </div>

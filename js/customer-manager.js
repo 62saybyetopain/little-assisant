@@ -70,13 +70,41 @@ class CustomerManager {
   getAllCustomers() {
     try {
       // 改為讀取索引
-      const index = this.storage.loadCustomerIndex()|| [];
-      // 按更新時間倒序
+      const index = this.storage.loadCustomerIndex() || [];
+
+      // [Fix] 偵測無效日期並通知使用者 (對應 P2 排序不穩定問題)
+      // 先掃描是否有壞掉的日期格式
+      let invalidCount = 0;
+      index.forEach(c => {
+          if (!c.updatedAt || isNaN(new Date(c.updatedAt).getTime())) {
+              invalidCount++;
+          }
+      });
+
+      // 若發現異常且尚未警告過，則發出通知
+      if (invalidCount > 0 && !this._hasWarnedInvalidDate) {
+          const msg = `⚠️ 系統偵測到 ${invalidCount} 筆資料日期格式錯誤，排序可能受影響。建議檢查資料來源或執行系統修復。`;
+          console.warn(msg);
+          
+          if (typeof window.showToast === 'function') {
+              // 使用 setTimeout 避免阻擋主執行緒
+              setTimeout(() => window.showToast(msg, 'warning', 6000), 500);
+          }
+          this._hasWarnedInvalidDate = true; // 避免重複彈窗干擾操作
+      }
+
+      // 執行穩定排序
+      // 即使有壞資料，透過 (|| 0) 強制轉為數值，確保列表不會崩潰
       return index.sort((a, b) => {
-    const dateA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
-    const dateB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
-    return dateB - dateA;
-});
+        const dateA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+        const dateB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+        
+        // 確保轉型為數字，NaN 視為 0 (最舊)
+        const timeA = isNaN(dateA) ? 0 : dateA;
+        const timeB = isNaN(dateB) ? 0 : dateB;
+        
+        return timeB - timeA;
+      });
     } catch (error) {
       console.error('Get customer index error:', error);
       return [];

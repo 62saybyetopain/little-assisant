@@ -43,6 +43,17 @@
     window.AppTemplateManager = dataManagerInstance.template;
     window.AppDataExportService = dataManagerInstance.exportService;
 
+    if (typeof ServiceRecordFlow === 'undefined') {
+      console.error('❌ Critical: ServiceRecordFlow class missing (Logic Layer not loaded).');
+      return false;
+    }
+    
+    //確保 XSS 防護函式存在 
+    if (typeof escapeHtml === 'undefined' && typeof window.escapeHtml === 'undefined') {
+        console.warn('⚠️ Warning: global escapeHtml function missing. Security check failed.');
+        // 若為嚴格模式，此處應 return false
+    }
+
     return true;
   }
 
@@ -55,7 +66,7 @@
     if (coreReady) {
       console.log('✅ System Fully Initialized (Dependency Injected)');
 
-      // (Fix) 設定全域旗標，讓晚載入的腳本(Lazy Loaded Scripts)也能判斷系統狀態
+      // 設定全域旗標，讓晚載入的腳本(Lazy Loaded Scripts)也能判斷系統狀態
       window.isAppReady = true;
       
       // 觸發全域事件，通知各個 UI 頁面 (如 customer-list.html) 可以開始渲染了
@@ -63,11 +74,17 @@
     //啟動背景垃圾回收 (Background GC)
       // 延遲 3 秒執行，避免拖慢首屏載入速度
       setTimeout(() => {
-        if (window.AppStorage) {
-          const report = window.AppStorage.vacuum();
-          // 如果有清理出垃圾，可以在 Console 提示開發者，但不打擾使用者
-          if (report.success && report.removedCount > 0) {
-             console.info(`[Auto-GC] 系統自動清理了 ${report.removedCount} 筆異常殘留資料。`);
+        if (typeof window.AppStorage.fixBrokenIndices === 'function') {
+             const report = window.AppStorage.fixBrokenIndices();
+             
+             // 若有清理資料，須彈出通知告知使用者
+             if (report && report.success && report.removedCount > 0) {
+                const msg = `[系統通知] 偵測並自動修復了 ${report.removedCount} 筆異常索引資料。\n\n這些資料已安全移動至「回收桶」，請您前往確認。`;
+                console.info(`[Auto-GC] ${msg.replace(/\n/g, '')}`);
+                alert(msg); 
+             }
+          } else {
+             console.warn('⚠️ Warning: AppStorage.fixBrokenIndices is missing. Auto-GC skipped.');
           }
         }
       }, 3000);

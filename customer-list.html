@@ -458,10 +458,17 @@
 
         const serviceCount = c.stats ? c.stats.totalServices : 0;
         
-        // 注意: onclick 中的參數仍建議避免包含單引號，但在這層防護下 script 標籤已被轉義
+        // 注意: 改用 dataset 傳遞參數，防止因名字含單引號 (如 O'Neil) 導致 onclick 語法崩潰
         return `
-            <div class="customer-card" onclick="window.location.href='customer-profile.html?id=${safeId}'">
-              <button class="delete-card-btn" onclick="handleDeleteCustomer(event, '${safeId}', '${safeName}')" title="移至回收桶">🗑️</button>
+            <div class="customer-card" 
+                 data-id="${safeId}" 
+                 onclick="window.location.href='customer-profile.html?id=' + this.dataset.id">
+              
+              <button class="delete-card-btn" 
+                data-id="${safeId}" 
+                data-name="${safeName}"
+                onclick="handleDeleteCustomer(event, this.dataset.id, this.dataset.name)" 
+                title="移至回收桶">🗑️</button>
               
               <div class="customer-header">
                 <div class="customer-name">

@@ -1,11 +1,11 @@
 /**
  * service-record-flow.js - 流程控制層
- * 版本：v2.4 
+ * 版本：v2.6
  * 職責：
  * - 控制服務紀錄的五步驟流程
  * - 管理資料暫存與驗證
  * - 對接 UI 層與 Data 層
- * - 處理模板自動觸發與套用
+ * - 處置模板自動觸發與套用
  * V2.2修正：UI閃爍、儲存鎖死問題、未存檔攔截
  * V2.3 XSS
  */
@@ -40,10 +40,10 @@ const SERVICE_RECORD_STEPS = {
   TREATMENT: {
     stepNumber: 4,
     stepKey: 'treatment',
-    title: '處理方案',
-    description: '建議治療方案與處理方式',
+    title: '處置方案',
+    description: '建議處置方案',
     validationRules: {
-      'treatment-plan': { required: false, requiredMessage: '請輸入治療計畫' }
+      'treatment-plan': { required: false, requiredMessage: '請輸入處置計畫' }
     }
   },
   FEEDBACK: {
@@ -92,7 +92,7 @@ class ServiceRecordFlow {
         
         // 1. 先用空紀錄當底
         // 2. 覆蓋舊草稿的屬性
-        // 3. 特別處理 steps 物件，確保每一大步都有預設結構
+        // 3. 特別處置 steps 物件，確保每一大步都有預設結構
         this.tempRecord = {
             ...emptyRecord,
             ...savedDraft,
@@ -164,7 +164,7 @@ class ServiceRecordFlow {
     });
   }
 
-  // 處理返回按鈕
+  // 處置返回按鈕
   handleBackNavigation() {
     if (this.hasUnsavedChanges) {
         if (confirm('您有尚未儲存的變更，確定要離開嗎？\n(離開後未儲存的內容可能會遺失)')) {
@@ -210,15 +210,15 @@ class ServiceRecordFlow {
     }
 
     document.addEventListener('click', (e) => {
-      // 處理下一步
+      // 處置下一步
       if (e.target.classList.contains('btn-next-step')) {
         this.handleNextStep();
       } 
-      // 處理上一步
+      // 處置上一步
       else if (e.target.classList.contains('btn-prev-step')) {
         this.handlePrevStep();
       } 
-      // 處理儲存 (支援新增的每頁按鈕)
+      // 處置儲存 (支援新增的每頁按鈕)
       else if (e.target.classList.contains('btn-save-record')) {
         this.handleSaveRecord();
       } 
@@ -318,7 +318,11 @@ class ServiceRecordFlow {
         this.initializeChiefComplaintUI();
         break;
       case 2: 
-        // 症狀評估 UI 由 UIAssessment 自動管理
+        if (window.appUIAssessment && this.tempRecord.steps.symptoms) {
+             const sym = this.tempRecord.steps.symptoms;
+             // 確保載入 部位、肌群、評估結果
+             window.appUIAssessment.loadFromData(sym.bodyParts || [], sym.muscleTags || [], sym.assessmentResults || []);
+        }
         break;
       case 3: 
         this.initializeAssessmentUI();
@@ -387,9 +391,12 @@ class ServiceRecordFlow {
         const safeTagName = window.escapeHtml(rawTagName);
         const safeTagId = window.escapeHtml(tagId);
         
+        // 改用 dataset 傳遞參數，防止因名稱含單引號導致 onclick 語法崩潰
         return `
             <div class="palpation-chip" 
-                 onclick="window.appServiceRecordFlow.openPalpationModal('${safeTagId}', '${safeTagName}')"
+                 data-id="${safeTagId}"
+                 data-name="${safeTagName}"
+                 onclick="window.appServiceRecordFlow.openPalpationModal(this.dataset.id, this.dataset.name)"
                  style="background: white; border: 1px solid #cbd5e1; border-radius: 16px; padding: 6px 12px; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s;">
                 <span style="width: 8px; height: 8px; background: #3b82f6; border-radius: 50%; display: inline-block;"></span>
                 ${safeTagName}
@@ -472,7 +479,7 @@ class ServiceRecordFlow {
       // 自動填入邏輯 (Auto-fill)
       if (!this.tempRecord.steps.treatment.treatmentPlan && this.tempRecord.steps.chiefComplaint.bodyParts?.length > 0) {
          const parts = this.tempRecord.steps.chiefComplaint.bodyParts.join('、');
-         tInput.value = `針對 ${parts} 進行處理。\n`;
+         tInput.value = `針對 ${parts} 進行處置。\n`;
          this.tempRecord.steps.treatment.treatmentPlan = tInput.value;
       } else {
          tInput.value = this.tempRecord.steps.treatment.treatmentPlan || '';
@@ -796,30 +803,25 @@ class ServiceRecordFlow {
       // 2. 套用結構資料 (肌群 & 評估)
       // 呼叫 UIAssessment 的介面來更新 UI
       if (window.appUIAssessment) {
-          const checkedMuscles = Array.from(document.querySelectorAll('#tpl-check-muscles input:checked')).map(cb => cb.value);
-          const checkedActions = Array.from(document.querySelectorAll('#tpl-check-assessments input:checked')).map(cb => cb.value);
-
-          checkedMuscles.forEach(id => {
-              if (window.appUIAssessment.selectMuscleTag) {
-                  window.appUIAssessment.selectMuscleTag(id, true);
-              }
-          });
-
-          checkedActions.forEach(id => {
-              if (window.appUIAssessment.addAssessmentResult) {
-                  window.appUIAssessment.addAssessmentResult(id);
-              }
-          });
-      }
+    // A. 勾選相關肌群 (保留)
+    const checkedMuscles = Array.from(document.querySelectorAll('#tpl-check-muscles input:checked')).map(cb => cb.value);
+    checkedMuscles.forEach(id => {
+        if (window.appUIAssessment.selectMuscleTag) {
+            window.appUIAssessment.selectMuscleTag(id, true);
+        }
+    });
 
       // 3. 關閉 Modal
       window.closeModal('modal-template-selector');
-      window.showAlert('模板已套用', 'success');
+      if(window.showAlert) window.showAlert('模板已套用', 'success');
   
       this.hasUnsavedChanges = true;
       
-      // 4. 強制收集一次當前步驟資料確保同步
-      this.collectStepData(this.currentStep);
+      // 模板可能跨步驟寫入 DOM，必須強制同步所有受影響步驟的資料到 tempRecord
+      this.collectStepData(1); // 同步主訴
+      if (window.appUIAssessment) this.collectStepData(2); // 同步肌群與評估狀態
+      this.collectStepData(3); // 同步評估發現
+      this.collectStepData(4); // 同步處置計畫
   }
 
   onMuscleTagsUpdated(detail) {
@@ -854,13 +856,26 @@ class ServiceRecordFlow {
     const positiveResults = symptoms.assessmentResults.filter(r => r.result === 'positive');
     const negativeResults = symptoms.assessmentResults.filter(r => r.result === 'negative');
 
+    // 輔助函式：取得安全顯示名稱 (同時修復 XSS 與 名稱未知問題)
+    const getSafeName = (r) => {
+        let name = r.actionName;
+        // 若無名稱，嘗試從 Manager 查找
+        if (!name && window.AppAssessmentManager) {
+            const act = window.AppAssessmentManager.getActionById(r.actionId);
+            if (act) name = act.name;
+        }
+        // 回退顯示 ID，並進行 HTML 跳脫處理 (XSS Fix)
+        return window.escapeHtml(name || r.actionId || '未知項目');
+    };
+
+    // 使用 getSafeName 渲染列表
     return `
       <div class="assessment-summary-content">
-        <h4>評估結果摘要</h4>
+        [cite_start]<h4>評估結果摘要 [cite: 5, 9]</h4>
         
         <div class="summary-section">
           <h5>受影響部位 (${symptoms.bodyParts?.length || 0})</h5>
-          <p>${symptoms.bodyParts?.length > 0 ? symptoms.bodyParts.join('、') : '無'}</p>
+          <p>${symptoms.bodyParts?.length > 0 ? window.escapeHtml(symptoms.bodyParts.join('、')) : '無'}</p>
         </div>
 
         <div class="summary-section">
@@ -871,14 +886,14 @@ class ServiceRecordFlow {
         <div class="summary-section">
           <h5>陽性發現 (${positiveResults.length})</h5>
           <ul>
-            ${positiveResults.length > 0 ? positiveResults.map(r => `<li>${r.actionName || r.actionId}</li>`).join('') : '<li>無</li>'}
+            ${positiveResults.length > 0 ? positiveResults.map(r => `<li>${getSafeName(r)}</li>`).join('') : '<li>無</li>'}
           </ul>
         </div>
 
         <div class="summary-section">
           <h5>陰性發現 (${negativeResults.length})</h5>
           <ul>
-            ${negativeResults.length > 0 ? negativeResults.map(r => `<li>${r.actionName || r.actionId}</li>`).join('') : '<li>無</li>'}
+            ${negativeResults.length > 0 ? negativeResults.map(r => `<li>${getSafeName(r)}</li>`).join('') : '<li>無</li>'}
           </ul>
         </div>
       </div>

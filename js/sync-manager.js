@@ -10,6 +10,17 @@ class SyncManager {
     this.myId = null;       // 本機 ID
     this.isConnected = false;
     
+    // 定義 storageKey，避免 init() 存取 localStorage 時使用 "undefined" 字串
+    // 確保 ID 能正確持久化儲存
+    this.storageKey = 'p2p_device_id'; 
+    
+    // 清理舊版 Bug 產生的垃圾資料 (對應 [P1] 修復殘留髒資料問題)
+    // 檢查是否存在因變數未定義而產生的 "undefined" 鍵值，若有則移除
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('undefined')) {
+        localStorage.removeItem('undefined');
+        console.info('🧹 [SyncManager] 已自動清理舊版殘留的髒資料 (undefined key)');
+    }
+    
     // 定義訊息類型
     this.MSG_TYPES = {
       HANDSHAKE: 'HANDSHAKE', // 握手確認

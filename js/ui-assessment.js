@@ -1,5 +1,5 @@
 /**
- * ui-assessment.js - 互動層模組 (v2.1 修正版)
+ * ui-assessment.js - 互動層模組 (v2.2 修正版)
  * 職責：
  * - 管理人體圖示互動（BodyDiagram）
  * - 智能篩選肌群標籤（MuscleTagSelector）
@@ -71,17 +71,23 @@ class BodyDiagram {
     const partName = partElement.dataset.part;
     if (!partName) return;
 
+    // 記錄目前的選取狀態，以便傳遞給事件
+    let isSelected = false;
+
     if (this.selectedParts.has(partName)) {
       this.selectedParts.delete(partName);
       partElement.classList.remove('selected');
       partElement.setAttribute('aria-pressed', 'false');
+      isSelected = false;
     } else {
       this.selectedParts.add(partName);
       partElement.classList.add('selected');
       partElement.setAttribute('aria-pressed', 'true');
+      isSelected = true;
     }
 
-    this.onSelectionChange();
+    // 傳遞變更的部位與狀態
+    this.onSelectionChange(partName, isSelected);
   }
 
   enhanceTouchTarget(part) {
@@ -163,17 +169,18 @@ class BodyDiagram {
     this.onSelectionChange();
   }
 
-  onSelectionChange() {
+  onSelectionChange(clickedPart = null, isSelected = false) {
     const event = new CustomEvent('bodyPartSelectionChanged', {
       detail: { 
         selectedParts: this.getSelectedParts(),
-        source: this.svgElementId
+        source: this.svgElementId,
+        clickedPart: clickedPart, // 剛被點擊的部位
+        isSelected: isSelected    // 選取狀態 (true=選取, false=取消)
       }
     });
     if (this.svg) this.svg.dispatchEvent(event);
     document.dispatchEvent(event);
   }
-}
 
 // ============================================
 // 子模組 2: MuscleTagSelector - 肌群標籤智能篩選
@@ -217,6 +224,8 @@ class MuscleTagSelector {
 
     if (!bodyParts || bodyParts.length === 0) {
       this.container.style.display = 'none';
+      // [Fix] 當沒有選取任何部位時，應清空所有肌群選擇 (防止髒資料)
+      this.clearSelection(); 
       return;
     }
 
@@ -227,9 +236,26 @@ class MuscleTagSelector {
       relevantTags = result.success ? result.data : [];
     }
 
+    // 自動移除「已選取」但「不再相關」的標籤 (對應 [P1] 取消部位後的殘留髒資料)
+    // 取得新列表的所有 ID
+    const relevantIds = new Set(relevantTags.map(t => t.id));
+    
+    // 檢查目前已選的標籤，若不在新列表中則移除
+    let dirty = false;
+    this.selectedMuscleTags.forEach(tagId => {
+        if (!relevantIds.has(tagId)) {
+            this.selectedMuscleTags.delete(tagId);
+            dirty = true;
+        }
+    });
+
+    if (dirty) {
+        this.onTagsUpdate(); // 若有移除，發送更新事件
+    }
+
     this.render(relevantTags);
     this.container.style.display = 'block';
-    this.onTagsUpdate();
+    // 注意：render 內會重新綁定 class，所以視覺上會正確同步 this.selectedMuscleTags
   }
 
   render(tags) {
@@ -345,7 +371,19 @@ class AssessmentSelector {
 
     try {
       const actions = await this.loadAssessmentActions(bodyParts);
-      this.loadedActions = actions; // 更新快取
+      if (!this.loadedActions) this.loadedActions = [];
+      const newActions = [...this.loadedActions, ...actions];
+
+       // 去除重複 ID (Deduplication)
+       const uniqueActions = [];
+       const seenIds = new Set();
+       for (const action of newActions) {
+           if (!seenIds.has(action.id)) {
+               seenIds.add(action.id);
+               uniqueActions.push(action);
+           }
+      }
+      this.loadedActions = uniqueActions; // 更新快取
 
       if (actions.length === 0) {
         this.container.innerHTML = '<p class="hint">此部位暫無預設評估動作</p>';
@@ -407,11 +445,16 @@ class AssessmentSelector {
 
     const currentResult = this.assessmentResults.get(action.id);
 
+    // 使用 window.escapeHtml 防止 stored-XSS (對應 [P1] XSS 安全漏洞)
+    // 假設 utils.js 或全局已定義 escapeHtml
+    const safeName = window.escapeHtml ? window.escapeHtml(action.name) : action.name;
+    const safeDesc = window.escapeHtml ? window.escapeHtml(action.description) : action.description;
+
     card.innerHTML = `
       <div class="action-header">
         <span class="action-number">${index + 1}</span>
-        <h4 class="action-name">${action.name}</h4>
-        ${action.description ? `<button class="info-btn" type="button" title="${action.description}">ℹ️</button>` : ''}
+        <h4 class="action-name">${safeName}</h4>
+        ${action.description ? `<button class="info-btn" type="button" title="${safeDesc}">ℹ️</button>` : ''}
       </div>
       <div class="action-buttons">
         <button type="button" class="result-btn positive ${currentResult === 'positive' ? 'selected' : ''}">陽性 (+)</button>
@@ -547,7 +590,87 @@ class UIAssessment {
       assessmentResults: this.assessmentSelector?.getResults() || []
     };
   }
+// 實作資料回填介面
+  // 這是 service-record-flow.js 呼叫的關鍵方法，缺失會導致編輯白屏
+  loadFromData(bodyParts = [], muscleTags = [], assessmentResults = []) {
+      if (!this.isInitialized) return;
 
+      // 1. 還原人體圖選取
+      this.bodyDiagram.clearSelection(); // 先清空
+      if (bodyParts && bodyParts.length > 0) {
+          bodyParts.forEach(partId => {
+             // 模擬點擊或直接操作狀態
+             // 由於 BodyDiagram 沒有直接 setSelection API，我們透過 DOM 操作
+             const part = document.querySelector(`[data-part="${partId}"]`);
+             if (part) this.bodyDiagram.togglePart(part);
+          });
+      }
+
+      // 2. 還原肌群標籤
+      // 由於 BodyDiagram 的 togglePart 會觸發事件更新 MuscleTagSelector，
+      // 我們需要等待一下或直接操作。但為了確保時序，我們手動設定。
+      if (this.muscleTagSelector) {
+          // 先讓 Selector 根據部位渲染出來
+          this.muscleTagSelector.updateForBodyParts(bodyParts);
+          
+          // 再勾選標籤
+          // 需要延遲微秒確保 DOM 渲染完成
+          setTimeout(() => {
+              this.muscleTagSelector.clearSelection();
+              muscleTags.forEach(tagId => {
+                  // 如果是物件(舊資料相容)，取 ID
+                  const id = typeof tagId === 'object' ? tagId.id : tagId;
+                  const btn = this.muscleTagSelector.container.querySelector(`button[data-tag-id="${id}"]`);
+                  if (btn) this.muscleTagSelector.toggleTag(id, btn);
+              });
+          }, 0);
+      }
+
+      // 3. 還原評估結果
+      if (this.assessmentSelector) {
+          // 同樣，先讓 Selector 根據部位渲染動作列表
+          this.assessmentSelector.updateForBodyParts(bodyParts).then(() => {
+              this.assessmentSelector.clearResults();
+              assessmentResults.forEach(res => {
+                  const btnClass = res.result === 'positive' ? '.positive' : '.negative';
+                  // 找到對應動作卡片
+                  const card = this.assessmentSelector.container.querySelector(`.assessment-action-card[data-action-id="${res.actionId}"]`);
+                  if (card) {
+                      const btn = card.querySelector(btnClass);
+                      const otherBtn = card.querySelector(btnClass === '.positive' ? '.negative' : '.positive');
+                      if (btn) this.assessmentSelector.selectResult(res.actionId, res.result, btn, otherBtn);
+                  }
+              });
+          });
+      }
+  }
+
+  // 提供給模板使用的介面
+  selectMuscleTag(tagId, isSelected) {
+      if (!this.muscleTagSelector) return;
+      // 嘗試在現有渲染中尋找
+      const btn = this.muscleTagSelector.container.querySelector(`button[data-tag-id="${tagId}"]`);
+      if (btn) {
+          // 檢查當前狀態，避免重複切換
+          const currentSelected = this.muscleTagSelector.selectedMuscleTags.has(tagId);
+          if (currentSelected !== isSelected) {
+              this.muscleTagSelector.toggleTag(tagId, btn);
+          }
+      }
+  }
+
+  // 提供給模板使用的介面
+  addAssessmentResult(actionId, result = 'positive') {
+      if (!this.assessmentSelector) return;
+      // 必須確保動作卡片已顯示 (通常模板套用前會先選部位，所以應該在)
+      const card = this.assessmentSelector.container.querySelector(`.assessment-action-card[data-action-id="${actionId}"]`);
+      if (card) {
+          const btnClass = result === 'positive' ? '.positive' : '.negative';
+          const btn = card.querySelector(btnClass);
+          const otherBtn = card.querySelector(result === 'positive' ? '.negative' : '.positive');
+          if (btn) this.assessmentSelector.selectResult(actionId, result, btn, otherBtn);
+      }
+  }
   clearAll() {
     this.bodyDiagram?.clearSelection();
     this.muscleTagSelector?.clearSelection();
