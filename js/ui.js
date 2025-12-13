@@ -38,7 +38,13 @@ const Toast = {
     
     setTimeout(() => {
       toast.classList.remove('toast-show');
-      setTimeout(() => toast.remove(), 300);
+      // 改用 transitionend 確保動畫播完才移除，避免時間差導致殘留
+      toast.addEventListener('transitionend', () => {
+        if (toast.parentNode) toast.remove();
+      }, { once: true });
+      
+      // Fallback: 萬一 transitionend 沒觸發 (例如 hidden)，500ms 後強制移除
+      setTimeout(() => { if(toast.parentNode) toast.remove(); }, 500);
     }, duration);
   }
 };
@@ -75,10 +81,14 @@ const Loading = {
       this.overlay.classList.remove('loading-show');
       
       setTimeout(() => {
-        if (this.overlay && this.count === 0) {
+        // 再次檢查 count，確保是真的要關閉
+        if (this.count === 0 && this.overlay) {
           this.overlay.remove();
           this.overlay = null;
           document.body.style.overflow = '';
+        } else if (this.count > 0 && this.overlay) {
+          //如果在動畫期間又有新請求，把 class 加回來，避免變成透明擋板
+          this.overlay.classList.add('loading-show');
         }
       }, 300);
     }

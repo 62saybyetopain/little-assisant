@@ -173,6 +173,8 @@ class SyncManager {
 
   // 5. 處理接收到的資料
   handleIncomingData(payload) {
+    if (!payload || !payload.type) return;
+
     console.log('📥 [P2P] 收到資料:', payload.type);
 
     switch (payload.type) {
@@ -213,8 +215,9 @@ class SyncManager {
   handleFullSyncImport(jsonData) {
     // 檢查依賴是否存在
     if (!window.AppDataExportService || !window.SettingsApp) {
-      console.error('Core modules missing');
-      if (window.showToast) window.showToast('系統模組未載入，無法執行同步', 'error');
+      console.warn('Sync received but UI modules missing.');
+      //明確引導使用者前往設定頁面，避免同步請求被靜默忽略
+      alert('🔔 收到來自對方的「全量同步」請求！\n\n目前的頁面無法處理此操作。\n請前往「系統設定 > 設備同步」頁面以檢視並接收資料。');
       return;
     }
 
@@ -256,18 +259,18 @@ class SyncManager {
 
   // 處理單筆更新
   handleSingleUpdate(payload) {
-    // 收到單筆更新 (例如新增了一個顧客)
     const { key, data } = payload;
     
-    // 關鍵：呼叫 AppStorage.save 時標記 source: 'remote' 
-    // 這需要在 Step 3 修改 storage.js 才能生效，避免無限迴圈
+    // 安全性過濾：禁止遠端覆蓋本機的系統關鍵 ID 與設定
+    const PROTECTED_KEYS = ['p2p_device_id', 'p2p_device_name', '__storage_test__'];
+    if (PROTECTED_KEYS.includes(key)) {
+        console.warn(`[Sync] Blocked write to protected key: ${key}`);
+        return;
+    }
+
     if (window.AppStorage) {
         window.AppStorage.save(key, data, { source: 'remote' });
-        
-        // 顯示輕提示 (Optional)
         this.showToast(`已同步更新: ${key}`);
-        
-        // 發送事件通知 UI 更新
         document.dispatchEvent(new CustomEvent('dataSynced', { detail: { key } }));
     }
   }

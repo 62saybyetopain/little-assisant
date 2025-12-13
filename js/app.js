@@ -1,7 +1,7 @@
 /**
  * js/app.js - 系統啟動入口
  * 職責：按照正確順序初始化各大 Manager，並解決依賴注入 (DI)
- * V3.0加入 DOMContentLoaded 事件監聽
+ * V3.1加入 DOMContentLoaded 事件監聽
  */
 (function() {
   // 核心初始化邏輯 (不涉及 UI 操作，僅建立實例與綁定)
@@ -42,6 +42,19 @@
     window.AppAssessmentManager = dataManagerInstance.assessment;
     window.AppTemplateManager = dataManagerInstance.template;
     window.AppDataExportService = dataManagerInstance.exportService;
+
+    // 確保 settings.js 中的 P2P 功能可以正常運作
+    if (typeof SyncManager !== 'undefined') {
+        window.AppSyncManager = new SyncManager();
+        console.log('✅ SyncManager initialized');
+    } else {
+        console.warn('⚠️ SyncManager class missing. P2P features disabled.');
+    }
+
+    if (typeof ServiceRecordFlow === 'undefined') {
+      console.error('❌ Critical: ServiceRecordFlow class missing (Logic Layer not loaded).');
+      return false;
+    }
 
     if (typeof ServiceRecordFlow === 'undefined') {
       console.error('❌ Critical: ServiceRecordFlow class missing (Logic Layer not loaded).');
@@ -86,7 +99,6 @@
           } else {
              console.warn('⚠️ Warning: AppStorage.fixBrokenIndices is missing. Auto-GC skipped.');
           }
-        }
       }, 3000);
     } else {
       console.error('❌ System Initialization Failed');

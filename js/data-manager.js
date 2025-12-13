@@ -285,9 +285,11 @@ class RecordManager {
       if (!customer || !customer.serviceRecords) {
         return [];
       }
-      return customer.serviceRecords.sort((a, b) => 
-        new Date(b.createdAt) - new Date(a.createdAt)
-      );
+      return customer.serviceRecords.sort((a, b) => {
+        const timeA = new Date(a.createdAt).getTime() || 0;
+        const timeB = new Date(b.createdAt).getTime() || 0;
+        return timeB - timeA;
+      });
     } catch (error) {
       console.error('Get records error:', error);
       return [];
@@ -796,7 +798,11 @@ class DataExportService {
               } catch(e) {}
           }
       }
-      newIndex.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+      newIndex.sort((a, b) => {
+          const timeA = new Date(a.updatedAt).getTime() || 0;
+          const timeB = new Date(b.updatedAt).getTime() || 0;
+          return timeB - timeA;
+      });
       this.storage.save('customerIndex', newIndex, { source: 'local' });
   }
 
@@ -811,7 +817,8 @@ class DataExportService {
 
       const escape = (val) => {
         if (val === null || val === undefined) return '""';
-        let str = String(val).replace(/"/g, '""');
+        // 移除換行符號，防止 CSV 結構破裂 (簡易解析器不支援多行欄位)
+        let str = String(val).replace(/"/g, '""').replace(/[\r\n]+/g, ' ');
         return `"${str}"`;
       };
 

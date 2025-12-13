@@ -1,5 +1,5 @@
 /**
- * LocalStorage 封裝服務 (v4.1)
+ * LocalStorage 封裝服務 (v4.2)
  * 支援分級儲存策略 (Index vs Detail) 與自動遷移
  * 新增交易機制以及更新基礎存取方法
  */
@@ -50,7 +50,16 @@ class StorageService {
     // operations 格式: [{ type: 'save'|'remove', key: '...', value: ... }, ...]
     console.group('🔒 執行原力交換...');
     
-    // 1. 建立快照 (Snapshot) - 備份將被修改的 key
+    // 1. 檢查是否為受限模式 (Demo Mode / Incognito)
+    if (this.demoMode) {
+        const msg = '⚠️ 系統處於「無痕模式」或「儲存空間受限」狀態。\n\n為了防止資料遺失，系統已暫停所有編輯與新增功能。\n請關閉無痕模式或允許儲存權限後重試。';
+        console.warn(msg);
+        alert(msg); // 強制彈窗提醒
+        console.groupEnd();
+        return { success: false, error: 'STORAGE_DISABLED', message: '無痕模式下禁止寫入資料' };
+    }
+
+    // 2. 建立快照 (Snapshot) 
     const backup = {};
     const keysToModify = operations.map(op => op.key);
     
@@ -134,8 +143,8 @@ class StorageService {
    */
   save(key, data, options = { source: 'local' }) {
     if (this.demoMode) {
-      this.inMemoryData[key] = JSON.parse(JSON.stringify(data));
-      return { success: true, mode: 'demo' };
+        console.warn('儲存失敗：系統處於無痕模式');
+        return { success: false, error: 'STORAGE_DISABLED', message: '無痕模式無法儲存資料' };
     }
 
     try {
@@ -172,8 +181,9 @@ class StorageService {
   }
 
   remove(key, options = { source: 'local' }) {
-    if (this.demoMode) { delete this.inMemoryData[key]; return { success: true }; }
-    try {
+    if (this.demoMode) { 
+        return { success: false, error: 'STORAGE_DISABLED', message: '無痕模式無法刪除資料' }; 
+    }
       localStorage.removeItem(key);
       if (options.source === 'local' && window.AppSyncManager) {
         window.AppSyncManager.broadcastUpdate(key, null);
@@ -318,8 +328,12 @@ class StorageService {
         throw new Error('無效的資料格式：缺少索引 (customerIndex)');
       }
 
-      // 2. 清空現有資料 (全量同步前必須清空)
-      localStorage.clear();
+      // 2. 清空現有資料 (支援 Demo Mode)
+      if (this.demoMode) {
+          this.inMemoryData = {};
+      } else {
+          localStorage.clear();
+      }
 
       // 3. [關鍵] 設定 source: 'remote' 以避免匯入時觸發 P2P 廣播 loop
       const opts = { source: 'remote' };
@@ -522,6 +536,11 @@ class StorageService {
    * 3. 清理真正的系統垃圾 (Temp files)
    */
   fixBrokenIndices() {
+    // 記憶體模式下無需執行診斷 (資料不持久化，且無法遍歷 localStorage)
+    if (this.demoMode) {
+        return { success: true, stats: { fixedLinks:0, recoveredOrphans:0, cleanedTrash:0 } };
+    }
+
     console.group('🔧 執行系統全域診斷...');
     try {
       const index = this.loadCustomerIndex() || [];

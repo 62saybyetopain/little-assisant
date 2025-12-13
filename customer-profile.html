@@ -577,7 +577,7 @@
         occupation: document.getElementById('edit-coccupation').value,
         location: document.getElementById('edit-clocation').value,
         healthTags: parseTags(document.getElementById('edit-chealth').value),
-        interestTags: parseTags(document.getElementById('edit-cinterests').value)
+        interests: parseTags(document.getElementById('edit-cinterests').value)
       };
 
       const result = window.AppCustomerManager.updateCustomer(customerId, updatedData);

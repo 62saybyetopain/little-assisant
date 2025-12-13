@@ -1,6 +1,6 @@
 /**
  * service-record-flow.js - 流程控制層
- * 版本：v2.7
+ * 版本：v2.8
  * 職責：
  * - 控制服務紀錄的五步驟流程
  * - 管理資料暫存與驗證
@@ -526,7 +526,6 @@ class ServiceRecordFlow {
 
     // 2. Step 2 (Body Diagram) 特殊檢查
     if (this.currentStep === 2) {
-        // 修正大括號配對錯誤，並保留此擴充區塊
         if (window.appUIAssessment) {
             const selections = window.appUIAssessment.getAllSelections();
             if (selections.bodyParts.length === 0) {
@@ -537,7 +536,6 @@ class ServiceRecordFlow {
     }
     return true; 
   }
-
   async collectStepData(stepNumber) {
     switch (stepNumber) {
       case 1:
@@ -806,10 +804,12 @@ class ServiceRecordFlow {
           const textarea = document.querySelector(`textarea[name="${targetTextareaName}"]`);
           if (textarea) {
               const currentVal = textarea.value.trim();
-              const newVal = checked.join('、'); // 或用 \n 換行
+              const newVal = checked.join('、'); 
               textarea.value = currentVal ? `${currentVal}\n${newVal}` : newVal;
-              // 手動觸發 change 事件以更新 tempRecord
-              textarea.dispatchEvent(new Event('change')); 
+              
+              // 同時觸發 input 事件，確保髒檢查 (Dirty Monitor) 能偵測到變更
+              textarea.dispatchEvent(new Event('input', { bubbles: true }));
+              textarea.dispatchEvent(new Event('change', { bubbles: true }));
           }
       };
 

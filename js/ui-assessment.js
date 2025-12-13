@@ -1,5 +1,5 @@
 /**
- * ui-assessment.js - 互動層模組 (v2.2 修正版)
+ * ui-assessment.js - 互動層模組 (v2.3 修正版)
  * 職責：
  * - 管理人體圖示互動（BodyDiagram）
  * - 智能篩選肌群標籤（MuscleTagSelector）
@@ -599,28 +599,28 @@ class UIAssessment {
       this.bodyDiagram.clearSelection(); // 先清空
       if (bodyParts && bodyParts.length > 0) {
           bodyParts.forEach(partId => {
-             // 模擬點擊或直接操作狀態
-             // 由於 BodyDiagram 沒有直接 setSelection API，我們透過 DOM 操作
-             const part = document.querySelector(`[data-part="${partId}"]`);
+             if (!partId) return;
+             // [Fix] 使用 CSS.escape 防止選擇器因特殊字元崩潰，並限定在 SVG 內搜尋
+             const safePartId = CSS.escape(partId);
+             const part = this.bodyDiagram.svg.querySelector(`[data-part="${safePartId}"]`);
              if (part) this.bodyDiagram.togglePart(part);
           });
       }
 
       // 2. 還原肌群標籤
-      // 由於 BodyDiagram 的 togglePart 會觸發事件更新 MuscleTagSelector，
-      // 我們需要等待一下或直接操作。但為了確保時序，我們手動設定。
       if (this.muscleTagSelector) {
           // 先讓 Selector 根據部位渲染出來
           this.muscleTagSelector.updateForBodyParts(bodyParts);
           
           // 再勾選標籤
-          // 需要延遲微秒確保 DOM 渲染完成
           setTimeout(() => {
               this.muscleTagSelector.clearSelection();
               muscleTags.forEach(tagId => {
-                  // 如果是物件(舊資料相容)，取 ID
                   const id = typeof tagId === 'object' ? tagId.id : tagId;
-                  const btn = this.muscleTagSelector.container.querySelector(`button[data-tag-id="${id}"]`);
+                  if (!id) return;
+                  // [Fix] 安全轉義 tagId
+                  const safeId = CSS.escape(id);
+                  const btn = this.muscleTagSelector.container.querySelector(`button[data-tag-id="${safeId}"]`);
                   if (btn) this.muscleTagSelector.toggleTag(id, btn);
               });
           }, 0);
@@ -633,8 +633,9 @@ class UIAssessment {
               this.assessmentSelector.clearResults();
               assessmentResults.forEach(res => {
                   const btnClass = res.result === 'positive' ? '.positive' : '.negative';
-                  // 找到對應動作卡片
-                  const card = this.assessmentSelector.container.querySelector(`.assessment-action-card[data-action-id="${res.actionId}"]`);
+                  // [Fix] 安全轉義 actionId
+                  const safeActionId = CSS.escape(res.actionId);
+                  const card = this.assessmentSelector.container.querySelector(`.assessment-action-card[data-action-id="${safeActionId}"]`);
                   if (card) {
                       const btn = card.querySelector(btnClass);
                       const otherBtn = card.querySelector(btnClass === '.positive' ? '.negative' : '.positive');
@@ -648,8 +649,11 @@ class UIAssessment {
   // 提供給模板使用的介面
   selectMuscleTag(tagId, isSelected) {
       if (!this.muscleTagSelector) return;
-      // 嘗試在現有渲染中尋找
-      const btn = this.muscleTagSelector.container.querySelector(`button[data-tag-id="${tagId}"]`);
+      if (!tagId) return;
+      
+      // [Fix] 安全轉義
+      const safeId = CSS.escape(tagId);
+      const btn = this.muscleTagSelector.container.querySelector(`button[data-tag-id="${safeId}"]`);
       if (btn) {
           // 檢查當前狀態，避免重複切換
           const currentSelected = this.muscleTagSelector.selectedMuscleTags.has(tagId);
@@ -662,8 +666,11 @@ class UIAssessment {
   // 提供給模板使用的介面
   addAssessmentResult(actionId, result = 'positive') {
       if (!this.assessmentSelector) return;
-      // 必須確保動作卡片已顯示 (通常模板套用前會先選部位，所以應該在)
-      const card = this.assessmentSelector.container.querySelector(`.assessment-action-card[data-action-id="${actionId}"]`);
+      if (!actionId) return;
+
+      // [Fix] 安全轉義
+      const safeId = CSS.escape(actionId);
+      const card = this.assessmentSelector.container.querySelector(`.assessment-action-card[data-action-id="${safeId}"]`);
       if (card) {
           const btnClass = result === 'positive' ? '.positive' : '.negative';
           const btn = card.querySelector(btnClass);

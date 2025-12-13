@@ -1,5 +1,5 @@
 /**
- * settings.js - 系統設定頁面控制器(v4.5)
+ * settings.js - 系統設定頁面控制器(v4.6)
  * 職責：
  * 1. 管理設定頁面的標籤頁切換與 UI 狀態
  * 2. 串接 AppDataManager 進行 CRUD (評估動作、肌群標籤)
@@ -26,20 +26,32 @@
 // 定義身體部位
 const BODY_PARTS_DEF = [
   { id: 'head', name: '頭部' }, 
-  { id: 'left-neck', name: '左頸' },{ id: 'right-neck', name: '右頸' },
+  { id: 'neck', name: '頸部' },
+  { id: 'left-neck', name: '左頸' }, { id: 'right-neck', name: '右頸' },
+  { id: 'shoulder', name: '肩部' },
   { id: 'left-shoulder', name: '左肩' }, { id: 'right-shoulder', name: '右肩' },
+  { id: 'upper-back', name: '上背' },
   { id: 'left-upper-back', name: '左側上背' }, { id: 'right-upper-back', name: '右側上背' }, 
+  { id: 'lower-back', name: '下背/腰' },
   { id: 'left-lower-back', name: '左側下背/腰' },{ id: 'right-lower-back', name: '右側下背/腰' },
+  { id: 'chest', name: '胸部' },
   { id: 'left-chest', name: '左胸' }, { id: 'right-chest', name: '右胸' }, 
+  { id: 'abdomen', name: '腹部' },
   { id: 'left-abdomen', name: '左腹部' },{ id: 'right-abdomen', name: '右腹' },
+  { id: 'hip', name: '髖/臀部' },
   { id: 'left-hip', name: '左臀' }, { id: 'right-hip', name: '右臀' },
+  { id: 'arm', name: '手臂' },
   { id: 'left-arm', name: '左手' },{ id: 'right-arm', name: '右手' }, 
+  { id: 'leg', name: '大腿' },
   { id: 'left-leg', name: '左大腿' },{ id: 'right-leg', name: '右大腿' },
+  { id: 'knee', name: '膝蓋' },
   { id: 'left-knee', name: '左膝' },{ id: 'right-knee', name: '右膝' },
+  { id: 'calf', name: '小腿' },
   { id: 'left-calf', name: '左小腿' },{ id: 'right-calf', name: '右小腿' },
+  { id: 'ankle', name: '腳踝' },
   { id: 'left-ankle', name: '左腳踝' },{ id: 'right-ankle', name: '右腳踝' },
+   { id: 'foot', name: '足部' },
   { id: 'left-foot', name: '左足底' },{ id: 'right-foot', name: '右足底' }
-  
 ];
 const SIMPLIFIED_BODY_PARTS = [
     { id: 'head', name: '頭部' },
@@ -78,7 +90,7 @@ function sortTagsByBodyPart(tags) {
     // 取出兩個標籤的第一個關聯部位
     const getPart = (tag) => {
         const parts = tag.relatedBodyParts;
-        if (!parts || parts.length === 0) return '';
+        if (!parts || !Array.isArray(parts) || parts.length === 0) return ''; // [Fix] 加強陣列檢查
         
         // 強制轉型為 String，防止陣列內含 null/undefined 導致 .replace 崩潰
         const firstPart = String(parts[0] || '');

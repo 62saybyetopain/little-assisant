@@ -15,7 +15,7 @@ class CustomerManager {
     // 2. 引用全域儲存實例
     this.storage = window.AppStorage;
     
-    console.log('✅ CustomerManager (v2.0) 初始化成功 - 分級儲存模式');
+    console.log('✅ CustomerManager (v4.0) 初始化成功 - 分級儲存模式');
   }
 
   /**
@@ -41,8 +41,8 @@ class CustomerManager {
     else if (customerData.nickname.length > 20) {
       errors.push('暱稱最多 20 字');
     }
-    else if (customerData.phoneLastThree && !/^\d{3}$/.test(customerData.phoneLastThree)) {
-      errors.push('電話後三碼必須為 3 位數字');
+    else if (customerData.phoneLastThree && !/^\d{3,10}$/.test(customerData.phoneLastThree)) {
+      errors.push('請確認號碼是否輸入正確');
     }
 
     // 選填欄位驗證
@@ -143,7 +143,7 @@ class CustomerManager {
     const index = this.getAllCustomers();
 
     return index.filter(customer => {
-      // [Fix] 加入 || '' 防呆，防止 null/undefined 被轉為字串 "null"/"undefined" 造成搜尋雜訊
+      // 加入 || '' 防呆，防止 null/undefined 被轉為字串 "null"/"undefined" 造成搜尋雜訊
       const name = customer.name || '';
       const nick = customer.nickname || '';
       const phone = customer.phoneLastThree || '';
@@ -308,8 +308,33 @@ class CustomerManager {
       return { success: false, error: '系統核心尚未更新' };
     }
     try {
+      // 1. 物理還原 (檔案移動)
       const result = this.storage.restoreFromRecycleBin(customerId);
-      return result.success ? { success: true } : { success: false, error: result.error };
+      
+      // 2. 邏輯還原 (重建索引)
+      // 若檔案還原成功，必須將其加回 Index，否則列表中看不到
+      if (result.success) {
+          const customer = this.getCustomerById(customerId); // 讀取剛還原的詳細檔案
+          if (customer) {
+              const index = this.storage.loadCustomerIndex() || [];
+              // 檢查是否已存在 (防呆)
+              if (!index.find(c => c.id === customerId)) {
+                  const newEntry = {
+                      id: customer.id,
+                      name: customer.name,
+                      nickname: customer.nickname,
+                      phoneLastThree: customer.phoneLastThree,
+                      status: 'active',
+                      updatedAt: customer.updatedAt, // 使用檔案中的最後更新時間
+                      stats: { totalServices: (customer.serviceRecords || []).length }
+                  };
+                  index.push(newEntry);
+                  this.storage.saveCustomerIndex(index);
+              }
+          }
+          return { success: true };
+      }
+      return { success: false, error: result.error };
     } catch (error) {
       return { success: false, error: error.message };
     }

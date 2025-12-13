@@ -1,7 +1,7 @@
 /**
  * 表單驗證模組 (Form Validator)
  * 提供即時表單驗證與錯誤提示
- * 版本: v1.0
+ * 版本: v2.0
  */
 
 class FormValidator {
@@ -156,26 +156,35 @@ class FormValidator {
    * 取得表單資料
    */
 getFormData() {
-  const formData = {};
-  
-  Object.keys(this.rules).forEach(fieldName => {
-    const field = this.form.querySelector(`[name="${fieldName}"]`);
-    if (field) {
-      if (field.type === 'checkbox') {
-        formData[fieldName] = field.checked;
+    const formData = {};
+    const nativeFormData = new FormData(this.form);
+
+    // 1. 蒐集所有有 name 的欄位值
+    for (const [key, value] of nativeFormData.entries()) {
+      // 檢查是否為多重選項 (Checkbox Group)
+      if (formData.hasOwnProperty(key)) {
+        // 如果已經有值，轉為陣列 (處理多選)
+        if (!Array.isArray(formData[key])) {
+          formData[key] = [formData[key]];
+        }
+        formData[key].push(typeof value === 'string' ? value.trim() : value);
       } else {
-        // ✅ 修復：安全地處理可能的 null/undefined
-        const value = field.value;
-        formData[fieldName] = (value !== null && value !== undefined) ? value.trim() : '';
+        // 單一值
+        formData[key] = typeof value === 'string' ? value.trim() : value;
       }
-    } else {
-      // ✅ 新增：記錄缺少的欄位
-      console.warn(`⚠️ 欄位 "${fieldName}" 在表單中不存在`);
     }
-  });
-  
-  return formData;
-}
+
+    // 2. 補完 Checkbox 未勾選的狀態 (FormData 預設不包含未勾選的 checkbox)
+    // 這一點對於單一 Checkbox (如 isVip: boolean) 很重要
+    const checkboxes = this.form.querySelectorAll('input[type="checkbox"]:not([value])'); // 針對沒有 value 的 boolean checkbox
+    checkboxes.forEach(cb => {
+        if (cb.name && !formData.hasOwnProperty(cb.name)) {
+            formData[cb.name] = cb.checked;
+        }
+    });
+
+    return formData;
+  }
 
   /**
    * 重置表單
@@ -203,11 +212,14 @@ getFormData() {
  */
 function debounce(func, wait) {
   let timeout;
-  return function executedFunction(...args) {
+  return function(...args) { // 不使用箭頭函式，以獲取正確的 this
+    const context = this;    //  捕捉當前的 this 上下文
+    
     const later = () => {
       clearTimeout(timeout);
-      func(...args);
+      func.apply(context, args); // 使用 apply 確保 this 指向正確
     };
+    
     clearTimeout(timeout);
     timeout = setTimeout(later, wait);
   };
