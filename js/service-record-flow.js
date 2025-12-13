@@ -1,6 +1,6 @@
 /**
  * service-record-flow.js - 流程控制層
- * 版本：v2.6
+ * 版本：v2.7
  * 職責：
  * - 控制服務紀錄的五步驟流程
  * - 管理資料暫存與驗證
@@ -336,6 +336,18 @@ class ServiceRecordFlow {
     }
   }
 
+  initializeChiefComplaintUI() {
+    const container = this.stepContainers.get(1);
+    if (!container) return;
+
+    // 還原主訴內容
+    const cInput = container.querySelector('textarea[name="complaint"]');
+    if (cInput) {
+        // 從 tempRecord 還原資料，若無則為空字串
+        cInput.value = this.tempRecord.steps.chiefComplaint.complaint || '';
+    }
+  }
+
   // [FormValidator] 初始化驗證器實例
   initStepValidator(stepNumber) {
     if (this.stepValidators.has(stepNumber)) return; // 已初始化過
@@ -514,9 +526,15 @@ class ServiceRecordFlow {
 
     // 2. Step 2 (Body Diagram) 特殊檢查
     if (this.currentStep === 2) {
+        // 修正大括號配對錯誤，並保留此擴充區塊
+        if (window.appUIAssessment) {
+            const selections = window.appUIAssessment.getAllSelections();
+            if (selections.bodyParts.length === 0) {
+                if(window.showToast) window.showToast('請至少標記一個部位', 'warning');
+                return false;
+            }
         }
     }
-
     return true; 
   }
 
@@ -808,6 +826,18 @@ class ServiceRecordFlow {
     checkedMuscles.forEach(id => {
         if (window.appUIAssessment.selectMuscleTag) {
             window.appUIAssessment.selectMuscleTag(id, true);
+        }
+    });
+
+    // 補上評估項目 (Assessments) 的套用邏輯
+    const checkedAssessments = Array.from(document.querySelectorAll('#tpl-check-assessments input:checked')).map(cb => cb.value);
+    checkedAssessments.forEach(id => {
+        // 假設 UIAssessment 提供 addAssessmentResult 或類似方法
+        // 將模板中的評估項目預設為 'positive' (陽性) 加入列表
+        if (window.appUIAssessment.addAssessmentResult) {
+            window.appUIAssessment.addAssessmentResult(id, 'positive', ''); 
+        } else {
+            console.warn('UIAssessment missing addAssessmentResult method');
         }
     });
 

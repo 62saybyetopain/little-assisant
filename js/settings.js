@@ -1,5 +1,5 @@
 /**
- * settings.js - 系統設定頁面控制器(v4.4)
+ * settings.js - 系統設定頁面控制器(v4.5)
  * 職責：
  * 1. 管理設定頁面的標籤頁切換與 UI 狀態
  * 2. 串接 AppDataManager 進行 CRUD (評估動作、肌群標籤)
@@ -26,12 +26,13 @@
 // 定義身體部位
 const BODY_PARTS_DEF = [
   { id: 'head', name: '頭部' }, 
-  { id: 'neck', name: '左頸' },{ id: 'neck', name: '右頸' },
+  { id: 'left-neck', name: '左頸' },{ id: 'right-neck', name: '右頸' },
   { id: 'left-shoulder', name: '左肩' }, { id: 'right-shoulder', name: '右肩' },
-  { id: 'upper-back', name: '上背' }, { id: 'lower-back', name: '下背/腰' },
+  { id: 'left-upper-back', name: '左側上背' }, { id: 'right-upper-back', name: '右側上背' }, 
+  { id: 'left-lower-back', name: '左側下背/腰' },{ id: 'right-lower-back', name: '右側下背/腰' },
   { id: 'left-chest', name: '左胸' }, { id: 'right-chest', name: '右胸' }, 
   { id: 'left-abdomen', name: '左腹部' },{ id: 'right-abdomen', name: '右腹' },
-  { id: 'left-hip', name: '左臀' }, { id: 'left-hip', name: '右臀' },
+  { id: 'left-hip', name: '左臀' }, { id: 'right-hip', name: '右臀' },
   { id: 'left-arm', name: '左手' },{ id: 'right-arm', name: '右手' }, 
   { id: 'left-leg', name: '左大腿' },{ id: 'right-leg', name: '右大腿' },
   { id: 'left-knee', name: '左膝' },{ id: 'right-knee', name: '右膝' },
@@ -78,8 +79,12 @@ function sortTagsByBodyPart(tags) {
     const getPart = (tag) => {
         const parts = tag.relatedBodyParts;
         if (!parts || parts.length === 0) return '';
+        
+        // 強制轉型為 String，防止陣列內含 null/undefined 導致 .replace 崩潰
+        const firstPart = String(parts[0] || '');
+        
         // 取第一個部位，並移除 left-/right- 前綴以進行通用比對
-        return parts[0].replace(/^(left|right)-/, '');
+        return firstPart.replace(/^(left|right)-/, '');
     };
 
     const partA = getPart(a);
@@ -1344,11 +1349,18 @@ window.updateDeviceName = () => {
 window.copyFullId = () => {
   const idText = document.getElementById('p2p-full-id').textContent;
   if (idText && idText !== '載入中...') {
-      navigator.clipboard.writeText(idText).then(() => {
-          SettingsApp.showToast('完整 ID 已複製', 'success');
-      }).catch(() => {
-          alert('複製失敗，請手動複製');
-      });
+      //檢查 clipboard API 是否可用 (防止非 HTTPS 環境崩潰)
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(idText).then(() => {
+              SettingsApp.showToast('完整 ID 已複製', 'success');
+          }).catch((err) => {
+              console.error(err);
+              prompt('複製失敗 (環境限制)，請手動複製 ID:', idText);
+          });
+      } else {
+          // Fallback for HTTP / Older Browsers
+          prompt('您的瀏覽器或環境不支援自動複製，請手動複製 ID:', idText);
+      }
   }
 };
 

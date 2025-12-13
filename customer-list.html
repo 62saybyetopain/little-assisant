@@ -609,6 +609,18 @@
       };
 
       // 8. 事件綁定
+      // 搜尋 (防抖動)；確保 debounce 函式存在，防止因 utils.js 未載入導致頁面 JS 崩潰
+      if (typeof window.debounce !== 'function') {
+        window.debounce = (func, wait) => {
+          let timeout;
+          return function(...args) {
+            const context = this;
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(context, args), wait);
+          };
+        };
+      }
+
       // 搜尋 (防抖動)
       const handleSearch = window.debounce((e) => {
         state.keyword = e.target.value.trim();

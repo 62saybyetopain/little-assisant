@@ -143,7 +143,12 @@ class CustomerManager {
     const index = this.getAllCustomers();
 
     return index.filter(customer => {
-      const searchText = `${customer.name}${customer.nickname}${customer.phoneLastThree}`.toLowerCase();
+      // [Fix] 加入 || '' 防呆，防止 null/undefined 被轉為字串 "null"/"undefined" 造成搜尋雜訊
+      const name = customer.name || '';
+      const nick = customer.nickname || '';
+      const phone = customer.phoneLastThree || '';
+      
+      const searchText = `${name}${nick}${phone}`.toLowerCase();
       return searchText.includes(lowerKeyword);
     });
   }
@@ -269,9 +274,26 @@ class CustomerManager {
       return { success: false, error: '系統核心尚未更新' };
     }
     try {
-      // 呼叫底層 API 將資料移入回收桶
+      // 1. 呼叫底層 API 將資料移入回收桶
       const result = this.storage.moveToRecycleBin(customerId);
-      return result.success ? { success: true } : { success: false, error: result.error };
+      
+      // 2. 若移動成功，同步更新索引，避免列表中出現「殭屍資料」
+      if (result.success) {
+          try {
+              const index = this.storage.loadCustomerIndex() || [];
+              const newIndex = index.filter(c => c.id !== customerId);
+              // 若長度有變化，代表確實移除了資料，執行儲存
+              if (newIndex.length !== index.length) {
+                  this.storage.saveCustomerIndex(newIndex);
+              }
+          } catch (idxError) {
+              console.error('Index sync failed after delete:', idxError);
+              // 不回傳失敗，因為資料已經進回收桶了，下次重整會修正
+          }
+          return { success: true };
+      }
+      
+      return { success: false, error: result.error };
     } catch (error) {
       console.error('Delete error:', error);
       return { success: false, error: error.message };
