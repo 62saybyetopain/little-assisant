@@ -183,7 +183,7 @@ class StorageService {
   remove(key, options = { source: 'local' }) {
     if (this.demoMode) { 
         return { success: false, error: 'STORAGE_DISABLED', message: '無痕模式無法刪除資料' }; 
-    }
+    }try {
       localStorage.removeItem(key);
       if (options.source === 'local' && window.AppSyncManager) {
         window.AppSyncManager.broadcastUpdate(key, null);

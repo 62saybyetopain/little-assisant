@@ -234,35 +234,11 @@ JavaScript
   }
 
 額外發現的關鍵問題分析
-1. [P0] 設定頁面初始化崩潰 (Settings Page Crash)
-
-    偵測依據： 您的截圖中，紅色錯誤明確指出 TypeError: can't access property "getTagsByCategory", window.AppTagManager is undefined 發生在 settings.js:554。
-
-    問題分析： 您提供的「Fix 2」只修復了 service-record.html 的初始化順序，但完全忽略了截圖中真正報錯的 settings.js。當使用者在設定頁面重新整理時，AppTagManager 還沒載入，但 settings.js 已經嘗試執行 loadMuscleList，導致整個設定頁面腳本中斷。
-
-    後果： 設定頁面功能全毀，標籤無法載入。
-
+1. [P0] 設定頁面初始化崩潰 (Settings Page Crash
 2. [P1] 事件冒泡導致的「殭屍跳轉」 (Event Bubbling)
-
-    偵測依據： 您提供的「Fix 1」程式碼片段。
-
-    問題分析： 您的 HTML 結構是 <div onclick="跳轉頁面"> <button onclick="刪除">。
-
-        當使用者點擊「刪除按鈕」時，瀏覽器會執行刪除邏輯。
-
-        但是，點擊事件會「向上冒泡 (Bubble Up)」傳遞給父層的 div。
-
-        結果：使用者點了刪除，系統彈出刪除確認，但背景同時開始載入該客戶的個人頁面。這會導致資料狀態錯亂（在跳轉前被刪除）或使用者體驗極差。
-
-    後果： 刪除操作觸發頁面跳轉，可能導致刪除失敗或 Console 報錯。
-
 3. [P1] HTML 屬性雙引號破壞 (Attribute Break)
 
-    偵測依據： 您提供的「Fix 1」與「Fix 4」使用 data-name="${safeName}"。
-
-    問題分析： 您的 escapeHtml 函式通常只轉義單引號 '。如果客戶名稱中包含 雙引號 " (例如暱稱 The "Rock" )，HTML 解析器會看到 data-name="The "，後面的 Rock" 會被視為無效屬性或語法錯誤，再次導致版面錯亂或 JS 取值失敗。
-
- 修復清單為 10 大項，完整方案：
+ 修復清單為 10 大項：
 
 
     [P0] 補完缺失函式 (createUnifiedImportInput, showRecycleBinModal)。(新)
@@ -285,11 +261,13 @@ JavaScript
 
     [P1] 修復殘留髒資料問題。
 
+注意:
+
 清除之前的 context，請檢查這份檔案，除了上述的問題以外，是否存在其他錯誤。
+
+如果需要修復
 
 務必具體指出需要更換或添加的段落，並提供替換該段落的程式碼
 
 注意，修改方案應該基於這次上傳的附件檔案，請嚴格遵守這項指令。
-
-
 修復時如有假設情境務必說明(可能影響修正方向)，請總是說明為甚麼修正方案可以正確修復偵測到的問題
