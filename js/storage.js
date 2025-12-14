@@ -181,15 +181,20 @@ class StorageService {
   }
 
   remove(key, options = { source: 'local' }) {
+    // 1. 檢查無痕模式
     if (this.demoMode) { 
         return { success: false, error: 'STORAGE_DISABLED', message: '無痕模式無法刪除資料' }; 
-    }try {
+    }
+    
+    try {
       localStorage.removeItem(key);
       if (options.source === 'local' && window.AppSyncManager) {
         window.AppSyncManager.broadcastUpdate(key, null);
       }
       return { success: true };
-    } catch (error) { return { success: false }; }
+    } catch (error) { 
+      return { success: false }; 
+    }
   }
 
   // ==========================================

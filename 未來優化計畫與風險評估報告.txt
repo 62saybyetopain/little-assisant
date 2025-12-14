@@ -1,0 +1,438 @@
+未來優化計畫與風險評估報告
+一、 資料架構風險 (Data Architecture Risks)
+
+1.LocalStorage 容量上限
+
+    情境描述：瀏覽器 LocalStorage 的儲存限制通常為 5MB。隨著病歷中的 SVG 標記與文字內容增加，長期使用後（約累積數百位病人或數千條病歷時），系統會觸發 QuotaExceededError，導致資料無法再寫入，形同癱瘓。
+
+    涉及檔案： storage.js, settings.js
+
+具體行動：
+
+    storage.js: 新增 archiveColdData(thresholdDate) API。掃描索引，找出久未回診的客戶，打包成 JSON 並刪除本地資料 。
+
+settings.js: 在「系統維護」頁面新增「封存精靈」按鈕與介面 。(如果能新增一個對匯入資料的檢索功能，比方說我可以看到這份資料中有哪些項目，我可以點選貨輸入ID只匯入那一筆，應該是比較省事的選擇)
+
+2.搜尋功能的「索引盲區」
+
+    情境描述：目前系統的搜尋功能僅比對 Customer Index（姓名、電話）。若治療師想要搜尋「主訴包含『落枕』的病人」或「某個特定日期的病歷」，目前系統完全查不到，因為這些資料位於詳細檔（Detail）中，未被索引。
+涉及檔案： customer-manager.js
+
+具體行動：
+
+***檔案：customer-manager.js
+
+修改點： addCustomer, updateCustomer, searchCustomers方法：
+
+
+新增 keywords 欄位： 在顧客物件中正式加入此欄位，作為「手動關鍵字」（取代全文索引主訴）。
+
+生成 _searchKeywords： 在寫入索引前，將 name, phone, nickname, keywords (新欄位) 組合並轉小寫。
+
+搜尋邏輯： searchCustomers 改為比對此索引欄位。
+
+3.JSON 序列化效能瓶頸
+
+    情境描述：storage.js 底層依賴 JSON.stringify 與 JSON.parse 進行存取。當單一檔案資料量過大時，頻繁的序列化與反序列化操作會佔用主執行緒（Blocking Main Thread），導致頁面卡頓或凍結。
+
+    預計解法：維持現狀
+
+二、 P2P 同步與協作風險 (Sync & Collaboration Risks)
+
+4.陣列吞噬 (Array Obliteration)
+
+    情境描述：這是極高風險項目。當多人同時編輯同一位病人的不同病歷或不同標籤時，後寫入者的陣列資料會整碗覆蓋先寫入者的陣列，導致先前的資料直接遺失。
+
+   涉及檔案： sync-manager.js, main.css / components.css
+
+具體行動：
+修改點： pushFullSync (開始傳輸) 與 conn.on('close') (結束傳輸)。
+    sync-manager.js: 新增 isSyncing 狀態。連線建立時呼叫鎖定方法，傳輸結束或失敗後解除鎖定
+
+CSS: 新增 .sync-lock-overlay 樣式，設定 z-index: 9999 全螢幕遮擋 。呼叫 UI 函式，對側邊欄與返回按鈕添加 CSS class disabled (視覺反灰 + pointer-events: none)。
+
+解決問題： 消除「陣列吞噬」風險。防止使用者在同步過程中修改資料，導致並發衝突 。
+
+合理性： 將 P2P 定義為「檔案傳輸」而非「即時協作」，這是技術成本最低且能消除 90% 衝突風險的方案 。
+
+結論：鎖定 UI，僅允許單向覆蓋或手動合併。
+
+5.時鐘偏差 (Clock Skew)
+涉及檔案： sync-manager.js
+
+    情境描述：若兩台裝置的系統時間不一致（例如差了 5 分鐘），可能會導致「舊資料覆蓋新資料」，或者「正確的修改被系統誤判為過期資料」而遭丟棄。
+
+    預計解法：前置檢查 (Pre-flight Check)，發生在任何資料傳輸之前。
+
+    連線握手 (Handshake)：當兩台裝置建立 P2P 連線時，交換彼此的 Date.now()。
+
+    誤差判斷：
+
+        ✅ 誤差 < 1 分鐘：判定雙方時鐘同步。使用者可以信任後續資料比對視窗中的「🟢 新增 / 🔵 較新 / ⚠️ 較舊」判斷結果。
+
+        ❌ 誤差 > 1 分鐘：判定時鐘不同步。
+
+            行動：系統彈出紅色警告：「雙方時間設定落差過大（相差 X 分鐘），這會導致新舊資料判斷錯誤。請先校正裝置時間。」
+
+            防呆：讓人類判斷，他覺得沒差還是可以繼續傳輸檔案。
+修改點： setupConnection (連線) 與 handleIncomingData (接收)。
+
+方法：
+
+    在 HANDSHAKE 封包中夾帶 timestamp: Date.now()。
+
+    接收端比對本地時間。若誤差 > 60 秒，呼叫 showToast 顯示黃色警告：「雙方時間不同步，可能影響資料判斷」。
+
+三、 使用者體驗與防呆 (UX & Safety)
+
+6.多視窗/多頁籤衝突
+
+    情境描述：若使用者同時開啟兩個瀏覽器分頁操作同一位病人，分頁 A 的修改存檔後，若在 分頁 B 繼續操作並存檔，會導致分頁 A 的新資料被分頁 B 的舊狀態覆蓋（因為 LocalStorage 是跨分頁共享的）。
+
+    預計解法：a.傳輸時凍結：實作（全螢幕遮罩 Loading），限制P2P作為傳輸用而非同步。
+              b.編輯時鎖定：當 A 分頁正在編輯王小明，B 分頁若要打開王小明，檢查 sessionStorage 或 localStorage 的 locking_cust_id，若存在則提示「正在編輯中」，禁止讀取。
+
+7.缺乏自動存檔 (Auto-Save)
+自動存檔防護 (Auto-Save Guard)
+
+    涉及檔案： service-record-flow.js
+
+    修改點： init 方法與 attachDirtyMonitor。
+
+方法：
+
+    監聽 window.onbeforeunload 事件。
+
+    判斷 this.hasUnsavedChanges 旗標。若為 true，回傳提示字串（觸發瀏覽器原生防呆視窗）。
+
+優化目標： [自動存檔防護] 防止誤關分頁導致長篇病歷遺失。
+
+解決問題： 解決使用者誤關分頁或瀏覽器崩潰導致長篇病歷文字消失的痛點 。
+
+合理性： 這是成本最低但效益最高的防護，利用瀏覽器原生機制即可達成，不需要複雜的背景存檔邏輯。
+
+8.刪除關聯性破壞
+涉及檔案： data-manager.js, settings.js
+    情境描述：在設定頁刪除「肌群標籤」後，曾經引用該標籤的「服務模板」或「歷史病歷」在讀取時會因為找不到 ID 而出現顯示錯誤（Unknown Tag）或報錯。
+
+    預計解法：標籤刪除的最終執行流程 (Finalized Workflow)
+
+依照您的指示，我們將刪除流程標準化如下：
+
+觸發動作：使用者在「系統設定 > 肌群標籤」點擊某標籤的「垃圾桶」圖示。
+
+Step 1: 引用檢查 (Reference Check) 系統掃描：
+
+    ServiceRecords (歷史病歷)
+    ServiceTemplates (服務模板)
+    (註：不計算 Tag 本身，只計算被引用的次數)
+
+Step 2: 條件分支
+
+    情況 A：引用計數 = 0
+        系統行為：直接物理刪除 (Physical Delete)。
+        UI 反饋：Toast 提示「標籤已刪除」。
+    情況 B：引用計數 > 0
+
+        系統行為：阻擋刪除，彈出 「標籤處理決策視窗」。
+        視窗內容：
+            ⚠️ 無法直接刪除 此標籤目前正被 15 筆 歷史病歷或模板使用中。 請選擇處理方式：
+
+        選項按鈕：
+
+            🔵 封存停用 (Archive)
+                說明：保留歷史紀錄顯示，但未來選單不再出現。模板將自動略過此標籤。
+                行為：設定 isArchived: true。
+
+            🟢 合併取代 (Merge & Delete)
+                介面：顯示下拉選單「選擇要合併到的目標標籤...」。
+                說明：將所有引用此標籤的紀錄，改為指向新標籤，然後永久刪除舊標籤。
+                行為：執行 Batch Replace → Delete。
+檔案：data-manager.js
+
+    修改點： TagManager 類別中的 deleteTag 方法。
+
+    方法：
+
+        不再直接執行刪除。
+
+        先掃描 AssessmentManager (動作) 與 TemplateManager (模板)。
+
+        若發現引用計數 > 0，回傳 { success: false, reason: 'in_use' }。
+
+        新增 archiveTag(id) 方法，僅將標籤狀態設為 { isArchived: true }。
+
+    優化目標： [刪除關聯性保護] 防止刪除標籤後，歷史資料出現 "Unknown Tag" 錯誤。
+
+    方案合適性評估： 這是維護關聯式資料完整性的必要手段。「封存 (Soft Delete)」比「實體刪除」更能保證歷史資料的正確顯示。
+
+在 模板套用邏輯 (ServiceRecordFlow) 加入一道濾網，確保「封存」的標籤永遠不會進入新病歷。
+涉及檔案： service-record-flow.js
+
+具體行動：
+
+    修改 handleTemplateApply 方法。在讀取模板關聯的肌群清單後，呼叫 TagManager 檢查每個 Tag 的狀態。
+運作邏輯： 當治療師在 Step 2 觸發模板，或手動套用模板時：
+
+    系統讀取模板內設定的 relatedMuscles (例如：['tag_a', 'tag_b', 'tag_archived'])。
+    過濾程序：系統向 TagManager 查詢這些 ID 的狀態。
+    攔截：發現 tag_archived 的狀態是 { isArchived: true }。
+    執行：系統只將 tag_a 和 tag_b 寫入當前的 tempRecord。
+    結果：新生成的病歷完全乾淨，不會帶有舊標籤。
+
+四、 程式碼維護性 (Code Maintainability)
+
+9.HTML/JS 耦合過深
+
+    情境描述：程式碼中大量使用 onclick="func()" 與 innerHTML 字串拼接來生成 UI。這導致函式改名困難（如之前的 vacuum 事件），且難以追蹤事件流向，增加維護成本。
+
+    預計解法：只做**「語法規範」**僅將 HTML onclick 改寫為 JS addEventListener。在開發或修復 Bug (如 settings.js ) 時，順手將該功能的 onclick 改掉
+檔案：settings.html 與 settings.js
+
+    修改點： 「系統診斷 (fixIndices)」按鈕。
+
+    方法：
+
+        HTML: 移除 onclick="fixIndices()"，改為 id="btn-fix-indices"。
+
+        JS: 在 init() 內加入 document.getElementById('btn-fix-indices').addEventListener('click', ...)。
+
+        注意： 僅針對此按鈕進行修改，其他運作正常的按鈕維持原狀。
+優化目標： [漸進式修繕] 解決因函式改名或全域汙染導致的呼叫失敗
+
+十、全域變數依賴
+
+    情境描述：系統高度依賴 window.AppXXX 等全域變數。若載入順序錯誤或變數被外部腳本污染，系統極易崩潰（如 ServiceRecordFlow 未定義問題）。
+
+    預計解法：補強措施：在 app.js 中加入一個簡單的「相依性檢查器」。
+涉及檔案： app.js
+
+具體行動：
+
+ 將錯誤分為 「致命傷」 與 「輕傷」，並給予不同的處理方式：
+情境 A：輕傷 (例如：PeerJS 載入失敗)
+
+    發生什麼事： 網路不穩，導致 P2P 模組沒載入。但使用者的「寫病歷、查資料」功能完全正常。
+
+    UI 行為：
+
+        不遮罩，讓使用者繼續用。
+
+        僅在「系統設定 > 設備同步」的分頁標籤上打一個 ⚠️ 符號，或將同步按鈕反灰 (Disabled)。
+
+    通知之後： 當使用者滑鼠移過去時，顯示 Tooltip：「同步模組載入失敗，請檢查網路」。
+
+    合理性： 不因為次要功能壞掉而影響核心業務。
+
+情境 B：致命傷 (例如：AppStorage / LocalStorage 失敗)
+
+    發生什麼事： 使用者開了「無痕模式」且瀏覽器設定為「封鎖第三方 Cookie/儲存」，導致 LocalStorage 無法寫入。這會導致資料存不進去，這是災難。
+
+    UI 行為：
+
+        頂部通知列 (Top Banner)： 像 Google Drive 斷線那樣，在頁面最上方顯示一條黃色/紅色橫條。
+
+        內容： 「⚠️ 系統儲存空間無法使用，您的資料可能無法儲存。」
+
+    通知之後 (Action)：
+
+        橫條右邊提供一個 [重新載入] 按鈕。
+
+        如果重新載入無效，橫條會展開建議：「請嘗試關閉無痕模式，或檢查瀏覽器隱私設定」。
+
+        鎖定存檔按鈕： 將「儲存」按鈕設為 Disabled，防止使用者打了半天字卻存不了的挫折感。
+
+修正後的實作成本： 只需要在 app.js 的 initCore 裡加一段簡單的 if/else 判斷，根據缺少的模組去 toggle CSS class 即可，不需要做複雜的遮罩系統。
+檔案：app.js
+
+    修改點： initCore 函式 (初始化階段)。
+
+    方法：
+
+        加入「相依性檢查」邏輯。
+
+        若 window.AppStorage 或其他關鍵變數缺失，不跳出全螢幕遮罩。
+
+        改為在 document.body 插入一個 固定頂部警告橫幅 (Top Banner)（樣式類別 .system-warning），內容提示「系統元件載入失敗」。
+
+        同時將頁面上的「儲存/新增」按鈕加上 disabled 屬性。
+
+    優化目標： [優雅降級] 防止使用者在系統損壞的狀態下輸入資料，導致白忙一場。
+
+    方案合適性評估： 成本極低（約 10 行程式碼），卻能提供明確的錯誤回饋，避免使用者恐慌，且不阻擋查詢舊資料的需求。
+
+
+
+---執行建議順序：
+
+    Phase 1 (當前任務)： 優先修復現有的 10 大 Bug（這是地基）。
+
+    Phase 2 (維護性)： 執行 HTML/JS 解耦 (第 10 點)。這會讓後續的功能開發更不容易出錯。
+
+    Phase 3 (安全性)： 實作 Auto-Save 與 時鐘偏差檢查。
+
+    Phase 4 (資料架構)： 最後再實作 冷熱資料分離 與 進階搜尋，因為這涉及資料結構變更，風險較高。
+針對各檔案的優化實作規劃：
+🟢 一、 資料架構優化 (Data Architecture)
+1. storage.js (底層儲存)
+
+    [優化目標] 冷熱資料分離：
+
+        新增 API： archiveColdData(thresholdDate)。
+
+        邏輯： 掃描 customerIndex，找出 lastVisit < thresholdDate 的 ID，將其詳細資料 (customer_ID) 打包成 JSON Blob，然後呼叫 this.remove 刪除本地資料。
+
+    [優化目標] 搜尋索引擴充：
+
+        修改： 在 saveCustomerIndex 或相關邏輯中，不只存基本欄位，需預留 _searchKeywords 的空間。
+
+2. customer-manager.js (資料邏輯)
+
+    [優化目標] 搜尋索引盲區 (_searchKeywords)：
+
+        修改 addCustomer / updateCustomer： 在準備寫入 customerIndex 前，執行字串串接邏輯：
+        JavaScript
+
+        const keywords = `${data.name}|${data.phone}|${data.healthTags.join('')}|${data.notes}`.toLowerCase();
+
+        修改 searchCustomers： 將原本的比對邏輯改為直接比對索引中的 _searchKeywords 欄位 。
+
+3. settings.js (系統維護)
+
+    [優化目標] 冷資料封存精靈 UI：
+
+        新增功能： 在「系統維護」分頁增加「封存精靈」按鈕。
+
+        邏輯： 呼叫 storage.js 的封存 API，並觸發瀏覽器下載生成的 JSON 備份檔。
+
+🔵 二、 P2P 同步與協作優化 (Sync & Collaboration)
+4. sync-manager.js (同步核心)
+
+    [優化目標] 時鐘偏差檢查 (Clock Skew)：
+
+        修改 setupConnection： 在 open 事件後，發送握手封包時夾帶 timestamp: Date.now()。
+
+        修改 handleIncomingData： 在接收 HANDSHAKE 時，計算 Math.abs(remoteTime - localTime)。若差異 > 60000ms (1分鐘) ，觸發 showToast 警告，並在 UI 上標示「時鐘不同步」。
+
+    [優化目標] 傳輸鎖定 (Lock UI)：
+
+        新增狀態： isSyncing。當連線建立時，呼叫 UI 方法遮蔽側邊欄與返回按鈕。
+
+5. main.css / components.css (樣式)
+
+    [優化目標] 傳輸鎖定遮罩：
+
+        新增 CSS： .sync-lock-overlay，設定 z-index: 9999，全螢幕遮擋並顯示「資料同步中，請勿關閉...」。
+
+🟡 三、 使用者體驗與防呆 (UX & Safety)
+6. service-record-flow.js (流程控制)
+
+    [優化目標] 缺乏自動存檔 (Auto-Save) 防護：
+
+        修改 init： 加入 window.addEventListener('beforeunload', ...)。
+
+        邏輯： 檢查 this.hasUnsavedChanges，若為 true 則攔截關閉事件 。
+
+    [優化目標] 模板過濾封存標籤：
+
+        修改 handleTemplateApply： 在讀取 template.relatedMuscles 後，呼叫 TagManager 檢查每個 Tag 是否標記為 isArchived: true 。若是，則從清單中剔除，不寫入 tempRecord。
+
+7. data-manager.js (資料管理)
+
+    [優化目標] 刪除關聯性破壞 (標籤刪除決策)：
+
+        修改 TagManager.deleteTag：
+
+            不再直接刪除。
+
+            先掃描 AssessmentManager 和 TemplateManager 的資料，計算引用次數 (Reference Check) 。
+
+            若計數 > 0，回傳特殊物件 { success: false, reason: 'in_use', count: N }，讓 UI 層決定彈出決策視窗。
+
+        新增 API： archiveTag(id) (設定 isArchived: true) 與 mergeTag(oldId, newId) (批次取代 ID)。
+
+8. settings.js (設定 UI)
+
+   8.1 [優化目標] 標籤刪除決策視窗：
+
+        修改 confirmDelete： 處理 deleteTag 回傳的 'in_use' 狀態。
+
+        新增 UI： 彈出「標籤處理決策視窗」，提供「封存」與「合併」選項 。
+   8.2
+   修改點： showImportDecisionModal 方法： 修改渲染邏輯，在列表中顯示版本號與時間的對比，讓人類決策更有依據。
+
+優化目標： [資訊揭露] 讓使用者一眼看出為什麼這個檔案被分在黃區（是版本太舊？還是版本一樣但內容不同？）。
+
+9. app.js (應用入口)
+
+    [優化目標] 多視窗/編輯鎖定：
+
+        新增邏輯： 在 initCore 或頁面載入時，檢查 localStorage.getItem('lock_customer_{id}')。
+
+        邏輯： 若發現鎖定且時間在 5 分鐘內，則將頁面設為唯讀或提示使用者。
+
+🟠 四、 程式碼維護性 (Code Maintainability)
+10. 所有 HTML 檔案 (customer-list.html, settings.html, service-record.html)
+
+    [優化目標] HTML/JS 耦合解構：
+
+        全面移除： 所有的 onclick="func()"。
+
+        改為： 為元素加上 id 或 data-action，並在對應的 JS 檔案中使用 document.getElementById(...).addEventListener(...)。
+
+        效益： 解決如 Bug 5 (fixIndices) 這類因函式改名但 HTML 沒改導致的崩潰 。
+
+11. app.js
+
+    [優化目標] 相依性檢查器：
+
+        新增功能： 在 initCore 最前端，建立一個 DependencyChecker。
+
+        邏輯： 檢查 window.Peer, window.AppStorage 等關鍵全域變數是否存在。若缺失，立即在頁面上顯示紅色「系統損壞」遮罩，防止使用者進行無效操作 。
+12.檔案：data-manager.js (版本號與使用統計)
+
+修改點： TemplateManager, AssessmentManager (以 updateTemplate 為例，其他類推) 方法：
+
+    版本號遞增： 每次更新時 version = (old.version || 1) + 1。
+
+    寫入變更紀錄： 將 updateNote (變更說明) 寫入 changeLog 陣列。
+
+    引用統計 API： 實作 getUsageCount(id)，掃描所有索引與模板。
+
+優化目標： [資料治理] 讓團隊知道「誰改了什麼、為什麼改」，並在刪除前提供「影響範圍」的數據。 方案合適性： 不做自動合併，改提供數據輔助決策，這是最不干擾使用者且開發風險最低的方式。
+
+13.檔案：settings.html (UI 支援)
+修改點： modal-import-decision (匯入決策視窗) 與 編輯 Modal 方法：
+
+    新增輸入框： 在所有編輯 Modal (動作/模板/標籤) 中，加入 <input id="edit-xxx-note" placeholder="本次修改說明 (選填)">。
+
+    修改決策列表樣式： 讓衝突列表能顯示 v1 -> v2 的版號變化。
+
+14.檔案：data-export-service.js (匯入決策核心)
+備註:非必要的話我不想增加檔案，請先確認是否有更適合加入此機制的檔案
+修改點： analyzeImport 修正策略： 恢復紅綠燈分類，但將判斷邏輯升級為 「版號優先，時間為輔」 的雙重邏輯。
+
+分類邏輯矩陣：
+分類	顏色	條件邏輯	代表意義	預設勾選
+新增	🟢 綠	本地無此 ID	全新資料	✅ 是
+升級	🔵 藍	匯入版號 > 本地版號	明確的版本更新 (例如 v1 -> v2)	✅ 是
+衝突	🟡 黃	
+
+匯入版號 < 本地版號 (降級)
+
+OR 版號相同 但 內容不同
+	過期資料、平行修改、或未改版號的修改	❌ 否
+相同	⚪ 白	內容完全一致	無需處理
+優化目標： [UI 支援] 提供輸入備註的入口，並在匯入時呈現版號差異。
+
+settings.js 的 confirmDelete 與 customer-manager.js 的索引優化 (_searchKeywords)。這兩者確實有連動關係。
+
+    問題： confirmDelete 需要檢查標籤是否被使用 (in_use)。
+
+    優化後的綜效：
+
+        在沒有索引優化前，要檢查「落枕」這個標籤被多少人使用，需要掃描所有詳細檔 (慢)。
+
+        現在： 由於 customer-manager.js 已經將 healthTags 加入了 _searchKeywords 索引，檢查標籤引用次數變得飛快！
+
+        實作： TagManager 的 getUsageCount 可以直接呼叫 CustomerManager.searchCustomers(tagId)，就能瞬間得到引用次數，這讓「刪除前的防呆檢查」變得即時且無感。

@@ -853,7 +853,7 @@ class ServiceRecordFlow {
       this.collectStepData(3); // 同步評估發現
       this.collectStepData(4); // 同步處置計畫
   }
-
+}
   onMuscleTagsUpdated(detail) {
     this.tempRecord.steps.symptoms.muscleTags = detail.selectedTags || [];
     this.markStepDirty(2);
