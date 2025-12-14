@@ -1,5 +1,5 @@
 /**
- * ui-assessment.js - 互動層模組 (v2.3 修正版)
+ * ui-assessment.js - 互動層模組 (v2.4)
  * 職責：
  * - 管理人體圖示互動（BodyDiagram）
  * - 智能篩選肌群標籤（MuscleTagSelector）
@@ -181,6 +181,7 @@ class BodyDiagram {
     if (this.svg) this.svg.dispatchEvent(event);
     document.dispatchEvent(event);
   }
+}
 
 // ============================================
 // 子模組 2: MuscleTagSelector - 肌群標籤智能篩選
