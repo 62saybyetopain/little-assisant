@@ -51,14 +51,11 @@
         console.warn('⚠️ SyncManager class missing. P2P features disabled.');
     }
 
+    // 將 ServiceRecordFlow 改為非必要依賴
+    // 原因：settings.html 與 customer-list.html 不需要載入服務流程邏輯
     if (typeof ServiceRecordFlow === 'undefined') {
-      console.error('❌ Critical: ServiceRecordFlow class missing (Logic Layer not loaded).');
-      return false;
-    }
-
-    if (typeof ServiceRecordFlow === 'undefined') {
-      console.error('❌ Critical: ServiceRecordFlow class missing (Logic Layer not loaded).');
-      return false;
+      console.warn('⚠️ Warning: ServiceRecordFlow class missing. Wizard features (Service Record) will be disabled.');
+      // 移除 return false，讓系統繼續初始化 DataManager 等核心功能
     }
     
     //確保 XSS 防護函式存在 
