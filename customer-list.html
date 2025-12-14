@@ -335,8 +335,8 @@
           </div>
 
           <div class="form-group">
-            <label class="form-label">電話末三碼</label>
-            <input type="tel" name="phoneLastThree" class="form-control" placeholder="例如: 123" maxlength="3">
+            <label class="form-label">電話末碼</label>
+            <input type="tel" name="phoneLastThree" class="form-control" placeholder="例如: 123" maxlength="10">
             <span class="error-message"></span>
           </div>
 
@@ -667,7 +667,7 @@
         const validator = new FormValidator('add-customer-form', {
           name: { required: true, maxLength: 50 },
           nickname: { required: false, maxLength: 20 },
-          phoneLastThree: { required: false, pattern: /^(\d{3})?$/, patternMessage: '需為3位數字' }
+          phoneLastThree: { required: false, pattern: /^(\d{3,10})?$/, patternMessage: '需為 3-10 位數字' }
         });
 
         validator.onSubmit = () => {

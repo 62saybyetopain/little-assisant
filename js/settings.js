@@ -1,5 +1,5 @@
 /**
- * settings.js - 系統設定頁面控制器(v4.6)
+ * settings.js - 系統設定頁面控制器(v4.7)
  * 職責：
  * 1. 管理設定頁面的標籤頁切換與 UI 狀態
  * 2. 串接 AppDataManager 進行 CRUD (評估動作、肌群標籤)
@@ -737,7 +737,8 @@ const SettingsApp = {
     // 加上 escape 確保一致性
     el.innerHTML = SIMPLIFIED_BODY_PARTS.map(p => `
       <label class="checkbox-item">
-        <input type="checkbox" name="${name}" value="${p.id}" ${eventHandler}> ${window.escapeHtml(p.name)}
+        <input type="checkbox" name="${name}" value="${p.id}" ${eventHandler}> 
+        <span>${window.escapeHtml(p.name)}</span>
       </label>
     `).join('');
   },

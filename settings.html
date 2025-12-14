@@ -154,6 +154,84 @@
       color: #4b5563;
     }
     .diff-item:last-child { border-bottom: none; }
+
+    /* =========================================
+       [UX 改良] 新增樣式：優化表單與複選框體驗
+       ========================================= */
+
+    /* 1. 網格佈局：將原本垂直堆疊的 Textarea 改為 2x2 排列 */
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr; /* 兩欄均分 */
+      gap: 15px;
+      margin-top: 10px;
+    }
+
+    /* 手機版自動切回單欄，保持 RWD */
+    @media (max-width: 768px) {
+      .form-grid { grid-template-columns: 1fr; }
+    }
+
+    /* 2. 膠囊按鈕化複選框 (Visual Chips) */
+    .checkbox-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px; /* 按鈕間距 */
+    }
+
+    .checkbox-item {
+      position: relative;
+      cursor: pointer;
+      user-select: none;
+      margin: 0 !important; /* 覆蓋舊樣式 */
+    }
+
+    /* 隱藏原始的原生 input，但保留可存取性位置 */
+    .checkbox-item input[type="checkbox"] {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    /* 按鈕外觀 (利用 span 模擬) */
+    .checkbox-item span {
+      display: inline-block;
+      padding: 6px 14px;         /* 增大內距，容易點擊 */
+      background-color: #f3f4f6; /* 預設灰底 */
+      border: 1px solid #e5e7eb;
+      border-radius: 20px;       /* 圓角 */
+      color: #4b5563;
+      font-size: 14px;
+      transition: all 0.2s ease;
+    }
+
+    /* 滑鼠懸停效果 */
+    .checkbox-item:hover span {
+      background-color: #e5e7eb;
+      border-color: #d1d5db;
+    }
+
+    /* 選取狀態 (Checked) - 轉為強調色 */
+    .checkbox-item input[type="checkbox"]:checked + span {
+      background-color: #3b82f6; /* 藍色背景 */
+      color: white;              /* 白色文字 */
+      border-color: #2563eb;
+      box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+    }
+    
+    /* 3. 優化 Textarea 視覺 */
+    textarea {
+      resize: vertical; /* 禁止水平拉伸破壞佈局 */
+      border-radius: 6px;
+      padding: 10px;
+      border: 1px solid #d1d5db;
+    }
+    textarea:focus {
+      border-color: #3b82f6;
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
   </style>
 </head>
 <body>
@@ -524,23 +602,24 @@
             </div>
         </fieldset>
 
-        <fieldset class="form-section">
+        <<fieldset class="form-section">
             <legend>內容設定 (每行代表一個選項)</legend>
-            <div class="form-grid"> <div class="form-group">
-                    <label>主訴 (Complaints)</label>
-                    <textarea id="tpl-complaints" rows="3" placeholder="一行一個項目"></textarea>
+            <div class="form-grid"> 
+                <div class="form-group">
+                    <label>📢 主訴 (Complaints)</label>
+                    <textarea id="tpl-complaints" rows="5" placeholder="例如：&#10;早晨起床頸部劇痛&#10;頭部無法向單側轉動"></textarea>
                 </div>
                 <div class="form-group">
-                    <label>評估發現 (Findings)</label>
-                    <textarea id="tpl-findings" rows="3" placeholder="一行一個項目"></textarea>
+                    <label>🔍 可能徵候 (Findings)</label>
+                    <textarea id="tpl-findings" rows="5" placeholder="例如：&#10;提肩胛肌明顯緊繃&#10;頸椎旋轉受限"></textarea>
                 </div>
                 <div class="form-group">
-                    <label>處理方式 (Treatments)</label>
-                    <textarea id="tpl-treatments" rows="3" placeholder="一行一個項目"></textarea>
+                    <label>💆 處理方式 (Treatments)</label>
+                    <textarea id="tpl-treatments" rows="5" placeholder="例如：&#10;熱敷放鬆&#10;激痛點按壓"></textarea>
                 </div>
                 <div class="form-group">
-                    <label>建議 (Recommendations)</label>
-                    <textarea id="tpl-recommendations" rows="3" placeholder="一行一個項目"></textarea>
+                    <label>📋 建議 (Recommendations)</label>
+                    <textarea id="tpl-recommendations" rows="5" placeholder="例如：&#10;更換枕頭&#10;每小時伸展"></textarea>
                 </div>
             </div>
         </fieldset>
@@ -596,20 +675,20 @@
             <legend>內容設定 (每行代表一個選項)</legend>
             <div class="form-grid">
                 <div class="form-group">
-                    <label>主訴</label>
-                    <textarea id="edit-tpl-complaints" rows="3"></textarea>
+                    <label>📢 主訴</label>
+                    <textarea id="edit-tpl-complaints" rows="5"></textarea>
                 </div>
                 <div class="form-group">
-                    <label>評估發現</label>
-                    <textarea id="edit-tpl-findings" rows="3"></textarea>
+                    <label>🔍 可能徵候</label>
+                    <textarea id="edit-tpl-findings" rows="5"></textarea>
                 </div>
                 <div class="form-group">
-                    <label>處理方式</label>
-                    <textarea id="edit-tpl-treatments" rows="3"></textarea>
+                    <label>💆 處理方式</label>
+                    <textarea id="edit-tpl-treatments" rows="5"></textarea>
                 </div>
                 <div class="form-group">
-                    <label>建議</label>
-                    <textarea id="edit-tpl-recommendations" rows="3"></textarea>
+                    <label>📋 建議</label>
+                    <textarea id="edit-tpl-recommendations" rows="5"></textarea>
                 </div>
             </div>
         </fieldset>

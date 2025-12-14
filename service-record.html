@@ -40,9 +40,6 @@
         <span class="form-help">請簡潔描述客戶的主要症狀</span>
       </div>
 
-      <div class="step-actions-bar">
-         <button type="button" class="btn-secondary btn-save-record">儲存</button>
-      </div>
     </div>
 
     <div data-step="2" class="step-container">
@@ -131,10 +128,7 @@
         <h3>評估動作結果</h3>
       </div>
       <div id="assessment-container" class="assessment-container">
-        </div>
 
-      <div class="step-actions-bar">
-         <button type="button" class="btn-secondary btn-save-record">儲存</button>
       </div>
     </div>
 
@@ -175,9 +169,6 @@
         <span class="form-help">總結評估的主要發現和初步診斷</span>
       </div>
 
-      <div class="step-actions-bar">
-         <button type="button" class="btn-secondary btn-save-record">儲存</button>
-      </div>
     </div>
 
     <div data-step="4" class="step-container" id="step-form-4">
@@ -208,9 +199,7 @@
           rows="4">
         </textarea>
       </div>
-      <div class="step-actions-bar">
-         <button type="button" class="btn-secondary btn-save-record">儲存</button>
-      </div>
+
     </div>
 
     <div data-step="5" class="step-container">
@@ -240,9 +229,7 @@
           rows="4">
         </textarea>
       </div>
-      <div class="step-actions-bar">
-         <button type="button" class="btn-secondary btn-save-record">儲存</button>
-      </div> </div>
+    </div>
 
     <div class="step-buttons"></div>
 
@@ -696,6 +683,19 @@
     /*讓步驟指示器看起來可以點擊 */
     .step-indicator {
         cursor: pointer; 
+    }
+
+    /* 確保底部操作區有足夠空間，不會被切掉 */
+    .action-buttons {
+      padding: 20px;
+      padding-bottom: 40px; /* 增加底部留白 */
+      text-align: center;
+      background: white; /* 避免透明背景導致重疊 */
+    }
+    
+    /* 讓主要內容區塊與底部保持距離 */
+    .page-container {
+        padding-bottom: 80px; 
     }
    
   </style>

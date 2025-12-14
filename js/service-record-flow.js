@@ -1,6 +1,6 @@
 /**
  * service-record-flow.js - 流程控制層
- * 版本：v2.8
+ * 版本：v2.10
  * 職責：
  * - 控制服務紀錄的五步驟流程
  * - 管理資料暫存與驗證
@@ -109,6 +109,10 @@ class ServiceRecordFlow {
         if (existingRecord) {
           console.log('Loaded from existing record for edit');
           this.tempRecord = JSON.parse(JSON.stringify(existingRecord));
+          
+          // 顯式補上 recordId，讓 DataManager.saveRecord() 能識別這是「更新」而非「新增」
+          this.tempRecord.recordId = existingRecord.id;
+          
         } else {
           console.warn('Record ID provided but not found, creating new.');
           this.recordId = this.generateRecordId();
@@ -127,7 +131,8 @@ class ServiceRecordFlow {
       // 監聽所有輸入變更，標記為未存檔
       this.attachDirtyMonitor();
       
-      await this.goToStep(1);
+      //初始化時傳入 true，避免從空的 DOM 收集資料導致覆蓋已載入的紀錄
+      await this.goToStep(1, true)
 
       return true;
 
@@ -276,12 +281,15 @@ class ServiceRecordFlow {
     }
   }
 
-  async goToStep(stepNumber) {
+  async goToStep(stepNumber, skipCollection = false) {
     if (this.isLocked) return false;
     if (stepNumber < 1 || stepNumber > 5) return false;
 
-    await this.collectStepData(this.currentStep);
-    await this.saveTempRecord();
+    // 只有在非跳過模式下，才從 DOM 收集資料
+    if (!skipCollection) {
+        await this.collectStepData(this.currentStep);
+        await this.saveTempRecord();
+    }
 
     try {
       this.isLocked = true;
@@ -681,13 +689,7 @@ class ServiceRecordFlow {
     this.tempRecord.steps.chiefComplaint.bodyParts = detail.selectedParts || [];
     this.markStepDirty(2);
     this.hasUnsavedChanges = true;
-    // 模板觸發邏輯：如果是新選取的部位 (clickedPart) 且是選取狀態
-    // 假設 UI 層在 detail 中提供了 clickedPart 和 isSelected
-    // 如果沒有 clickedPart，則不觸發，避免載入舊紀錄時瘋狂彈窗
-    const triggerPart = detail.clickedPart;     
-    if (triggerPart && detail.isSelected && window.AppTemplateManager) {
-        this.checkAndShowTemplates(triggerPart);
-    }
+
   }
 // 檢查並顯示模板 Modal
   async checkAndShowTemplates(bodyPartId) {
