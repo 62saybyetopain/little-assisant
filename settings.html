@@ -37,10 +37,21 @@
     /* 4. 設定中間區域可捲動 */
      .form-section, .form-grid, .modal-scrollable-body {
     }
-    #form-add-template, #form-edit-template {
-    overflow-y: auto; /* 讓整個 Form 可捲動 */
-    padding: 0;  /* 內距 */
+    #form-add-template, #form-edit-template,
+    #form-add-muscle, #form-edit-muscle,
+    #form-add-assessment, #form-edit-assessment {
+      overflow-y: auto; 
+      padding: 0 4px; /* 增加些微水平內距，避免捲軸遮擋內容 */
     }
+
+    /*新增色盤樣式，增加 padding 防止圓圈選取時被切邊 */
+    .color-palette {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 6px; 
+    }
+
      .form-section {
       margin: 20px;
     }
