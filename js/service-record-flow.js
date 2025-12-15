@@ -1,6 +1,6 @@
 /**
  * service-record-flow.js - 流程控制層
- * 版本：v2.11
+ * 版本：v2.12
  * 職責：
  * - 控制服務紀錄的五步驟流程
  * - 管理資料暫存與驗證
@@ -110,15 +110,28 @@ class ServiceRecordFlow {
           console.log('Loaded from existing record for edit');
           this.tempRecord = JSON.parse(JSON.stringify(existingRecord));
           
-          // 顯式補上 recordId，讓 DataManager.saveRecord() 能識別這是「更新」而非「新增」
+          // 資料結構遷移：處理舊版資料 (V1/V2 -> V3)
+          // 確保 steps.symptoms 結構存在，避免編輯時資料消失
+          if (!this.tempRecord.steps) this.tempRecord.steps = {};
+          if (!this.tempRecord.steps.symptoms) this.tempRecord.steps.symptoms = {};
+
+          // 如果根目錄有 bodyParts (舊版)，搬移到 steps.symptoms
+          if (Array.isArray(this.tempRecord.bodyParts) && (!this.tempRecord.steps.symptoms.bodyParts || this.tempRecord.steps.symptoms.bodyParts.length === 0)) {
+              this.tempRecord.steps.symptoms.bodyParts = this.tempRecord.bodyParts;
+          }
+          // 如果根目錄有 muscleTags (舊版)，搬移到 steps.symptoms
+          if (Array.isArray(this.tempRecord.muscleTags) && (!this.tempRecord.steps.symptoms.muscleTags || this.tempRecord.steps.symptoms.muscleTags.length === 0)) {
+              this.tempRecord.steps.symptoms.muscleTags = this.tempRecord.muscleTags;
+          }
+          // 同步主訴部位 (Step 1 與 Step 2 連動)
+          if (!this.tempRecord.steps.chiefComplaint) this.tempRecord.steps.chiefComplaint = {};
+          if (!this.tempRecord.steps.chiefComplaint.bodyParts) {
+              this.tempRecord.steps.chiefComplaint.bodyParts = this.tempRecord.steps.symptoms.bodyParts || [];
+          }
+
           this.tempRecord.recordId = existingRecord.id;
           
         } else {
-          console.warn('Record ID provided but not found, creating new.');
-          this.recordId = this.generateRecordId();
-          this.tempRecord = this.createEmptyRecord();
-        }
-      } else {
         console.log('Creating new record');
         this.recordId = this.generateRecordId();
         this.tempRecord = this.createEmptyRecord();
@@ -328,8 +341,14 @@ class ServiceRecordFlow {
       case 2: 
         if (window.appUIAssessment && this.tempRecord.steps.symptoms) {
              const sym = this.tempRecord.steps.symptoms;
+             
+             // 強制轉型為陣列，防止因髒資料(如字串或null)導致 ui-assessment 崩潰
+             const safeBodyParts = Array.isArray(sym.bodyParts) ? sym.bodyParts : [];
+             const safeMuscleTags = Array.isArray(sym.muscleTags) ? sym.muscleTags : [];
+             const safeResults = Array.isArray(sym.assessmentResults) ? sym.assessmentResults : [];
+
              // 確保載入 部位、肌群、評估結果
-             window.appUIAssessment.loadFromData(sym.bodyParts || [], sym.muscleTags || [], sym.assessmentResults || []);
+             window.appUIAssessment.loadFromData(safeBodyParts, safeMuscleTags, safeResults);
         }
         break;
       case 3: 
@@ -685,18 +704,14 @@ class ServiceRecordFlow {
   }
 
   onBodyPartSelectionChanged(detail) {
+    // 1. 更新暫存紀錄中的部位資料
     this.tempRecord.steps.symptoms.bodyParts = detail.selectedParts || [];
     this.tempRecord.steps.chiefComplaint.bodyParts = detail.selectedParts || [];
     
-    // 當部位變更時，強制 UI 重新載入資料，以顯示對應的肌群標籤
-    if (window.appUIAssessment && typeof window.appUIAssessment.loadFromData === 'function') {
-        window.appUIAssessment.loadFromData(
-            this.tempRecord.steps.symptoms.bodyParts,
-            this.tempRecord.steps.symptoms.muscleTags || [],
-            this.tempRecord.steps.symptoms.assessmentResults || []
-        );
-    }
+    //ui-assessment.js 中的 MuscleTagSelector 已經監聽了 bodyPartSelectionChanged 事件。
+    // 在這裡呼叫 loadFromData 會導致 BodyDiagram.clearSelection 被執行，進而再次觸發事件，造成無窮迴圈 (Stack Overflow)。
 
+    // 2. 標記狀態為已變更
     this.markStepDirty(2);
     this.hasUnsavedChanges = true;
   }

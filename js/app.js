@@ -44,11 +44,11 @@
     window.AppDataExportService = dataManagerInstance.exportService;
 
     // 確保 settings.js 中的 P2P 功能可以正常運作
-    if (typeof SyncManager !== 'undefined') {
-        window.AppSyncManager = new SyncManager();
-        console.log('✅ SyncManager initialized');
+    if (typeof P2PSyncManager !== 'undefined') {
+        window.AppSyncManager = new P2PSyncManager();
+        console.log('✅ P2PSyncManager initialized');
     } else {
-        console.warn('⚠️ SyncManager class missing. P2P features disabled.');
+        console.warn('⚠️ P2PSyncManager class missing. P2P features disabled.');
     }
 
     // 將 ServiceRecordFlow 改為非必要依賴
