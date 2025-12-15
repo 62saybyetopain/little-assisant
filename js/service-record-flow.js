@@ -685,18 +685,14 @@ class ServiceRecordFlow {
   }
 
   onBodyPartSelectionChanged(detail) {
+    // 1. 更新暫存紀錄中的部位資料
     this.tempRecord.steps.symptoms.bodyParts = detail.selectedParts || [];
     this.tempRecord.steps.chiefComplaint.bodyParts = detail.selectedParts || [];
     
-    // 當部位變更時，強制 UI 重新載入資料，以顯示對應的肌群標籤
-    if (window.appUIAssessment && typeof window.appUIAssessment.loadFromData === 'function') {
-        window.appUIAssessment.loadFromData(
-            this.tempRecord.steps.symptoms.bodyParts,
-            this.tempRecord.steps.symptoms.muscleTags || [],
-            this.tempRecord.steps.symptoms.assessmentResults || []
-        );
-    }
+    //ui-assessment.js 中的 MuscleTagSelector 已經監聽了 bodyPartSelectionChanged 事件。
+    // 在這裡呼叫 loadFromData 會導致 BodyDiagram.clearSelection 被執行，進而再次觸發事件，造成無窮迴圈 (Stack Overflow)。
 
+    // 2. 標記狀態為已變更
     this.markStepDirty(2);
     this.hasUnsavedChanges = true;
   }
