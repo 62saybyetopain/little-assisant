@@ -1,6 +1,6 @@
 /**
  * ================================================================
- * Data Manager - 資料管理核心模組 (v3.4)
+ * Data Manager - 資料管理核心模組 (v3.5)
  * ================================================================
  * 職責：
  * 1. 統一管理 Tag, Record, Assessment 的 CRUD
@@ -381,9 +381,28 @@ class RecordManager {
       const result = this.customerManager.updateCustomer(customerId, customer);
       
       if (result.success) {
-        // 只有在「新增」紀錄時，才通知 CustomerManager 增加統計次數
-        if (isNewRecord && typeof this.customerManager.notifyRecordAdded === 'function') {
-            this.customerManager.notifyRecordAdded(customerId);
+        // 強制更新索引計數 (Self-Healing)
+        // 不依賴 notifyRecordAdded 的 +1 邏輯，而是直接讀取實際長度並寫入 Index
+        try {
+            const index = this.storage.loadCustomerIndex() || [];
+            const idxEntry = index.find(c => c.id === customerId);
+            if (idxEntry) {
+                // 確保 stats 物件存在
+                if (!idxEntry.stats) idxEntry.stats = {};
+                
+                // 使用實際長度更新
+                const realCount = customer.serviceRecords.length;
+                
+                // 只有當數字不一致時才寫入，減少 I/O
+                if (idxEntry.stats.totalServices !== realCount) {
+                    idxEntry.stats.totalServices = realCount;
+                    idxEntry.updatedAt = new Date().toISOString(); // 同步更新時間
+                    this.storage.saveCustomerIndex(index);
+                    console.log(`校正服務次數: ${realCount}`);
+                }
+            }
+        } catch (e) {
+            console.warn('索引計數更新失敗:', e);
         }
         
         return { success: true, recordId: recordData.recordId || customer.serviceRecords[0].id };

@@ -597,11 +597,11 @@ class UIAssessment {
       if (!this.isInitialized) return;
 
       // 1. 還原人體圖選取
-      this.bodyDiagram.clearSelection(); // 先清空
+      this.bodyDiagram.clearSelection(); 
       if (bodyParts && bodyParts.length > 0) {
           bodyParts.forEach(partId => {
              if (!partId) return;
-             // [Fix] 使用 CSS.escape 防止選擇器因特殊字元崩潰，並限定在 SVG 內搜尋
+             // 使用 CSS.escape 防止選擇器錯誤
              const safePartId = CSS.escape(partId);
              const part = this.bodyDiagram.svg.querySelector(`[data-part="${safePartId}"]`);
              if (part) this.bodyDiagram.togglePart(part);
@@ -610,39 +610,41 @@ class UIAssessment {
 
       // 2. 還原肌群標籤
       if (this.muscleTagSelector) {
-          // 先讓 Selector 根據部位渲染出來
+          // 移除 setTimeout，確保同步執行
+          // 先讓 Selector 根據部位渲染出按鈕
           this.muscleTagSelector.updateForBodyParts(bodyParts);
           
-          // 再勾選標籤
-          setTimeout(() => {
-              this.muscleTagSelector.clearSelection();
+          // 立即執行勾選 (因為 updateForBodyParts 是同步渲染 innerHTML)
+          this.muscleTagSelector.clearSelection();
+          
+          if (muscleTags && muscleTags.length > 0) {
               muscleTags.forEach(tagId => {
                   const id = typeof tagId === 'object' ? tagId.id : tagId;
                   if (!id) return;
-                  // [Fix] 安全轉義 tagId
                   const safeId = CSS.escape(id);
                   const btn = this.muscleTagSelector.container.querySelector(`button[data-tag-id="${safeId}"]`);
                   if (btn) this.muscleTagSelector.toggleTag(id, btn);
               });
-          }, 0);
+          }
       }
 
       // 3. 還原評估結果
       if (this.assessmentSelector) {
-          // 同樣，先讓 Selector 根據部位渲染動作列表
+          // AssessmentSelector 的 updateForBodyParts 是 async，需等待
           this.assessmentSelector.updateForBodyParts(bodyParts).then(() => {
               this.assessmentSelector.clearResults();
-              assessmentResults.forEach(res => {
-                  const btnClass = res.result === 'positive' ? '.positive' : '.negative';
-                  // [Fix] 安全轉義 actionId
-                  const safeActionId = CSS.escape(res.actionId);
-                  const card = this.assessmentSelector.container.querySelector(`.assessment-action-card[data-action-id="${safeActionId}"]`);
-                  if (card) {
-                      const btn = card.querySelector(btnClass);
-                      const otherBtn = card.querySelector(btnClass === '.positive' ? '.negative' : '.positive');
-                      if (btn) this.assessmentSelector.selectResult(res.actionId, res.result, btn, otherBtn);
-                  }
-              });
+              if (assessmentResults && assessmentResults.length > 0) {
+                  assessmentResults.forEach(res => {
+                      const btnClass = res.result === 'positive' ? '.positive' : '.negative';
+                      const safeActionId = CSS.escape(res.actionId);
+                      const card = this.assessmentSelector.container.querySelector(`.assessment-action-card[data-action-id="${safeActionId}"]`);
+                      if (card) {
+                          const btn = card.querySelector(btnClass);
+                          const otherBtn = card.querySelector(btnClass === '.positive' ? '.negative' : '.positive');
+                          if (btn) this.assessmentSelector.selectResult(res.actionId, res.result, btn, otherBtn);
+                      }
+                  });
+              }
           });
       }
   }
