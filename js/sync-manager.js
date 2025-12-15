@@ -3,7 +3,7 @@
  * P2P 同步管理器 - 負責設備間的資料傳輸
  * 依賴: PeerJS, window.AppStorage
  */
-class SyncManager {
+class P2PSyncManager {
   constructor() {
     this.peer = null;       // 本機 Peer 物件
     this.conn = null;       // 與對方的連線物件
@@ -18,7 +18,7 @@ class SyncManager {
     // 檢查是否存在因變數未定義而產生的 "undefined" 鍵值，若有則移除
     if (typeof localStorage !== 'undefined' && localStorage.getItem('undefined')) {
         localStorage.removeItem('undefined');
-        console.info('🧹 [SyncManager] 已自動清理舊版殘留的髒資料 (undefined key)');
+        console.info('🧹瓦力已自動清理舊版殘留的髒資料 (undefined key)');
     }
     
     // 定義訊息類型
@@ -350,4 +350,4 @@ class SyncManager {
 }
 
 // 初始化全域實例
-window.AppSyncManager = new SyncManager();
+window.AppSyncManager = new P2PSyncManager();
