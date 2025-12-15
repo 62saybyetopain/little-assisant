@@ -1,6 +1,6 @@
 /**
  * ================================================================
- * Data Manager - 資料管理核心模組 (v3.2)
+ * Data Manager - 資料管理核心模組 (v3.3)
  * ================================================================
  * 職責：
  * 1. 統一管理 Tag, Record, Assessment 的 CRUD
@@ -657,40 +657,65 @@ class DataExportService {
         identical: []       // 完全相同
     };
 
-    if (!jsonData.customerDetails) return analysis;
-
-    Object.keys(jsonData.customerDetails).forEach(key => {
-        const remoteData = jsonData.customerDetails[key];
-        const localData = this.storage.load(key);
-        
-        // 摘要物件 (供 UI 顯示)
-        const summary = {
-            id: remoteData.id,
-            name: remoteData.name,
-            updatedAt: remoteData.updatedAt
-        };
-
-        if (!localData) {
-            analysis.new.push(summary);
-        } else {
-            // 比對內容 (排除 updatedAt 差異)
-            const rContent = JSON.stringify({ ...remoteData, updatedAt: '' });
-            const lContent = JSON.stringify({ ...localData, updatedAt: '' });
-
-            if (rContent === lContent) {
-                analysis.identical.push(summary);
-            } else {
-                const rTime = new Date(remoteData.updatedAt || 0).getTime();
-                const lTime = new Date(localData.updatedAt || 0).getTime();
-                
-                if (rTime >= lTime) {
-                    analysis.newer.push(summary);
-                } else {
-                    analysis.older.push(summary);
-                }
+    const checkSystemConfig = (key, name) => {
+        if (jsonData[key]) {
+            const local = this.storage.load(key);
+            // 轉成字串進行快速比對
+            const remoteStr = JSON.stringify(jsonData[key]);
+            const localStr = local ? JSON.stringify(local) : '';
+            
+            if (remoteStr !== localStr) {
+                // 建立一個虛擬項目代表系統設定更新，放入 'newer' (藍燈) 區塊
+                analysis.newer.push({
+                    id: `sys_${key}`, 
+                    name: `⚙️ 系統設定更新：${name}`, 
+                    updatedAt: new Date().toISOString() // 給予當下時間確保顯示
+                });
             }
         }
-    });
+    };
+
+    // 依序檢查各項設定
+    checkSystemConfig('tags', '肌群標籤');
+    checkSystemConfig('assessmentActions', '評估動作');
+    checkSystemConfig('serviceTemplates', '服務模板');
+    checkSystemConfig('appSettings', '應用程式設定');
+
+    //  2. 檢測顧客資料 (若無 customerDetails 則跳過，但不直接 return)
+    if (jsonData.customerDetails) {
+        Object.keys(jsonData.customerDetails).forEach(key => {
+            const remoteData = jsonData.customerDetails[key];
+            const localData = this.storage.load(key);
+            
+            // 摘要物件 (供 UI 顯示)
+            const summary = {
+                id: remoteData.id,
+                name: remoteData.name,
+                updatedAt: remoteData.updatedAt
+            };
+
+            if (!localData) {
+                analysis.new.push(summary);
+            } else {
+                // 比對內容 (排除 updatedAt 差異)
+                const rContent = JSON.stringify({ ...remoteData, updatedAt: '' });
+                const lContent = JSON.stringify({ ...localData, updatedAt: '' });
+
+                if (rContent === lContent) {
+                    analysis.identical.push(summary);
+                } else {
+                    const rTime = new Date(remoteData.updatedAt || 0).getTime();
+                    const lTime = new Date(localData.updatedAt || 0).getTime();
+                    
+                    if (rTime >= lTime) {
+                        analysis.newer.push(summary);
+                    } else {
+                        analysis.older.push(summary);
+                    }
+                }
+            }
+        });
+    }
     
     return analysis;
   }
