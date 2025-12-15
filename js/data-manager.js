@@ -1,6 +1,6 @@
 /**
  * ================================================================
- * Data Manager - 資料管理核心模組 (v3.1)
+ * Data Manager - 資料管理核心模組 (v3.2)
  * ================================================================
  * 職責：
  * 1. 統一管理 Tag, Record, Assessment 的 CRUD
@@ -604,10 +604,17 @@ class DataExportService {
    * 這樣 analyzeImport 就可以通用，進行黃/藍/綠燈分析
    */
   normalizeImportData(rawData) {
+      // 預設結構需包含 rawData 中的全域設定，以免在轉換過程中遺失
       const standardFormat = {
           version: '4.0',
+          // 嘗試保留原始資料中的設定，若無則設為預設值
+          tags: rawData.tags || [],
+          assessmentActions: rawData.assessmentActions || [],
+          serviceTemplates: rawData.serviceTemplates || [],
+          appSettings: rawData.appSettings || {},
+          
           customerDetails: {},
-          customerIndex: [] // 分析時暫時不需要索引，但保持結構完整
+          customerIndex: [] 
       };
 
       let customersArray = [];

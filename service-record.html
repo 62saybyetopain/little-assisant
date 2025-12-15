@@ -325,6 +325,7 @@
         try {
           const urlParams = new URLSearchParams(window.location.search);
           const customerId = urlParams.get('customerId');
+          const recordId = urlParams.get('recordId');
 
           if (!customerId) {
             showAlert('無效的客戶 ID', 'error');
@@ -372,7 +373,7 @@
           }
 
           console.log('🔄 初始化 ServiceRecordFlow...');
-          await window.AppServiceRecordFlow.init(customerId);
+          await window.AppServiceRecordFlow.init(customerId, recordId);
 
           console.log('✅ 頁面初始化完成');
 

@@ -1,6 +1,6 @@
 /**
  * service-record-flow.js - 流程控制層
- * 版本：v2.10
+ * 版本：v2.11
  * 職責：
  * - 控制服務紀錄的五步驟流程
  * - 管理資料暫存與驗證
@@ -687,9 +687,18 @@ class ServiceRecordFlow {
   onBodyPartSelectionChanged(detail) {
     this.tempRecord.steps.symptoms.bodyParts = detail.selectedParts || [];
     this.tempRecord.steps.chiefComplaint.bodyParts = detail.selectedParts || [];
+    
+    // 當部位變更時，強制 UI 重新載入資料，以顯示對應的肌群標籤
+    if (window.appUIAssessment && typeof window.appUIAssessment.loadFromData === 'function') {
+        window.appUIAssessment.loadFromData(
+            this.tempRecord.steps.symptoms.bodyParts,
+            this.tempRecord.steps.symptoms.muscleTags || [],
+            this.tempRecord.steps.symptoms.assessmentResults || []
+        );
+    }
+
     this.markStepDirty(2);
     this.hasUnsavedChanges = true;
-
   }
 // 檢查並顯示模板 Modal
   async checkAndShowTemplates(bodyPartId) {

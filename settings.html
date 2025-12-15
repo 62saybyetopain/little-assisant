@@ -404,9 +404,9 @@
           </div>
         </div>
         
-        <input type="file" id="import-file-input" style="display:none" accept=".json">
-        <input type="file" id="unified-import-input" style="display:none" accept=".csv">
-        <input type="file" id="customer-import-json" style="display:none" accept=".json">
+        <input type="file" id="import-file-input" style="display:none" accept=".json" onchange="SettingsApp.handleFileImport(this)">
+        <input type="file" id="unified-import-input" style="display:none" accept=".csv" onchange="SettingsApp.handleUnifiedImport(this)">
+        <input type="file" id="customer-import-json" style="display:none" accept=".json" onchange="SettingsApp.handleCustomerJsonImport(this)">
       </div>
     </main>
   </div>
