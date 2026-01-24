@@ -1,127 +1,24 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>客戶管理系統</title>
-  <link rel="stylesheet" href="styles/main.css">
-
-  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-
-  <style>
-    body {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    }
-
-    .welcome-container {
-      text-align: center;
-      background: white;
-      padding: 48px 32px;
-      border-radius: 20px;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-      max-width: 400px;
-      width: 90%;
-    }
-
-    .app-icon {
-      font-size: 64px;
-      margin-bottom: 16px;
-    }
-
-    .app-title {
-      font-size: 28px;
-      font-weight: 700;
-      color: var(--text-primary);
-      margin-bottom: 8px;
-    }
-
-    .app-subtitle {
-      font-size: 16px;
-      color: var(--text-secondary);
-      margin-bottom: 32px;
-    }
-
-    .start-btn {
-      display: block;
-      width: 100%;
-      padding: 16px;
-      background: var(--primary-color);
-      color: white;
-      border: none;
-      border-radius: 12px;
-      font-size: 18px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s;
-      text-decoration: none;
-    }
-
-    .start-btn:hover {
-      background: var(--primary-hover);
-      transform: translateY(-2px);
-      box-shadow: 0 8px 16px rgba(74, 144, 226, 0.3);
-    }
-
-    .start-btn:active {
-      transform: translateY(0);
-    }
-
-    .version-info {
-      margin-top: 24px;
-      padding-top: 24px;
-      border-top: 1px solid var(--border-color);
-      font-size: 14px;
-      color: var(--text-secondary);
-    }
-
-    .loading-text {
-      color: var(--text-secondary);
-      margin-top: 16px;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#2563eb">
+    <meta name="description" content="Local-First CRM Application">
+    <title>Local-First CRM</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="welcome-container">
-    <div class="app-icon">🏥</div>
-    <h1 class="app-title">客戶管理系統</h1>
-    <p class="app-subtitle">專業、高效、隱私保護</p>
-    
-    <a href="customer-list.html" class="start-btn">
-      開始使用
-    </a>
-    
-    <div class="version-info">
-      <div>版本 v4.1</div>
+    <div id="app">
+        <!-- App Views will be mounted here -->
+        <div class="loading-screen">
+            <div class="spinner"></div>
+            <p>Initializing Local Database...</p>
+        </div>
     </div>
 
-    <p class="loading-text" id="loading-text" style="display: none;">
-      正在載入...
-    </p>
-  </div>
-
-  <script>
-    // 檢查系統可用性
-    document.addEventListener('DOMContentLoaded', () => {
-      // 簡單的可用性檢查
-      try {
-        localStorage.setItem('_test', 'test');
-        localStorage.removeItem('_test');
-      } catch (e) {
-        alert('⚠️ 您的瀏覽器處於隱私模式或禁用了儲存功能\n\n系統需要 LocalStorage 才能正常運作,請:\n1. 關閉無痕/隱私模式\n2. 或在設定中允許網站儲存資料');
-      }
-
-      // 自動跳轉(3秒後)
-      setTimeout(() => {
-        document.getElementById('loading-text').style.display = 'block';
-        setTimeout(() => {
-          window.location.href = 'customer-list.html';
-        }, 1000);
-      }, 3000);
-    });
-  </script>
+    <!-- Toast Container is dynamically created by components.js, but we can reserve a slot if needed -->
+    
+    <script type="module" src="./src/main.js"></script>
 </body>
 </html>
