@@ -6,7 +6,7 @@
  * 支援 ACID 交易傳遞。
  */
 
-import { StorageKeys, EventTypes, ErrorCodes, TagColorMap, AnatomyConfig } from '../config.js';
+import { StorageKeys, EventTypes, ErrorCodes, BodyRegions, TissueStyles, TagPalettes, TagType } from '../config.js';
 import { storageManager } from '../core/db.js';
 import { EventBus, UUID } from '../core/utils.js';
 
@@ -49,80 +49,92 @@ class TagManager {
                     count: Math.max(0, newCount) 
                 });
             } else if (delta > 0) {
+                // 自動建立標籤 (Implicit Creation via SyncTags)
+                // 當從病歷介面直接輸入新標籤時觸發。
+                // 由於缺乏詳細定義，此時只能給予預設類型與顏色。
+                const defaultData = { name: tagName, type: TagType.PERSONAL };
+                const color = this._resolveColor(defaultData);
+                
                 await ctx.put(StorageKeys.TAGS, {
                     id: id,
                     name: tagName,
+                    type: TagType.PERSONAL, // 預設歸類
                     count: 1,
-                    // [Fix] 使用增強版顏色判定邏輯 (Hybrid Strategy)
-                    color: this._determineColor(tagName)
+                    color: color,
+                    updatedAt: new Date().toISOString()
                 });
             }
         });
     }
 
     /**
-     * 標籤顏色判定邏輯 (Hybrid Strategy)
-     * 優先順序：設定檔 > 症狀 > 解剖性質 > 部位 > 雜湊
-     * 設計目的：提升 UI 語意識別度，讓同部位/同性質肌群呈現協調色系
+     * 建立或更新標籤定義 (Explicit Creation)
+     * 這是使用者在 UI 透過詳細表單建立標籤時呼叫的方法
+     * @param {Object} tagData
+     *  - name (string): 標籤名稱
+     *  - type (string): TagType Enum
+     *  - regionId (string, optional): 用於 ANATOMY
+     *  - tissueId (string, optional): 用於 ANATOMY
+     *  - paletteColor (string, optional): 用於 非解剖類，直接傳入 Hex Code
      */
-    _determineColor(tagName) {
-        // 1. 設定檔精確定義優先 (Config Exact Match)
-        if (TagColorMap[tagName]) return TagColorMap[tagName];
+    async saveTagDefinition(tagData) {
+        // 1. 計算/決定最終顏色
+        const color = this._resolveColor(tagData);
 
-        const lower = tagName.toLowerCase();
-
-        // 2. 症狀與緊急性 (Symptoms - Red/Alert Spectrum)
-        // 這些標籤需要最搶眼，故優先處理
-        if (lower.match(/(pain|ache|emergency|痛|酸|麻|急|發炎)/)) {
-            return 'hsl(0, 90%, 60%)'; // Bright Red
-        }
-
-        // 3. 方位與側邊 (Direction - Neutral Blue/Grey)
-        // 用於輔助標示，顏色不宜過重，避免搶走解剖標籤的焦點
-        if (lower.match(/^(left|right|upper|lower|左|右|上|下)$/)) {
-            return 'hsl(210, 50%, 70%)'; // Soft Blue
-        }
-
-        // 4. 解剖肌群與部位邏輯 (Anatomy & Muscles)
-        // 依賴 config.js 定義的 AnatomyConfig 靜態知識庫
-        const { Regions, MuscleDatabase, Nature } = AnatomyConfig;
-
-        // 4A. 查表：是否為已知肌群 (Muscle Database Lookup)
-        // 核心邏輯：依據肌群名稱模糊匹配，取得部位色相與 PHASIC/TONIC 性質
-        const knownMuscle = Object.keys(MuscleDatabase).find(m => lower.includes(m.toLowerCase()));
-        
-        if (knownMuscle) {
-            const info = MuscleDatabase[knownMuscle];
-            // 取得部位基礎色相 (若未定義則預設 0/紅色)
-            const baseHue = Regions[info.region] || 0;
-            // 取得肌群性質樣式 (若未定義則使用預設值)
-            // PHASIC: 亮色, TONIC: 深色
-            const style = Nature[info.type] || { s: 80, l: 50 };
+        // 2. 建構物件
+        const tagRecord = {
+            id: tagData.name, 
+            name: tagData.name,
+            type: tagData.type,
             
-            return `hsl(${baseHue}, ${style.s}%, ${style.l}%)`;
+            // 解剖屬性
+            region: tagData.regionId || null,
+            tissue: tagData.tissueId || null,
+            
+            // 非解剖屬性 (直接存 Hex，因為是用戶選的)
+            color: color, 
+            
+            // 系統屬性
+            count: 0, // 初始計數，由 syncTags 維護
+            updatedAt: new Date().toISOString()
+        };
+
+        // 3. 檢查是否存在以保留計數，否則視為新標籤
+        const existing = await storageManager.get(StorageKeys.TAGS, tagRecord.id);
+        if (existing) {
+            tagRecord.count = existing.count || 0;
+            tagRecord.createdAt = existing.createdAt || tagRecord.updatedAt;
+        } else {
+            tagRecord.createdAt = tagRecord.updatedAt;
         }
 
-        // 4B. 關鍵字：是否包含部位名稱 (Region Keyword Lookup)
-        // 若不在詳細肌群庫中，但標籤包含 "肩膀"，則沿用肩部的色相
-        const regionKey = Object.keys(Regions).find(r => lower.includes(r.toLowerCase()));
-        if (regionKey) {
-            const hue = Regions[regionKey];
-            // 使用高飽和度中等亮度，確保可讀性並與特定肌群區隔
-            return `hsl(${hue}, 85%, 45%)`;
-        }
-
-        // 5. 雜湊兜底 (Fallback Hash)
-        // 若完全無法識別，則使用雜湊演算法確保固定顏色
-        return this._generateHashColor(tagName);
+        // 4. 寫入
+        await storageManager.put(StorageKeys.TAGS, tagRecord);
+        return tagRecord;
     }
 
-    _generateHashColor(str) {
-        let hash = 0;
-        for (let i = 0; i < str.length; i++) {
-            hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    /**
+     * 顏色解析器 (Color Resolver)
+     * 負責將標籤資料轉換為 CSS 顏色字串
+     */
+    _resolveColor(data) {
+        // A. 解剖標籤：系統即時演算 (HSL)
+        if (data.type === TagType.ANATOMY) {
+            const region = BodyRegions[data.regionId] || BodyRegions.JOINT;
+            const style = TissueStyles[data.tissueId] || { s: 80, l: 50 };
+            
+            return `hsl(${region.hue}, ${style.s}%, ${style.l}%)`;
         }
-        const hue = Math.abs(hash % 360);
-        return `hsl(${hue}, 70%, 45%)`;
+        
+        // B. 其他標籤：直接使用前端傳來的選定色 (Hex)
+        // 前端 UI 會根據 TagType 顯示對應的 TagPalettes 供用戶選擇
+        if (data.paletteColor) {
+            return data.paletteColor;
+        }
+
+        // C. 兜底邏輯 (Fallback)
+        // 用於舊資料遷移或快速新增時的預設值
+        return '#cbd5e1'; // 預設淺灰 (Slate-300)
     }
 
     async getAll() {

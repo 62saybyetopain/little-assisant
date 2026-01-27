@@ -103,36 +103,85 @@ export const ErrorCodes = Object.freeze({
 });
 
 /**
- * 解剖學標籤設定 (Anatomical Tag Configuration)
- * 包含：顏色定義、肌群性質資料庫
+ * 標籤系統核心設定 v2
+ * 包含：標籤類型、解剖光譜、組織樣式、語意色票
  */
-export const AnatomyConfig = Object.freeze({
-    // 1. 部位與色相定義 (Regions & Hues)
-    // key: 部位名稱, value: HSL 色相 (0-360)
-    Regions: {
-        '頭': 0,    // Red
-        '頸': 15,   // Red-Orange
-        '肩': 30,   // Orange
-        '臂': 45,   // Yellow-Orange
-        '胸': 180,  // Cyan
-        '背': 200,  // Blue-Cyan
-        '腰': 260,  // Purple
-        '腹': 160,  // Green-Cyan
-        '臀': 280,  // Purple-Magenta
-        '大腿': 70, // Yellow-Green
-        '小腿': 90, // Green
-        '足': 110,  // Green-Blue
-        '關節': 0,  // Gray/Neutral
-        '全身': 0
-    },
 
-    // 2. 肌群性質定義 (Muscle Nature)
-    // Phasic (相位/動作肌): 淺層、爆發力 -> 顏色較亮 (High Lightness)
-    // Tonic (穩定/姿勢肌): 深層、耐力 -> 顏色較深 (Low Lightness, High Saturation)
-    Nature: {
-        PHASIC: { s: 90, l: 60, suffix: ' (動)' }, // 亮色
-        TONIC:  { s: 100, l: 35, suffix: ' (穩)' }  // 深色
-    },
+// 1. 標籤類型
+export const TagType = Object.freeze({
+    ANATOMY:  'ANATOMY',   // 解剖 (演算色)
+    HISTORY:  'HISTORY',   // 病史 (固定色票 - 醫療/警示感)
+    MOVEMENT: 'MOVEMENT',  // 動作 (固定色票 - 動態/校正感)
+    PERSONAL: 'PERSONAL'   // 個人 (固定色票 - 人文/識別感)
+});
+
+// 2. 身體部位與色相 (Anatomy Hues)
+// 維持全光譜，作為解剖標籤的基底
+export const BodyRegions = Object.freeze({
+    HEAD:     { id: 'HEAD',     hue: 0,   label: '頭' },
+    NECK:     { id: 'NECK',     hue: 15,  label: '頸' },
+    SHOULDER: { id: 'SHOULDER', hue: 35,  label: '肩' },
+    ARM:      { id: 'ARM',      hue: 55,  label: '臂' }, // 微調區隔
+    HAND:     { id: 'HAND',     hue: 75,  label: '手' },
+    CHEST:    { id: 'CHEST',    hue: 170, label: '胸' },
+    BACK:     { id: 'BACK',     hue: 200, label: '背' },
+    WAIST:    { id: 'WAIST',    hue: 220, label: '腰' },
+    ABDOMEN:  { id: 'ABDOMEN',  hue: 150, label: '腹' },
+    HIP:      { id: 'HIP',      hue: 260, label: '臀' },
+    THIGH:    { id: 'THIGH',    hue: 280, label: '大腿' },
+    LEG:      { id: 'LEG',      hue: 300, label: '小腿' },
+    FOOT:     { id: 'FOOT',     hue: 320, label: '足' },
+    JOINT:    { id: 'JOINT',    hue: 0,   label: '關節/通用' }
+});
+
+// 3. 組織視覺樣式 (Tissue Styles)
+// 設計重點：避免使用純灰 (Grey)，改用大地色或高亮色
+export const TissueStyles = Object.freeze({
+    // --- 肌肉 ---
+    // 動作肌：鮮明、輕快
+    MUSCLE_PHASIC: { s: 90,  l: 65, label: '肌肉 (動作/淺層)' },
+    // 穩定肌：深沉、穩重 (高飽和低亮度)
+    MUSCLE_TONIC:  { s: 100, l: 35, label: '肌肉 (穩定/深層)' },
+
+    // --- 筋膜 (Fascia) ---
+    // 避開灰階，使用極淡的青藍色 (Ice Blue)，代表包覆與流動
+    FASCIA:        { s: 60,  l: 88, label: '筋膜' }, 
+
+    // --- 韌帶 (Ligament) ---
+    // 避開灰階，使用卡其/駝色 (Taupe/Beige)，代表纖維與連結
+    LIGAMENT:      { s: 40,  l: 60, label: '韌帶' },
+
+    // --- 神經 (Nerve) ---
+    // 螢光黃/萊姆色，代表電訊號
+    NERVE:         { s: 90, l: 50, label: '神經' }
+});
+
+// 4. 非解剖類專屬色票 (Category Palettes)
+// 由 UI/UX 定義，互不干擾，且完全不使用灰色
+export const TagPalettes = Object.freeze({
+    // A. 病史 (HISTORY) - 醫療檔案風格
+    // 關鍵詞：慢性、醫療、警示
+    HISTORY: [
+        { id: 'chronic', val: '#701a75', label: '紫羅蘭 (慢性病史)' }, // Muted Purple
+        { id: 'medical', val: '#0e7490', label: '深青色 (醫療狀況)' }, // Clinical Cyan
+        { id: 'alert',   val: '#be123c', label: '胭脂紅 (重要警示)' }  // Muted Red
+    ],
+
+    // B. 動作模式 (MOVEMENT) - 運動科學風格
+    // 關鍵詞：動能、觀察、修正
+    MOVEMENT: [
+        { id: 'kinetic', val: '#ea580c', label: '活力橘 (動作障礙)' }, // Kinetic Orange
+        { id: 'flow',    val: '#4f46e5', label: '靛藍色 (控制問題)' }, // Indigo
+        { id: 'correct', val: '#16a34a', label: '信號綠 (代償模式)' }  // Signal Green
+    ],
+
+    // C. 個人標籤 (PERSONAL) - 人文生活風格
+    // 關鍵詞：VIP、職業、心理
+    PERSONAL: [
+        { id: 'vip',     val: '#d97706', label: '琥珀金 (VIP/身分)' }, // Amber/Gold
+        { id: 'social',  val: '#db2777', label: '洋紅色 (個性/溝通)' }, // Magenta
+        { id: 'life',    val: '#854d0e', label: '青銅色 (職業/習慣)' }  // Bronze/Brown
+    ]
 });
 
 /**
