@@ -263,8 +263,7 @@ class StorageManager {
                         };
                         return this._wrapRequest(tx.objectStore(store).put(payload)).then(() => payload);
                     },
-                        return this._wrapRequest(tx.objectStore(store).put(payload)).then(() => payload);
-                    },
+
                     delete: (store, id) => {
                         // Soft Delete Logic inside TX
                         return this._wrapRequest(tx.objectStore(store).get(id)).then(existing => {
