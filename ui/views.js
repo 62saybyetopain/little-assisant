@@ -10,6 +10,7 @@ import { el, Toast, TagSelector, BodyMap, Modal } from './components.js';
 import { customerManager, tagManager } from '../modules/customer.js';
 import { recordManager, draftManager } from '../modules/record.js';
 import { searchEngine } from '../core/search.js';
+import { storageManager } from '../core/db.js';
 import { EventBus } from '../core/utils.js';
 import { EventTypes, RecordStatus } from '../config.js';
 
@@ -311,8 +312,76 @@ export class RecordEditorView extends BaseView {
         this.isDirty = false;
         this.data = {};
         this.autoSaveTimer = null;
+        this.currentTab = 'tab-visual'; // Default to Visual for quick entry
         
+        // 初始化實例屬性，避免 undefined
+        this.bodyMap = null;
+        this.tagSelector = null;
+        this.assessmentContainer = null;
+
         this.render();
+    }
+
+    /**
+     * 根據選取部位顯示評估建議
+     */
+    _updateAssessmentSuggestions(selectedParts) {
+        if (!this.assessmentContainer) return;
+        
+        // 這裡可以考慮做成快取，避免每次都 import
+        import('../config.js').then(({ AssessmentDatabase }) => {
+            const suggestions = new Set();
+            
+            // 1. 遍歷選取部位，查找對應測試
+            selectedParts.forEach(partId => {
+                // 簡單的關鍵字匹配：若 partId 包含 "Shoulder"，則撈取 Shoulder 的測試
+                Object.keys(AssessmentDatabase).forEach(regionKey => {
+                    if (partId.includes(regionKey)) {
+                        AssessmentDatabase[regionKey].forEach(test => suggestions.add(test));
+                    }
+                });
+            });
+
+            // 2. 渲染建議列表
+            this.assessmentContainer.innerHTML = '';
+            if (suggestions.size > 0) {
+                this.assessmentContainer.style.display = 'block';
+                this.assessmentContainer.appendChild(el('h5', { style: 'margin:0 0 5px 0; color:#0369a1;' }, '💡 建議評估項目 (點擊加入)'));
+                
+                const list = el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '8px' } });
+                suggestions.forEach(test => {
+                    const chip = el('button', { 
+                        className: 'btn-secondary',
+                        style: { fontSize: '12px', padding: '4px 8px', background: 'white' },
+                        onclick: () => this._addAssessmentResult(test)
+                    }, test.name);
+                    list.appendChild(chip);
+                });
+                this.assessmentContainer.appendChild(list);
+            } else {
+                this.assessmentContainer.style.display = 'none';
+            }
+        });
+    }
+
+    _addAssessmentResult(test) {
+        // 自動填入 Assessment 欄位
+        const currentText = this.data.soap?.a || '';
+        const newEntry = `[${test.name}] (+) Positive -> 疑似 ${test.positive}`;
+        
+        if (!this.data.soap) this.data.soap = {};
+        
+        // 避免重複添加
+        if (!currentText.includes(test.name)) {
+            this.data.soap.a = currentText ? currentText + '\n' + newEntry : newEntry;
+            
+            // 更新 UI (若當前不在 A Tab，下次切換會自動顯示，但若在 A Tab 需手動更新 DOM)
+            const textarea = this.root.querySelector('#tab-a textarea');
+            if (textarea) textarea.value = this.data.soap.a;
+            
+            this._markDirty();
+            Toast.show('Assessment added');
+        }
     }
 
     async render() {
@@ -336,61 +405,107 @@ export class RecordEditorView extends BaseView {
             return;
         }
 
-        // Prepare Tags Data
+        // Initialize Data Structures
+        this.data.soap = this.data.soap || {};
         this.data.tags = this.data.tags || [];
-        const allTags = await tagManager.getAll(); // Fetch available tags for suggestion
+        this.data.bodyParts = this.data.bodyParts || [];
+        const allTags = await tagManager.getAll();
 
-        // 2. UI Components
-        
-        // Status Badge
+        // --- 1. UI: Header & Status ---
         const statusLabel = el('span', { className: 'status-badge' }, this.data.status || 'Draft');
         
-        // Tag Selector (Fix: Now instantiated and linked)
-        const tagSelector = new TagSelector(
-            this.data.tags, 
-            allTags, 
-            (newTags) => {
-                this.data.tags = newTags;
-                this._markDirty();
-            }
-        );
-
-        // Body Map (Fix: Linked to TagSelector)
-        const bodyMap = new BodyMap(
-            this.data.tags, 
-            (selectedPartIds) => {
-                // 當人體圖被點擊時，將部位 ID 加入標籤
-                // 注意：BodyMap 回傳的是目前所有選取部位的陣列
-                // 我們簡單地將這些部位加入 TagSelector，TagSelector 會處理去重
-                selectedPartIds.forEach(partId => tagSelector._addTag(partId));
-                this._markDirty();
-            }, 
-            this.data.status === RecordStatus.FINALIZED
-        );
-
-        // Content Textarea
-        const textarea = el('textarea', {
-            className: 'record-content',
-            value: this.data.content?.notes || '',
-            oninput: (e) => {
-                this.data.content = { ...this.data.content, notes: e.target.value };
-                this._markDirty();
-            },
-            disabled: this.data.status === RecordStatus.FINALIZED
+        // --- 2. Components Initialization ---
+        
+        // 將元件實例存為 Class Property (this.tagSelector)
+        this.tagSelector = new TagSelector(this.data.tags, allTags, (newTags) => {
+            this.data.tags = newTags;
+            this._markDirty();
         });
 
-        // Actions
+        // 將元件實例存為 Class Property (this.bodyMap)
+        this.bodyMap = new BodyMap(this.data.bodyParts, (parts) => {
+            this.data.bodyParts = parts;
+            // 連動 TagSelector (新增部位標籤)
+            parts.forEach(p => this.tagSelector._addTag(p));
+            this._markDirty();
+            // 使用 this. 呼叫內部方法
+            this._updateAssessmentSuggestions(parts); 
+        }, this.data.status === RecordStatus.FINALIZED);
+
+        // --- 3. Tabbed Layout Construction ---
+        
+        // Tab Navigation
+        const tabs = [
+            { id: 'tab-visual', label: 'Visual (人體圖)' },
+            { id: 'tab-s', label: 'S (主訴)' },
+            { id: 'tab-o', label: 'O (客觀)' },
+            { id: 'tab-a', label: 'A (評估)' },
+            { id: 'tab-p', label: 'P (計畫)' }
+        ];
+
+        const navBar = el('div', { className: 'tab-nav' });
+        tabs.forEach(t => {
+            const btn = el('button', { 
+                className: `tab-btn ${this.currentTab === t.id ? 'active' : ''}`,
+                onclick: () => this._switchTab(t.id, contentContainer, navBar)
+            }, t.label);
+            navBar.appendChild(btn);
+        });
+
+        // Tab Content Container
+        const contentContainer = el('div', { className: 'tab-content-wrapper' });
+
+        // -- Tab 1: Visual (BodyMap + Tags) --
+        const tabVisual = el('div', { id: 'tab-visual', className: 'tab-pane active' },
+            el('h4', {}, '患處標記 & 標籤'),
+            this.bodyMap.element, // 使用 this.bodyMap
+            el('div', { style: { marginTop: '10px' } }, this.tagSelector.element) // 使用 this.tagSelector
+        );
+
+        // -- Tab 2: Subjective --
+        const tabS = this._createTabPane('tab-s', 'Subjective (主訴)', 's', '病患描述、疼痛性質、發生機制...');
+        
+        // -- Tab 3: Objective --
+        const tabO = this._createTabPane('tab-o', 'Objective (客觀檢查)', 'o', '觸診發現、腫脹、觀察姿態...');
+
+        // -- Tab 4: Assessment (With Dynamic List) --
+        const tabA = this._createTabPane('tab-a', 'Assessment (評估與測試)', 'a', '動作測試結果、特殊測試陽性反應...');
+        
+        // 評估建議區塊
+        this.assessmentContainer = el('div', { 
+            className: 'assessment-recommendations',
+            style: { 
+                marginTop: '10px', 
+                padding: '10px', 
+                background: '#f0f9ff', 
+                borderRadius: '4px',
+                border: '1px dashed #bae6fd',
+                display: 'none' // Hidden by default
+            } 
+        });
+        tabA.appendChild(this.assessmentContainer);
+
+        // -- Tab 5: Plan --
+        const tabP = this._createTabPane('tab-p', 'Plan (治療計畫)', 'p', '治療項目、回家運動、建議事項...');
+
+        // 確保在 BodyMap 改變時更新建議 (雖然上面建構子已經綁定，但這段邏輯是為了確保初始化時正確渲染)
+        // 由於我們上面已經在 new BodyMap 的 callback 裡寫了 updateAssessmentSuggestions，這裡只需執行初始化即可
+        this._updateAssessmentSuggestions(this.data.bodyParts);
+
+        contentContainer.append(tabVisual, tabS, tabO, tabA, tabP);
+
+        // --- 4. Actions Footer ---
         const actions = el('div', { className: 'editor-actions' });
         if (this.data.status !== RecordStatus.FINALIZED) {
-            // Template Selection Button
             actions.appendChild(el('button', {
                 className: 'btn-secondary',
-                onclick: () => this._showTemplateModal(tagSelector)
+                // 使用 this.tagSelector 傳遞給模板模態框
+                onclick: () => this._showTemplateModal(this.tagSelector)
             }, '📋 Template'));
 
             actions.appendChild(el('button', {
                 className: 'btn-primary',
-                onclick: () => this._save(RecordStatus.FINALIZED)
+                onclick: () => this._handleFinalize() 
             }, 'Finalize'));
             
             actions.appendChild(el('button', {
@@ -399,13 +514,52 @@ export class RecordEditorView extends BaseView {
             }, 'Save Draft'));
         }
 
-        // Assemble View
-        this.root.append(statusLabel, bodyMap.element, tagSelector.element, textarea, actions);
+        this.root.append(statusLabel, navBar, contentContainer, actions);
+    }
+
+    _createTabPane(id, title, soapKey, placeholder) {
+        const textarea = el('textarea', {
+            className: 'record-content soap-textarea', 
+            placeholder: placeholder,
+            value: this.data.soap?.[soapKey] || '',
+            oninput: (e) => {
+                if (!this.data.soap) this.data.soap = {};
+                this.data.soap[soapKey] = e.target.value;
+                this._markDirty();
+            },
+            disabled: this.data.status === RecordStatus.FINALIZED
+        });
+
+        const pane = el('div', { id: id, className: 'tab-pane' },
+            el('h4', {}, title),
+            textarea
+        );
+        
+        if (id !== this.currentTab) pane.style.display = 'none';
+        return pane;
+    }
+
+    _switchTab(tabId, container, navBar) {
+        this.currentTab = tabId;
+        
+        // Update Buttons
+        Array.from(navBar.children).forEach(btn => {
+            btn.classList.toggle('active', btn.textContent.includes(this._getTabLabel(tabId)));
+        });
+
+        // Update Panes
+        Array.from(container.children).forEach(pane => {
+            pane.style.display = pane.id === tabId ? 'block' : 'none';
+        });
+    }
+
+    _getTabLabel(id) {
+        const map = { 'tab-visual': 'Visual', 'tab-s': 'S', 'tab-o': 'O', 'tab-a': 'A', 'tab-p': 'P' };
+        return map[id];
     }
 
     _markDirty() {
         this.isDirty = true;
-        // Debounced Auto-save
         clearTimeout(this.autoSaveTimer);
         this.autoSaveTimer = setTimeout(() => {
             draftManager.save(this.recordId || this.customerId, this.data);
@@ -414,14 +568,13 @@ export class RecordEditorView extends BaseView {
 
     async _save(status, options = {}) {
         try {
-            //  支援傳入版本控制與變更原因 (options)
             const payload = {
-                content: this.data.content,
+                content: this.data.content, // 保留舊內容相容
                 tags: this.data.tags,
-                soap: this.data.soap, // 確保 SOAP 資料被儲存
+                soap: this.data.soap,
                 bodyParts: this.data.bodyParts,
                 painScale: this.data.painScale,
-                ...options // { versionStrategy, changeReason }
+                ...options 
             };
 
             await recordManager.save(this.data.id, payload, status);
@@ -434,9 +587,6 @@ export class RecordEditorView extends BaseView {
         }
     }
 
-    /**
-     *  定稿流程 UI (Version Control Modal)
-     */
     _handleFinalize() {
         const content = el('div', {}, 
             el('p', { style: { marginBottom: '15px' } }, '選擇版本更新策略：'),
@@ -454,7 +604,6 @@ export class RecordEditorView extends BaseView {
             )
         );
 
-        // Radio Change Handler
         content.querySelectorAll('input[name="v-strategy"]').forEach(radio => {
             radio.addEventListener('change', (e) => {
                 const reasonBox = content.querySelector('#reason-container');
@@ -500,7 +649,7 @@ export class RecordEditorView extends BaseView {
                     style: { textAlign: 'left' },
                     onclick: () => {
                         this._applyTemplate(tpl, tagSelector);
-                        modal.close();
+                        modal.close(); // 注意：這裡的 modal 是閉包變數，需確保範疇正確，或改用實例
                     }
                 }, 
                     el('div', { style: { fontWeight: 'bold' } }, tpl.title),
@@ -509,6 +658,7 @@ export class RecordEditorView extends BaseView {
                 list.appendChild(btn);
             });
 
+            // 宣告 modal 變數以便 onclick 閉包使用
             const modal = new Modal('Select Template', list);
             modal.open();
         });
@@ -517,7 +667,6 @@ export class RecordEditorView extends BaseView {
     async _applyTemplate(template) {
         const { templateManager } = await import('../modules/record.js');
         
-        // 1. 使用者決策：覆蓋或疊加
         const hasContent = (this.data.soap?.s || this.data.soap?.o || this.data.soap?.a || this.data.soap?.p);
         let strategy = 'Append';
 
@@ -529,42 +678,33 @@ export class RecordEditorView extends BaseView {
             }
         }
 
-        // 2. 執行後端邏輯合併 (Pure Data Merge)
         const mergedRecord = templateManager.merge(this.data, template, strategy);
 
-        // 3. 更新 Data Model
         this.data.soap = mergedRecord.soap;
         this.data.tags = mergedRecord.tags;
         this.data.bodyParts = mergedRecord.bodyParts;
         this.data.painScale = mergedRecord.painScale;
 
-        // 4. 更新 UI 元件狀態 (穩定實作)
-        
-        // A. 更新 SOAP 文字框
-        // 即使元素目前是 display: none (在其他 Tab)，設定 value 依然有效
+        // 更新 UI
         ['s', 'o', 'a', 'p'].forEach(key => {
             const el = this.root.querySelector(`#tab-${key} textarea`);
             if (el) el.value = this.data.soap[key] || '';
         });
 
-        // B. 更新 TagSelector
-        // 透過公開方法 _addTag 逐一加入 (TagSelector 內部會處理 Set 去重)
         if (this.tagSelector) {
             mergedRecord.tags.forEach(t => this.tagSelector._addTag(t));
         }
 
-        // C. 更新 BodyMap (Visual Sync)
-        //  直接呼叫 BodyMap 新增的 updateSelection 方法
         if (this.bodyMap) {
             this.bodyMap.updateSelection(this.data.bodyParts);
         }
 
-        // 5. 觸發連動與儲存
         this._markDirty();
-        this._updateAssessmentSuggestions(this.data.bodyParts); // 更新評估建議
+        this._updateAssessmentSuggestions(this.data.bodyParts); 
         
         Toast.show(`Template "${template.title}" applied (${strategy}).`);
     }
+
     onLeave() {
         if (this.isDirty) {
             return confirm('You have unsaved changes. Leave anyway?');

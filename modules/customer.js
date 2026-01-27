@@ -3,9 +3,10 @@
  * 顧客管理模組 (The Customer Domain)
  * 
  * @description 負責顧客資料的 CRUD、標籤管理以及與病歷的關聯維護。
- * 支援 ACID 交易傳遞。
+* 支援 ACID 交易傳遞。
  */
 
+// 確保引用新的 Config V2 物件 (BodyRegions, TissueStyles 等)
 import { StorageKeys, EventTypes, ErrorCodes, BodyRegions, TissueStyles, TagPalettes, TagType } from '../config.js';
 import { storageManager } from '../core/db.js';
 import { EventBus, UUID } from '../core/utils.js';

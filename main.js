@@ -3,7 +3,7 @@
  * 應用程式入口 (The Bootstrapper)
  * 
  * @description 負責初始化系統、掛載路由、偵測環境並啟動 UI。
- * 包含 Integrity Guard 與 Ephemeral Detector 安全機制。
+* 包含 Integrity Guard 與 Ephemeral Detector 安全機制。
  */
 
 import { storageManager } from './core/db.js';
