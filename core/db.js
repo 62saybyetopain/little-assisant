@@ -222,9 +222,7 @@ class StorageManager {
             throw new Error('EPHEMERAL_MODE_RESTRICTION: Write operations are disabled in Incognito mode.');
         }
 
-        // 2. Cross-Tab Lock Acquisition (Critical for Data Integrity)
-        // 針對讀寫交易進行鎖定，唯讀交易可視情況跳過鎖定以提升效能，但為確保一致性，建議統一管理。
-        // 這裡採用全面鎖定策略以確保 ACID。
+        // 2. Cross-Tab Lock Acquisition
         return storageLock.acquire(async () => {
             const db = await this.adapter.open();
 
@@ -233,27 +231,18 @@ class StorageManager {
                 const tx = db.transaction(storeNames, mode);
                 
                 // 4. Create Transaction Context (Proxy)
-                // 這個 Context 提供與 StorageManager 類似的 API，但直接操作當前 tx
                 const txContext = {
+                    // [Fix] 暴露底層 IDBTransaction 物件，解決 views.js 中 tx.objectStore 報錯問題
+                    _rawTx: tx,
+
                     get: (store, id) => this._wrapRequest(tx.objectStore(store).get(id)),
                     getAll: (store) => this._wrapRequest(tx.objectStore(store).getAll()),
+                    
                     put: (store, data) => {
-                        // Internal Put Logic (Validation/Timestamp)
                         if (!data.id) data.id = UUID();
                         const now = new Date().toISOString();
 
-                        //  Schema Enforcement (Write-time)
-                        // 1. 若資料無 _schema，自動標記為當前版本 (視為新資料)
-                        // 2. 若資料有 _schema 但版本不符，拋出錯誤 (嚴格模式，要求先經由 MigrationManager 升級)
-                        if (!data._schema) {
-                            data._schema = CURRENT_SCHEMA_VERSION;
-                        } else if (data._schema !== CURRENT_SCHEMA_VERSION) {
-                            // 允許 system_meta 或特定 store 豁免，或嚴格執行
-                            if (store !== StorageKeys.META) {
-                                console.error(`[DB] Schema Mismatch: Expected ${CURRENT_SCHEMA_VERSION}, got ${data._schema}`);
-                                throw new Error(`SCHEMA_VERSION_MISMATCH: Data version ${data._schema} is outdated.`);
-                            }
-                        }
+                        if (!data._schema) data._schema = CURRENT_SCHEMA_VERSION;
 
                         const payload = { 
                             ...data, 
@@ -265,13 +254,25 @@ class StorageManager {
                     },
 
                     delete: (store, id) => {
-                        // Soft Delete Logic inside TX
+                        // Soft Delete (標記刪除)
                         return this._wrapRequest(tx.objectStore(store).get(id)).then(existing => {
                             if (!existing) return;
                             const payload = { ...existing, updatedAt: new Date().toISOString(), _deleted: true };
                             return this._wrapRequest(tx.objectStore(store).put(payload));
                         });
                     },
+
+                    // [Fix] 新增硬刪除 (Hard Delete) - 用於回收桶清空或幽靈資料清除
+                    hardDelete: (store, id) => {
+                        return this._wrapRequest(tx.objectStore(store).delete(id));
+                    },
+
+                    // [Fix] 新增還原 (Restore) - 用於回收桶還原
+                    restore: (store, data) => {
+                        const payload = { ...data, _deleted: false, updatedAt: new Date().toISOString() };
+                        return this._wrapRequest(tx.objectStore(store).put(payload));
+                    },
+
                     query: (store, index, range) => this._wrapRequest(tx.objectStore(store).index(index).getAll(range))
                 };
 
@@ -280,12 +281,10 @@ class StorageManager {
                 Promise.resolve(callback(txContext))
                     .then(res => {
                         result = res;
-                        // Transaction commits automatically when microtasks empty
                     })
                     .catch(err => {
-                        // Manually abort on logic error to ensure rollback
-                        // Check if transaction is still active before aborting
-                        if (tx.error === null) { 
+                        // 只有在交易尚未結束或中止時才中止
+                        if (tx.error === null && !tx.aborted) { 
                              tx.abort();
                         }
                         reject(err);

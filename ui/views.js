@@ -902,21 +902,22 @@ export class SettingsView extends BaseView {
         
         // Header
         const header = el('div', { 
+            className: 'nav-header',
             style: { display: 'flex', alignItems: 'center', padding: '15px', background: '#fff', borderBottom: '1px solid #eee', position: 'sticky', top: 0, zIndex: 10 } 
         },
-            el('button', { onclick: () => this.router.back(), style: 'font-size: 20px; margin-right: 15px;' }, '←'),
+            el('button', { onclick: () => this.router.back(), style: 'font-size: 20px; margin-right: 15px; cursor: pointer;' }, '←'),
             el('h2', { style: 'margin: 0; font-size: 18px;' }, 'System Settings')
         );
 
-        // 1. System Management (New Entry Points)
+        // 1. System Management (CRUD Interfaces)
         const adminSection = el('div', { className: 'settings-section', style: { marginBottom: '20px', padding: '15px', background: '#fff', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' } },
             el('h3', { style: 'margin-top: 0; color: #333;' }, 'System Management'),
-            this._createMenuBtn('🏷️ Tag Management', () => Toast.show('Tag Manager coming soon')),
-            this._createMenuBtn('💪 Assessment Editor', () => Toast.show('Assessment Editor coming soon')),
-            this._createMenuBtn('📋 Template Builder', () => Toast.show('Template Builder coming soon'))
+            this._createMenuBtn('🏷️ Tag Management', () => this._openTagManager()),
+            this._createMenuBtn('💪 Assessment Editor', () => this._openAssessmentEditor()),
+            this._createMenuBtn('📋 Template Builder', () => this._openTemplateBuilder())
         );
 
-        // 2. P2P Synchronization (Improved UI)
+        // 2. P2P Synchronization
         const peerId = syncGateway.peerManager ? syncGateway.peerManager.myId : 'OFFLINE';
         const currentName = localStorage.getItem('device_name') || `Device-${peerId.slice(0, 4)}`;
 
@@ -958,25 +959,20 @@ export class SettingsView extends BaseView {
             // Scan / Connect
             el('div', { style: { display: 'flex', gap: '8px' } },
                 el('button', { 
+                    id: 'btn-scan',
                     className: 'btn-secondary',
-                    style: { flex: 1, padding: '10px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '6px' },
-                    onclick: () => {
-                        // Scan Button Logic
-                        if (syncGateway.peerManager) {
-                            syncGateway.peerManager.announce(); // Broadcast Hello
-                            Toast.show('Scanning for peers...');
-                        } else {
-                            Toast.show('Sync Gateway not ready', 'error');
-                        }
-                    }
+                    style: { flex: 1, padding: '10px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '6px', transition: 'all 0.3s' },
+                    onclick: (e) => this._handleScan(e.target)
                 }, '📡 Scan / Broadcast'),
             )
         );
 
-        // 3. Data Management (Recycle Bin)
+        // 3. Data Management (Recycle Bin & Integrity)
         const dataSection = el('div', { className: 'settings-section', style: { padding: '15px', background: '#fff', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' } },
             el('h3', { style: 'margin-top: 0; color: #333;' }, 'Data Management'),
             this._createMenuBtn('♻️ Recycle Bin (Restore Data)', () => this._showRecycleBin()),
+            this._createMenuBtn('🛡️ Check Data Integrity (Fix Orphans)', () => this._handleIntegrityCheck()),
+            
             el('button', { 
                 className: 'btn-secondary',
                 style: { width: '100%', padding: '12px', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', marginTop: '10px', background: 'white' },
@@ -1000,30 +996,182 @@ export class SettingsView extends BaseView {
         }, label, el('span', { style: { color: '#ccc' } }, '›'));
     }
 
-    // 回收桶實作 (Recycle Bin Implementation)
+    // --- Feature: Tag Manager CRUD ---
+    async _openTagManager() {
+        const tags = await tagManager.getAll();
+        const list = el('div', { style: { maxHeight: '300px', overflowY: 'auto', marginBottom: '10px' } });
+        
+        const renderList = () => {
+            list.innerHTML = '';
+            tags.forEach(tag => {
+                list.appendChild(el('div', { style: { padding: '8px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between' } },
+                    el('span', { style: { color: tag.color, fontWeight: 'bold' } }, tag.name),
+                    el('button', { 
+                        style: { color: 'red', fontSize: '12px' },
+                        onclick: async () => {
+                            if(confirm(`Delete tag "${tag.name}"?`)) {
+                                await tagManager.delete(tag.id);
+                                tags.splice(tags.indexOf(tag), 1);
+                                renderList();
+                            }
+                        }
+                    }, 'Del')
+                ));
+            });
+        };
+        renderList();
+
+        const input = el('input', { type: 'text', placeholder: 'New Tag Name', style: 'width: 100%; padding: 8px; margin-bottom: 5px;' });
+        const typeSelect = el('select', { style: 'width: 100%; padding: 8px; margin-bottom: 10px;' },
+            el('option', { value: 'PERSONAL' }, 'Personal (General)'),
+            el('option', { value: 'HISTORY' }, 'History (Medical)'),
+            el('option', { value: 'MOVEMENT' }, 'Movement (Observation)')
+        );
+
+        new Modal('Tag Manager', el('div', {}, list, input, typeSelect), async () => {
+            if (input.value) {
+                await tagManager.saveTagDefinition({
+                    name: input.value,
+                    type: typeSelect.value,
+                    paletteColor: '#3b82f6' 
+                });
+                Toast.show('Tag created');
+            }
+        }).open();
+    }
+
+    // --- Feature: Assessment Editor CRUD ---
+    async _openAssessmentEditor() {
+        const { StorageKeys } = await import('../config.js');
+        const { storageManager } = await import('../core/db.js');
+
+        // 讀取自訂評估 (從 META store)
+        const meta = await storageManager.get(StorageKeys.META, 'custom_assessments');
+        const customAssessments = meta ? meta.data : [];
+
+        const list = el('div', { style: { maxHeight: '250px', overflowY: 'auto', marginBottom: '15px', border: '1px solid #eee', borderRadius: '4px' } });
+        
+        const renderList = () => {
+            list.innerHTML = '';
+            if (customAssessments.length === 0) {
+                list.innerHTML = '<div style="padding:10px; color:#999; text-align:center;">No custom assessments yet.</div>';
+            }
+            customAssessments.forEach((item, index) => {
+                list.appendChild(el('div', { style: { padding: '8px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+                    el('div', {}, 
+                        el('div', { style: { fontWeight: 'bold' } }, item.name),
+                        el('div', { style: { fontSize: '12px', color: '#666' } }, `${item.region} | +: ${item.positive}`)
+                    ),
+                    el('button', { 
+                        style: { color: 'red', fontSize: '12px' },
+                        onclick: async () => {
+                            if(confirm(`Delete "${item.name}"?`)) {
+                                customAssessments.splice(index, 1);
+                                await storageManager.put(StorageKeys.META, { id: 'custom_assessments', data: customAssessments });
+                                renderList();
+                            }
+                        }
+                    }, 'Del')
+                ));
+            });
+        };
+        renderList();
+
+        const regionSelect = el('select', { style: 'width: 100%; padding: 8px; margin-bottom: 5px;' },
+            el('option', { value: 'Shoulder' }, 'Shoulder'),
+            el('option', { value: 'Knee' }, 'Knee'),
+            el('option', { value: 'Spine' }, 'Spine'),
+            el('option', { value: 'Hip' }, 'Hip')
+        );
+        const nameInput = el('input', { type: 'text', placeholder: 'Test Name (e.g. Empty Can)', style: 'width: 100%; padding: 8px; margin-bottom: 5px;' });
+        const positiveInput = el('input', { type: 'text', placeholder: 'Positive Sign (e.g. Supraspinatus tear)', style: 'width: 100%; padding: 8px; margin-bottom: 5px;' });
+
+        new Modal('Assessment Editor', el('div', {}, list, el('hr'), el('h4', {style:'margin:5px 0'}, 'Add New'), regionSelect, nameInput, positiveInput), async () => {
+            if (nameInput.value && positiveInput.value) {
+                customAssessments.push({
+                    id: 'cust_' + Date.now(),
+                    region: regionSelect.value,
+                    name: nameInput.value,
+                    positive: positiveInput.value
+                });
+                await storageManager.put(StorageKeys.META, { id: 'custom_assessments', data: customAssessments });
+                Toast.show('Assessment saved');
+            }
+        }).open();
+    }
+
+    // --- Feature: Template Builder CRUD ---
+    async _openTemplateBuilder() {
+        const titleInput = el('input', { type: 'text', placeholder: 'Template Title', style: 'width: 100%; margin-bottom: 10px; padding: 8px;' });
+        const sInput = el('textarea', { placeholder: 'Subjective (S)', style: 'width: 100%; height: 60px; margin-bottom: 5px;' });
+        const oInput = el('textarea', { placeholder: 'Objective (O)', style: 'width: 100%; height: 60px; margin-bottom: 5px;' });
+        
+        new Modal('New Template', el('div', {}, titleInput, sInput, oInput), async () => {
+            if (!titleInput.value) return;
+            const { storageManager } = await import('../core/db.js');
+            const { StorageKeys } = await import('../config.js');
+            
+            await storageManager.put(StorageKeys.TEMPLATES, {
+                id: 'tpl_' + Date.now(),
+                title: titleInput.value,
+                soap: { s: sInput.value, o: oInput.value, a: '', p: '' },
+                tags: [],
+                bodyParts: []
+            });
+            Toast.show('Template saved');
+        }).open();
+    }
+
+    // --- Feature: P2P Scan Feedback ---
+    _handleScan(btn) {
+        console.log('[Settings] Scan button clicked');
+        import('../core/sync.js').then(({ syncGateway }) => {
+            if (syncGateway.peerManager) {
+                // Visual Feedback
+                const originalText = btn.textContent;
+                btn.textContent = '📡 Broadcasting...';
+                btn.style.background = '#e0f2fe';
+                btn.style.borderColor = '#3b82f6';
+                
+                syncGateway.peerManager.announce();
+                console.log('[Settings] Announcement sent via PeerManager');
+                
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.style.background = '#f8fafc';
+                    btn.style.borderColor = '#cbd5e1';
+                    Toast.show('Scan signal sent. Waiting for peers...');
+                }, 2000);
+            } else {
+                console.error('[Settings] SyncGateway not ready');
+                Toast.show('Sync Gateway not ready', 'error');
+            }
+        });
+    }
+
+    // --- Feature: Recycle Bin (Fixed with _rawTx) ---
     async _showRecycleBin() {
         const { storageManager } = await import('../core/db.js');
         const { StorageKeys } = await import('../config.js');
 
-        // 1. 獲取所有已刪除資料 (需繞過預設的 filter)
-        // 我們使用 runTransaction 直接存取 Store
         const deletedItems = [];
         const stores = [StorageKeys.CUSTOMERS, StorageKeys.RECORDS];
 
         await storageManager.runTransaction(stores, 'readonly', async (tx) => {
             for (const storeName of stores) {
-                const allItems = await new Promise((resolve, reject) => {
-                    const req = tx.objectStore(storeName).getAll();
-                    req.onsuccess = () => resolve(req.result);
-                    req.onerror = () => reject(req.error);
-                });
-                // Filter manually for _deleted: true
-                const deleted = allItems.filter(item => item._deleted);
-                deleted.forEach(item => deletedItems.push({ ...item, _store: storeName }));
+                // [Fix] 使用 _rawTx 存取底層 IDB 以獲取包含 _deleted 的資料
+                if (tx._rawTx) {
+                    const rawReq = tx._rawTx.objectStore(storeName).getAll();
+                    const rawItems = await new Promise((resolve, reject) => {
+                        rawReq.onsuccess = () => resolve(rawReq.result);
+                        rawReq.onerror = () => reject(rawReq.error);
+                    });
+                    const deleted = rawItems.filter(item => item._deleted);
+                    deleted.forEach(item => deletedItems.push({ ...item, _store: storeName }));
+                }
             }
         });
 
-        // 2. Render UI
         const list = el('div', { style: { maxHeight: '400px', overflowY: 'auto' } });
         
         if (deletedItems.length === 0) {
@@ -1034,7 +1182,7 @@ export class SettingsView extends BaseView {
                     style: { padding: '10px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' } 
                 },
                     el('div', {}, 
-                        el('div', { style: { fontWeight: 'bold' } }, item.name || item.id.slice(0, 8)),
+                        el('div', { style: { fontWeight: 'bold' } }, item.name || (item.id ? item.id.slice(0, 8) : 'Unknown')),
                         el('div', { style: { fontSize: '12px', color: '#666' } }, `${item._store} | Deleted: ${new Date(item.updatedAt).toLocaleDateString()}`)
                     ),
                     el('div', { style: { display: 'flex', gap: '5px' } },
@@ -1059,30 +1207,25 @@ export class SettingsView extends BaseView {
         const { storageManager } = await import('../core/db.js');
         if (confirm(`Restore "${item.name || item.id}"?`)) {
             await storageManager.runTransaction([item._store], 'readwrite', async (tx) => {
-                const record = { ...item, _deleted: false, updatedAt: new Date().toISOString() };
-                delete record._store; // Remove temp prop
-                await new Promise((resolve, reject) => {
-                    const req = tx.objectStore(item._store).put(record);
-                    req.onsuccess = resolve;
-                    req.onerror = reject;
-                });
+                // 使用 db.js 新增的 restore 方法
+                if (tx.restore) {
+                    await tx.restore(item._store, item);
+                }
             });
             Toast.show('Item restored');
-            // Close modal to refresh (simple way)
             document.querySelector('.modal-overlay')?.remove();
-            this._showRecycleBin(); // Re-open to refresh list
+            this._showRecycleBin();
         }
     }
 
     async _handleHardDelete(item) {
         const { storageManager } = await import('../core/db.js');
-        if (confirm(`Permanently delete "${item.name || item.id}"? This cannot be undone.`)) {
+        if (confirm(`Permanently delete? This cannot be undone.`)) {
             await storageManager.runTransaction([item._store], 'readwrite', async (tx) => {
-                await new Promise((resolve, reject) => {
-                    const req = tx.objectStore(item._store).delete(item.id);
-                    req.onsuccess = resolve;
-                    req.onerror = reject;
-                });
+                // 使用 db.js 新增的 hardDelete 方法
+                if (tx.hardDelete) {
+                    await tx.hardDelete(item._store, item.id);
+                }
             });
             Toast.show('Item permanently deleted');
             document.querySelector('.modal-overlay')?.remove();
@@ -1090,51 +1233,48 @@ export class SettingsView extends BaseView {
         }
     }
 
-    _renderInboxList(inbox, gateway) {
-        const list = el('ul', { style: { listStyle: 'none', padding: 0 } });
-        inbox.forEach(item => {
-            const li = el('li', { style: { padding: '10px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between' } },
-                el('div', {}, 
-                    el('strong', {}, `Store: ${item.store}`),
-                    el('div', { style: { fontSize: '12px' } }, `ID: ${item.id.slice(0,8)}... from Peer ${item.peerId.slice(0,4)}`)
-                ),
-                el('div', { style: { display: 'flex', gap: '5px' } },
-                    el('button', { 
-                        className: 'btn-primary',
-                        style: { fontSize: '12px', padding: '2px 8px' },
-                        onclick: async () => {
-                            await gateway.approve(item.id);
-                            Toast.show('Resolved (Approved)');
-                            this.router.navigate('settings'); // Refresh
+    // --- Feature: Data Integrity Check (Ghost Data Cleaner) ---
+    async _handleIntegrityCheck() {
+        Toast.show('Scanning for orphans...', 'info');
+        const report = await searchEngine.checkIntegrity();
+        
+        if (report.orphanCount === 0) {
+            alert('✅ System Healthy. No ghost data found.');
+        } else {
+            const msg = `⚠️ Found ${report.orphanCount} orphan records (Ghost Data).\nIDs: ${report.orphanIds.join(', ')}\n\nClean them up?`;
+            if (confirm(msg)) {
+                const { storageManager } = await import('../core/db.js');
+                const { StorageKeys } = await import('../config.js');
+                
+                await storageManager.runTransaction([StorageKeys.RECORDS], 'readwrite', async (tx) => {
+                    for (const id of report.orphanIds) {
+                        if (tx.hardDelete) {
+                            await tx.hardDelete(StorageKeys.RECORDS, id);
+                        } else {
+                            await tx.delete(StorageKeys.RECORDS, id);
                         }
-                    }, '✓'),
-                    el('button', { 
-                        className: 'btn-secondary',
-                        style: { fontSize: '12px', padding: '2px 8px' },
-                        onclick: () => {
-                            gateway.reject(item.id);
-                            Toast.show('Resolved (Rejected)');
-                            this.router.navigate('settings'); // Refresh
-                        }
-                    }, '✗')
-                )
-            );
-            list.appendChild(li);
-        });
-        return list;
+                    }
+                });
+                
+                Toast.show(`Cleaned ${report.orphanCount} orphans.`, 'success');
+                setTimeout(() => window.location.reload(), 1000);
+            }
+        }
     }
 
     async _handleFactoryReset() {
         if (confirm('CRITICAL WARNING: Are you sure you want to delete ALL data?')) {
             if (confirm('Final Confirmation: This action is irreversible.')) {
                 try {
-                    // Close connections
                     const { syncGateway } = await import('../core/sync.js');
                     syncGateway.stop();
                     
-                    // Native IDB Delete
                     const req = indexedDB.deleteDatabase('LocalFirstDB');
+                    
                     req.onsuccess = () => {
+                        // [Fix] Clear LocalStorage to remove Ghost Index
+                        localStorage.clear();
+                        
                         alert('System Reset Complete. Reloading...');
                         window.location.reload();
                     };
