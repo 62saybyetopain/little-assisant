@@ -163,6 +163,11 @@ class App {
                 }
             };
 
+            // [Fix] 移除初始化載入畫面 (Remove Loading Screen)
+            // 確保 UI 初始化完成後，將靜態的 Loading DOM 移除，展示真正的 App 介面
+            const loader = document.querySelector('.loading-screen');
+            if (loader) loader.remove();
+
             // 6. Global Event Listeners
             EventBus.on(EventTypes.SYSTEM.ERROR, (err) => Toast.show(err.message, 'error'));
             EventBus.on(EventTypes.SYSTEM.QUOTA_WARN, () => Toast.show('Storage Full!', 'error'));
