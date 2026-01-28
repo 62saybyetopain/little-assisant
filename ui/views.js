@@ -10,7 +10,7 @@ import { el, Toast, TagSelector, BodyMap, Modal } from './components.js';
 import { customerManager, tagManager } from '../modules/customer.js';
 import { recordManager, draftManager } from '../modules/record.js';
 import { searchEngine } from '../core/search.js';
-import { storageManager } from '../core/db.js';
+import { storageManager } from '../core/db.js'; 
 import { EventBus } from '../core/utils.js';
 import { EventTypes, RecordStatus } from '../config.js';
 
@@ -30,14 +30,14 @@ export class CustomerListView extends BaseView {
         super();
         this.router = router;
         this.items = [];
-        this.draftSet = new Set(); //  Cache for draft existence
+        this.draftSet = new Set(); // Cache for draft existence
         this.rowHeight = 60; // px
         this.viewportHeight = 0;
         this.render();
     }
 
     async render() {
-        //  0. Header with Sync Status
+        // 0. Header with Sync Status
         const header = this._renderHeader();
 
         // 1. Search Bar
@@ -60,7 +60,7 @@ export class CustomerListView extends BaseView {
         this.listContainer.append(this.listSpacer, this.listContent);
 
         // 3. FAB (Add Button)
-        //  絕對唯讀：無痕模式下隱藏新增入口
+        // 絕對唯讀：無痕模式下隱藏新增入口
         if (!storageManager.isEphemeral) {
             const fab = el('button', {
                 className: 'fab',
@@ -118,7 +118,7 @@ export class CustomerListView extends BaseView {
     }
 
     async _loadData() {
-        //  Load Drafts in parallel to identify icons
+        // Load Drafts in parallel to identify icons
         const [allDrafts, _] = await Promise.all([
             draftManager.getAll(),
             Promise.resolve() // Placeholder if needed
@@ -133,7 +133,7 @@ export class CustomerListView extends BaseView {
     }
 
     _handleSearch(query) {
-        //  搜尋結果擴充：允許更多結果以便滾動載入，Virtual Scroll 會處理 DOM 效能
+        // 搜尋結果擴充：允許更多結果以便滾動載入，Virtual Scroll 會處理 DOM 效能
         // 若資料量真的極大(>10萬)，searchEngine.search 內部應支援 cursor 分頁
         this.items = searchEngine.search(query, { limit: 500, sort: 'relevance' }); 
         
@@ -161,10 +161,49 @@ export class CustomerListView extends BaseView {
             const item = this.items[i];
             const hasDraft = this.draftSet.has(item.id);
 
+            // 長按偵測變數 (Closure scope)
+            let pressTimer = null;
+            let isLongPress = false;
+
             const row = el('li', { 
                 className: 'customer-item',
                 style: { height: `${this.rowHeight}px` },
-                onclick: () => this.router.navigate(`customer/${item.id}`)
+                
+                // 1. 一般點擊 (Click / Tap) -> 導航
+                onclick: (e) => {
+                    // 如果剛剛觸發了長按，則忽略這次的 Click 事件
+                    if (isLongPress) {
+                        isLongPress = false; // Reset
+                        return;
+                    }
+                    this.router.navigate(`customer/${item.id}`);
+                },
+
+                // 2. 桌機右鍵 (Right Click) -> 選單
+                oncontextmenu: (e) => {
+                    e.preventDefault(); // 阻止瀏覽器預設選單
+                    this._showActionSheet(item);
+                },
+
+                // 3. 手機長按模擬 (Touch Long Press)
+                ontouchstart: (e) => {
+                    isLongPress = false; // Reset flag
+                    pressTimer = setTimeout(() => {
+                        isLongPress = true; // 標記為長按，阻止 onclick
+                        if (navigator.vibrate) navigator.vibrate(50); // 震動回饋 (Haptic)
+                        this._showActionSheet(item);
+                    }, 600); // 長按 600ms 觸發
+                },
+                
+                // 手指移動 (Scroll) -> 取消長按
+                ontouchmove: () => {
+                    clearTimeout(pressTimer);
+                },
+
+                // 手指放開 -> 清除計時器
+                ontouchend: () => {
+                    clearTimeout(pressTimer);
+                }
             }, 
                 el('div', { 
                     className: 'customer-name',
@@ -176,6 +215,42 @@ export class CustomerListView extends BaseView {
                 el('div', { className: 'customer-meta' }, `${item.p} | ${item.t ? item.t.join(', ') : ''}`)
             );
             this.listContent.appendChild(row);
+        }
+    }
+
+    /**
+     * [New] 呼叫共用元件 ActionSheet
+     */
+    _showActionSheet(item) {
+        import('./components.js').then(({ ActionSheet, Toast }) => {
+            ActionSheet.show([
+                { 
+                    label: `Detail: ${item.n}`, 
+                    handler: () => this.router.navigate(`customer/${item.id}`) 
+                },
+                { 
+                    label: 'Delete Customer', 
+                    danger: true, // 紅色樣式
+                    handler: () => this._handleDeleteCustomer(item.id, item.n) 
+                }
+            ]);
+        });
+    }
+
+    /**
+     * [New] 刪除顧客處理邏輯
+     */
+    async _handleDeleteCustomer(id, name) {
+        if (confirm(`Delete customer "${name}"? This cannot be undone.`)) {
+            try {
+                await customerManager.delete(id);
+                // 刪除後需手動觸發搜尋更新，或依賴 EventBus 監聽自動重整
+                // 這裡簡單呼叫搜尋刷新
+                this._handleSearch(document.querySelector('.search-bar')?.value || '');
+                import('./components.js').then(({ Toast }) => Toast.show('Customer deleted'));
+            } catch (e) {
+                import('./components.js').then(({ Toast }) => Toast.show(e.message, 'error'));
+            }
         }
     }
     _showCreateModal() {
@@ -205,7 +280,7 @@ export class CustomerListView extends BaseView {
             type: 'tel', placeholder: 'Phone',
             onblur: (e) => {
                 const val = e.target.value;
-                if (val && !/^\d{3,10}$/.test(val)) { //  Phone Regex
+                if (val && !/^\d{3,10}$/.test(val)) { // Phone Regex
                     feedback.textContent = '❌ Invalid Phone Format';
                     return;
                 }
@@ -248,51 +323,109 @@ export class CustomerDetailView extends BaseView {
             return;
         }
 
-        // Header
-        const header = el('div', { className: 'detail-header' },
-            el('h1', {}, customer.name),
-            el('p', {}, `Phone: ${customer.phone}`),
-            el('button', { 
-                onclick: () => this.router.navigate(`record/new?customerId=${this.customerId}`) 
-            }, 'New Record')
+        // 1. 導航標頭 (Navigation Header)
+        const header = el('div', { 
+            className: 'nav-header',
+            style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '15px', background: '#fff', borderBottom: '1px solid #eee' }
+        },
+            el('div', { className: 'nav-left' }, 
+                el('button', { 
+                    style: { fontSize: '20px', padding: '5px 10px', cursor: 'pointer' },
+                    onclick: () => this.router.back() 
+                }, '← Back')
+            ),
+            el('div', { className: 'nav-title', style: { fontWeight: 'bold', fontSize: '18px' } }, customer.name),
+            el('div', { className: 'nav-right' },
+                el('button', { 
+                    style: { fontSize: '20px', padding: '5px' },
+                    onclick: () => this._editCustomer(customer)
+                }, '✎')
+            )
         );
 
-        // Record History
-        const historyContainer = el('div', { className: 'history-list' });
+        // 2. 顧客資訊卡片
+        const infoCard = el('div', { style: { padding: '15px', background: '#f8fafc', borderBottom: '1px solid #eee' } },
+            el('p', { style: { margin: '0 0 5px 0', color: '#64748b' } }, `Phone: ${customer.phone || 'N/A'}`),
+            el('div', { style: { display: 'flex', gap: '5px', flexWrap: 'wrap' } }, 
+                ...(customer.tags || []).map(t => el('span', { 
+                    style: { background: '#e2e8f0', padding: '2px 8px', borderRadius: '12px', fontSize: '12px' } 
+                }, t))
+            ),
+            el('button', { 
+                className: 'btn-primary', 
+                style: { width: '100%', marginTop: '15px', padding: '10px', background: '#3b82f6', color: 'white', borderRadius: '8px' },
+                onclick: () => this.router.navigate(`record/new?customerId=${this.customerId}`) 
+            }, '＋ New Record')
+        );
+
+        // 3. 歷史紀錄容器
+        const historyContainer = el('div', { className: 'history-list', style: { flex: 1, overflowY: 'auto', padding: '15px' } });
         const records = await recordManager.getByCustomer(this.customerId);
 
-        //  Last Visit Summary & Clone
+        // 4. 上次就診摘要 (如果有紀錄)
         if (records.length > 0) {
-            const lastRecord = records[0]; // First is newest due to sorting
+            const lastRecord = records[0]; 
             const summary = el('div', { 
                 className: 'summary-card',
-                style: { margin: '16px', padding: '16px', background: '#e0f2fe', borderRadius: '8px' } 
+                style: { marginBottom: '20px', padding: '15px', background: '#e0f2fe', borderRadius: '8px', border: '1px solid #bae6fd' } 
             },
-                el('h3', {}, 'Last Visit Summary'),
-                el('p', {}, `Date: ${new Date(lastRecord.updatedAt).toLocaleDateString()}`),
-                el('p', {}, `Notes: ${lastRecord.content?.notes || 'No notes'}`),
+                el('h3', { style: { margin: '0 0 10px 0', fontSize: '16px', color: '#0369a1' } }, 'Last Visit Summary'),
+                el('p', { style: { margin: '5px 0', fontSize: '14px' } }, `Date: ${new Date(lastRecord.updatedAt).toLocaleDateString()}`),
+                el('p', { style: { margin: '5px 0', fontSize: '14px' } }, `S/O: ${lastRecord.soap?.s || ''} ${lastRecord.soap?.o || ''}`),
                 el('button', {
                     className: 'btn-primary',
-                    style: { marginTop: '8px', fontSize: '12px' },
+                    style: { marginTop: '8px', fontSize: '12px', padding: '5px 10px', background: '#0284c7', color: 'white', borderRadius: '4px' },
                     onclick: () => this._cloneRecord(lastRecord)
                 }, '⚡ Clone & Continue')
             );
-            // Insert Summary after header
-            this.root.append(header, summary, historyContainer);
-        } else {
-            this.root.append(header, historyContainer);
+            historyContainer.appendChild(summary);
         }
+
+        // 5. 渲染列表項目
+        records.forEach(rec => {
+            const item = el('div', { 
+                style: { padding: '15px', background: 'white', marginBottom: '10px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', cursor: 'pointer' },
+                onclick: () => this.router.navigate(`record/${rec.id}`)
+            },
+                el('div', { style: { display: 'flex', justifyContent: 'space-between', marginBottom: '5px' } },
+                    el('span', { style: { fontWeight: 'bold' } }, new Date(rec.updatedAt).toLocaleDateString()),
+                    el('span', { style: { fontSize: '12px', padding: '2px 6px', borderRadius: '4px', background: '#f1f5f9' } }, rec.status)
+                ),
+                el('div', { style: { fontSize: '14px', color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, 
+                    rec.soap?.a || rec.soap?.s || '(No content)'
+                )
+            );
+            historyContainer.appendChild(item);
+        });
+
+        // 6. 組合頁面 (清除舊內容並重新掛載)
+        this.root.style.display = 'flex';
+        this.root.style.flexDirection = 'column';
+        this.root.style.height = '100vh';
+        this.root.innerHTML = ''; 
+        this.root.append(header, infoCard, historyContainer);
+    }
+
+    _editCustomer(customer) {
+        const nameInput = el('input', { type: 'text', value: customer.name, style: 'width: 100%; margin-bottom: 10px; padding: 8px;' });
+        const phoneInput = el('input', { type: 'tel', value: customer.phone, style: 'width: 100%; margin-bottom: 10px; padding: 8px;' });
         
+        new Modal('Edit Customer', el('div', {}, nameInput, phoneInput), async () => {
+            await customerManager.update(customer.id, {
+                name: nameInput.value,
+                phone: phoneInput.value
+            });
+            this.render(); // Re-render to show changes
+            Toast.show('Customer updated');
+        }).open();
     }
 
     async _cloneRecord(sourceRecord) {
         try {
-            // 1. Create new record with copied content but new ID
             const newRecord = await recordManager.create(this.customerId, {
-                content: { ...sourceRecord.content }, // Deep clone needed in real app
+                content: { ...sourceRecord.content },
                 tags: [...(sourceRecord.tags || [])]
             });
-            // 2. Navigate to editor
             Toast.show('Record cloned from previous visit');
             this.router.navigate(`record/${newRecord.id}`);
         } catch (e) {
@@ -389,13 +522,12 @@ export class RecordEditorView extends BaseView {
         if (this.recordId) {
             this.data = await recordManager.get(this.recordId);
         } else if (this.customerId) {
-            // Check for existing draft
             const draft = await draftManager.get(this.customerId);
             if (draft) {
-                this.data = { ...draft.data, customerId: this.customerId }; // Restore draft
+                this.data = { ...draft.data, customerId: this.customerId };
                 Toast.show('Draft restored');
             } else {
-                this.data = await recordManager.create(this.customerId); // Create temp object
+                this.data = await recordManager.create(this.customerId);
             }
             this.recordId = this.data.id;
         }
@@ -405,38 +537,40 @@ export class RecordEditorView extends BaseView {
             return;
         }
 
-        // Initialize Data Structures
+        // Initialize Data
         this.data.soap = this.data.soap || {};
         this.data.tags = this.data.tags || [];
         this.data.bodyParts = this.data.bodyParts || [];
+        this.data.rom = this.data.rom || {}; // 初始化 ROM 資料
         const allTags = await tagManager.getAll();
 
-        // --- 1. UI: Header & Status ---
-        const statusLabel = el('span', { className: 'status-badge' }, this.data.status || 'Draft');
-        
-        // --- 2. Components Initialization ---
-        
-        // 將元件實例存為 Class Property (this.tagSelector)
+        // --- UI Construction ---
+
+        // 1. Navigation Header (Back Button)
+        const header = el('div', { 
+            style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 15px', background: '#fff', borderBottom: '1px solid #eee' }
+        },
+            el('button', { onclick: () => this.router.back(), style: 'font-size: 18px;' }, '←'),
+            el('div', { style: { fontWeight: 'bold' } }, this.recordId ? 'Edit Record' : 'New Record'),
+            el('span', { className: 'status-badge' }, this.data.status || 'Draft')
+        );
+
+        // 2. Components Initialization
         this.tagSelector = new TagSelector(this.data.tags, allTags, (newTags) => {
             this.data.tags = newTags;
             this._markDirty();
         });
 
-        // 將元件實例存為 Class Property (this.bodyMap)
         this.bodyMap = new BodyMap(this.data.bodyParts, (parts) => {
             this.data.bodyParts = parts;
-            // 連動 TagSelector (新增部位標籤)
             parts.forEach(p => this.tagSelector._addTag(p));
             this._markDirty();
-            // 使用 this. 呼叫內部方法
             this._updateAssessmentSuggestions(parts); 
         }, this.data.status === RecordStatus.FINALIZED);
 
-        // --- 3. Tabbed Layout Construction ---
-        
-        // Tab Navigation
+        // 3. Tab Navigation (S, O, A, P)
+        // 移除獨立 Visual Tab，整合至 O
         const tabs = [
-            { id: 'tab-visual', label: 'Visual (人體圖)' },
             { id: 'tab-s', label: 'S (主訴)' },
             { id: 'tab-o', label: 'O (客觀)' },
             { id: 'tab-a', label: 'A (評估)' },
@@ -452,54 +586,54 @@ export class RecordEditorView extends BaseView {
             navBar.appendChild(btn);
         });
 
-        // Tab Content Container
+        // 4. Tab Content
         const contentContainer = el('div', { className: 'tab-content-wrapper' });
 
-        // -- Tab 1: Visual (BodyMap + Tags) --
-        const tabVisual = el('div', { id: 'tab-visual', className: 'tab-pane active' },
-            el('h4', {}, '患處標記 & 標籤'),
-            this.bodyMap.element, // 使用 this.bodyMap
-            el('div', { style: { marginTop: '10px' } }, this.tagSelector.element) // 使用 this.tagSelector
-        );
+        // -- Tab S: Subjective + Tags --
+        const tabS = this._createTabPane('tab-s', 'Subjective (主訴)', 's', '病患描述、疼痛性質...');
+        tabS.appendChild(el('div', { style: { marginTop: '15px' } }, 
+            el('h5', { style: 'margin: 0 0 5px 0; color: #666;' }, '症狀標籤'),
+            this.tagSelector.element
+        ));
 
-        // -- Tab 2: Subjective --
-        const tabS = this._createTabPane('tab-s', 'Subjective (主訴)', 's', '病患描述、疼痛性質、發生機制...');
+        // -- Tab O: Objective + BodyMap + ROM --
+        const tabO = el('div', { id: 'tab-o', className: 'tab-pane', style: { display: 'none' } });
         
-        // -- Tab 3: Objective --
-        const tabO = this._createTabPane('tab-o', 'Objective (客觀檢查)', 'o', '觸診發現、腫脹、觀察姿態...');
+        // O-1: Body Map
+        tabO.appendChild(el('h5', { style: 'margin: 0 0 5px 0; color: #666;' }, '患處標記 (Body Map)'));
+        tabO.appendChild(this.bodyMap.element);
 
-        // -- Tab 4: Assessment (With Dynamic List) --
-        const tabA = this._createTabPane('tab-a', 'Assessment (評估與測試)', 'a', '動作測試結果、特殊測試陽性反應...');
-        
-        // 評估建議區塊
-        this.assessmentContainer = el('div', { 
-            className: 'assessment-recommendations',
-            style: { 
-                marginTop: '10px', 
-                padding: '10px', 
-                background: '#f0f9ff', 
-                borderRadius: '4px',
-                border: '1px dashed #bae6fd',
-                display: 'none' // Hidden by default
-            } 
+        // O-2: ROM Inputs (Range of Motion)
+        tabO.appendChild(el('h5', { style: 'margin: 15px 0 5px 0; color: #666;' }, '活動度量測 (ROM)'));
+        tabO.appendChild(this._renderROMInputs());
+
+        // O-3: Text Notes
+        tabO.appendChild(el('h5', { style: 'margin: 15px 0 5px 0; color: #666;' }, '觸診與觀察筆記'));
+        const textO = el('textarea', {
+            className: 'record-content soap-textarea',
+            value: this.data.soap?.o || '',
+            oninput: (e) => { 
+                this.data.soap.o = e.target.value; 
+                this._markDirty(); 
+            },
+            disabled: this.data.status === RecordStatus.FINALIZED
         });
-        tabA.appendChild(this.assessmentContainer);
+        tabO.appendChild(textO);
 
-        // -- Tab 5: Plan --
-        const tabP = this._createTabPane('tab-p', 'Plan (治療計畫)', 'p', '治療項目、回家運動、建議事項...');
+        // -- Tab A: Assessment --
+        const tabA = this._createTabPane('tab-a', 'Assessment (評估)', 'a', '診斷結果、測試反應...');
+        tabA.prepend(this.assessmentContainer); // 建議列表放最上面
 
-        // 確保在 BodyMap 改變時更新建議 (雖然上面建構子已經綁定，但這段邏輯是為了確保初始化時正確渲染)
-        // 由於我們上面已經在 new BodyMap 的 callback 裡寫了 updateAssessmentSuggestions，這裡只需執行初始化即可
-        this._updateAssessmentSuggestions(this.data.bodyParts);
+        // -- Tab P: Plan --
+        const tabP = this._createTabPane('tab-p', 'Plan (計畫)', 'p', '治療項目、回家運動...');
 
-        contentContainer.append(tabVisual, tabS, tabO, tabA, tabP);
+        contentContainer.append(tabS, tabO, tabA, tabP);
 
-        // --- 4. Actions Footer ---
+        // 5. Actions Footer
         const actions = el('div', { className: 'editor-actions' });
         if (this.data.status !== RecordStatus.FINALIZED) {
             actions.appendChild(el('button', {
                 className: 'btn-secondary',
-                // 使用 this.tagSelector 傳遞給模板模態框
                 onclick: () => this._showTemplateModal(this.tagSelector)
             }, '📋 Template'));
 
@@ -514,7 +648,47 @@ export class RecordEditorView extends BaseView {
             }, 'Save Draft'));
         }
 
-        this.root.append(statusLabel, navBar, contentContainer, actions);
+        // 初始化 Tab 狀態
+        this._switchTab(this.currentTab, contentContainer, navBar);
+        this._updateAssessmentSuggestions(this.data.bodyParts);
+
+        this.root.innerHTML = '';
+        this.root.append(header, navBar, contentContainer, actions);
+    }
+
+    // ROM 輸入介面產生器
+    _renderROMInputs() {
+        const container = el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' } });
+        
+        // 常用關節定義 (未來可移至 Config)
+        const joints = [
+            { id: 'shoulder_flex_r', label: 'R-Shoulder Flex' },
+            { id: 'shoulder_abd_r',  label: 'R-Shoulder Abd' },
+            { id: 'neck_rot_r',      label: 'R-Neck Rot' },
+            { id: 'neck_rot_l',      label: 'L-Neck Rot' }
+        ];
+
+        joints.forEach(j => {
+            const val = this.data.rom[j.id] || 0;
+            const labelEl = el('div', { style: 'font-size: 12px; display: flex; justify-content: space-between;' }, 
+                el('span', {}, j.label),
+                el('span', { className: 'rom-val', style: 'font-weight: bold; color: #2563eb;' }, `${val}°`)
+            );
+            
+            const slider = el('input', { 
+                type: 'range', min: 0, max: 180, value: val,
+                style: { width: '100%', margin: '5px 0' },
+                oninput: (e) => {
+                    labelEl.querySelector('.rom-val').textContent = `${e.target.value}°`;
+                    this.data.rom[j.id] = parseInt(e.target.value);
+                    this._markDirty();
+                }
+            });
+
+            const wrapper = el('div', { style: { background: '#fff', padding: '8px', borderRadius: '6px', border: '1px solid #eee' } }, labelEl, slider);
+            container.appendChild(wrapper);
+        });
+        return container;
     }
 
     _createTabPane(id, title, soapKey, placeholder) {
@@ -724,84 +898,196 @@ export class SettingsView extends BaseView {
         const { syncGateway } = await import('../core/sync.js');
         const { storageManager } = await import('../core/db.js');
 
-        const container = el('div', { style: { padding: '20px', maxWidth: '600px', margin: '0 auto' } });
+        const container = el('div', { style: { padding: '20px', maxWidth: '600px', margin: '0 auto', paddingBottom: '80px' } });
         
         // Header
-        container.appendChild(el('h2', {}, 'System Settings'));
+        const header = el('div', { 
+            style: { display: 'flex', alignItems: 'center', padding: '15px', background: '#fff', borderBottom: '1px solid #eee', position: 'sticky', top: 0, zIndex: 10 } 
+        },
+            el('button', { onclick: () => this.router.back(), style: 'font-size: 20px; margin-right: 15px;' }, '←'),
+            el('h2', { style: 'margin: 0; font-size: 18px;' }, 'System Settings')
+        );
 
-       // 1. Sync Status & Device Name
-        const peerId = syncGateway.peerManager ? syncGateway.peerManager.myId : 'Unknown';
+        // 1. System Management (New Entry Points)
+        const adminSection = el('div', { className: 'settings-section', style: { marginBottom: '20px', padding: '15px', background: '#fff', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' } },
+            el('h3', { style: 'margin-top: 0; color: #333;' }, 'System Management'),
+            this._createMenuBtn('🏷️ Tag Management', () => Toast.show('Tag Manager coming soon')),
+            this._createMenuBtn('💪 Assessment Editor', () => Toast.show('Assessment Editor coming soon')),
+            this._createMenuBtn('📋 Template Builder', () => Toast.show('Template Builder coming soon'))
+        );
+
+        // 2. P2P Synchronization (Improved UI)
+        const peerId = syncGateway.peerManager ? syncGateway.peerManager.myId : 'OFFLINE';
         const currentName = localStorage.getItem('device_name') || `Device-${peerId.slice(0, 4)}`;
 
-        const syncSection = el('div', { className: 'settings-section', style: { marginBottom: '20px', padding: '15px', background: 'var(--surface)', borderRadius: '8px' } },
-            el('h3', {}, 'P2P Synchronization'),
+        const syncSection = el('div', { className: 'settings-section', style: { marginBottom: '20px', padding: '15px', background: '#fff', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' } },
+            el('h3', { style: 'margin-top: 0; color: #333;' }, 'P2P Synchronization'),
             
-            //  Device Name Input
-            el('div', { style: { marginBottom: '10px' } },
-                el('label', { style: { display: 'block', fontSize: '12px', color: '#666' } }, 'Device Name'),
+            // Device Name
+            el('div', { style: { marginBottom: '15px' } },
+                el('label', { style: { display: 'block', fontSize: '12px', color: '#666', marginBottom: '5px' } }, 'Device Name'),
                 el('div', { style: { display: 'flex', gap: '8px' } },
                     el('input', { 
-                        type: 'text', 
-                        value: currentName,
-                        id: 'device-name-input',
-                        style: { flex: 1, padding: '4px' },
-                        placeholder: 'Enter device name'
+                        type: 'text', value: currentName, id: 'device-name-input',
+                        style: { flex: 1, padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }
                     }),
                     el('button', {
                         className: 'btn-primary',
-                        style: { fontSize: '12px', padding: '4px 8px' },
+                        style: { padding: '8px 12px', background: '#3b82f6', color: 'white', borderRadius: '4px' },
                         onclick: () => {
                             const newName = document.getElementById('device-name-input').value.trim();
                             if (newName) {
                                 localStorage.setItem('device_name', newName);
-                                // 若 PeerManager 已啟動，更新其名稱
                                 if (syncGateway.peerManager) {
                                     syncGateway.peerManager.deviceName = newName;
-                                    syncGateway.peerManager.announce(); // 廣播新名稱
+                                    syncGateway.peerManager.announce();
                                 }
-                                import('./components.js').then(({ Toast }) => Toast.show('Device name saved'));
+                                Toast.show('Device name saved');
                             }
                         }
                     }, 'Save')
                 )
             ),
 
-            el('p', {}, `My Peer ID: `),
-            el('code', { style: { background: '#eee', padding: '4px' } }, peerId),
-            el('div', { style: { marginTop: '10px' } }, 
-                syncGateway.isSyncing 
-                ? el('span', { style: { color: 'green' } }, '● Online (Broadcasting)') 
-                : el('span', { style: { color: 'red' } }, '● Offline')
+            // Peer ID Display
+            el('div', { style: { background: '#f1f5f9', padding: '10px', borderRadius: '6px', marginBottom: '15px' } },
+                el('div', { style: { fontSize: '12px', color: '#64748b' } }, 'MY PEER ID (Share this):'),
+                el('div', { style: { fontWeight: 'bold', fontFamily: 'monospace', fontSize: '16px', wordBreak: 'break-all' } }, peerId)
+            ),
+
+            // Scan / Connect
+            el('div', { style: { display: 'flex', gap: '8px' } },
+                el('button', { 
+                    className: 'btn-secondary',
+                    style: { flex: 1, padding: '10px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '6px' },
+                    onclick: () => {
+                        // Scan Button Logic
+                        if (syncGateway.peerManager) {
+                            syncGateway.peerManager.announce(); // Broadcast Hello
+                            Toast.show('Scanning for peers...');
+                        } else {
+                            Toast.show('Sync Gateway not ready', 'error');
+                        }
+                    }
+                }, '📡 Scan / Broadcast'),
             )
         );
 
-        // 2. Conflict Management (Inbox)
-        const inbox = syncGateway.getInbox();
-        const inboxSection = el('div', { className: 'settings-section', style: { marginBottom: '20px', padding: '15px', background: 'var(--surface)', borderRadius: '8px' } },
-            el('h3', {}, `Conflict Inbox (${inbox.length})`),
-            inbox.length === 0 ? el('p', { style: { color: '#888' } }, 'No conflicts pending.') : this._renderInboxList(inbox, syncGateway)
-        );
-
-        // 3. Danger Zone
-        const dangerSection = el('div', { className: 'settings-section', style: { padding: '15px', border: '1px solid var(--danger)', borderRadius: '8px' } },
-            el('h3', { style: { color: 'var(--danger)' } }, 'Danger Zone'),
-            el('p', {}, 'Factory Reset will delete ALL local data (Customers, Records, Tags). This cannot be undone.'),
+        // 3. Data Management (Recycle Bin)
+        const dataSection = el('div', { className: 'settings-section', style: { padding: '15px', background: '#fff', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' } },
+            el('h3', { style: 'margin-top: 0; color: #333;' }, 'Data Management'),
+            this._createMenuBtn('♻️ Recycle Bin (Restore Data)', () => this._showRecycleBin()),
             el('button', { 
                 className: 'btn-secondary',
-                style: { borderColor: 'var(--danger)', color: 'var(--danger)' },
+                style: { width: '100%', padding: '12px', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', marginTop: '10px', background: 'white' },
                 onclick: () => this._handleFactoryReset()
-            }, '🗑️ Factory Reset')
+            }, '🗑️ Factory Reset (Clear All)')
         );
 
-        // Back Button
-        const backBtn = el('button', { 
-            className: 'btn-secondary', 
-            style: { marginBottom: '20px' },
-            onclick: () => this.router.back() 
-        }, '← Back');
+        this.root.innerHTML = '';
+        this.root.append(header, container);
+        container.append(adminSection, syncSection, dataSection);
+    }
 
-        this.root.append(backBtn, container);
-        container.append(syncSection, inboxSection, dangerSection);
+    _createMenuBtn(label, handler) {
+        return el('button', {
+            style: { 
+                width: '100%', textAlign: 'left', padding: '12px 0', 
+                borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between',
+                background: 'none', cursor: 'pointer', fontSize: '16px'
+            },
+            onclick: handler
+        }, label, el('span', { style: { color: '#ccc' } }, '›'));
+    }
+
+    // 回收桶實作 (Recycle Bin Implementation)
+    async _showRecycleBin() {
+        const { storageManager } = await import('../core/db.js');
+        const { StorageKeys } = await import('../config.js');
+
+        // 1. 獲取所有已刪除資料 (需繞過預設的 filter)
+        // 我們使用 runTransaction 直接存取 Store
+        const deletedItems = [];
+        const stores = [StorageKeys.CUSTOMERS, StorageKeys.RECORDS];
+
+        await storageManager.runTransaction(stores, 'readonly', async (tx) => {
+            for (const storeName of stores) {
+                const allItems = await new Promise((resolve, reject) => {
+                    const req = tx.objectStore(storeName).getAll();
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(req.error);
+                });
+                // Filter manually for _deleted: true
+                const deleted = allItems.filter(item => item._deleted);
+                deleted.forEach(item => deletedItems.push({ ...item, _store: storeName }));
+            }
+        });
+
+        // 2. Render UI
+        const list = el('div', { style: { maxHeight: '400px', overflowY: 'auto' } });
+        
+        if (deletedItems.length === 0) {
+            list.innerHTML = '<div style="padding:20px; text-align:center; color:#888;">Recycle Bin is empty.</div>';
+        } else {
+            deletedItems.forEach(item => {
+                const row = el('div', { 
+                    style: { padding: '10px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' } 
+                },
+                    el('div', {}, 
+                        el('div', { style: { fontWeight: 'bold' } }, item.name || item.id.slice(0, 8)),
+                        el('div', { style: { fontSize: '12px', color: '#666' } }, `${item._store} | Deleted: ${new Date(item.updatedAt).toLocaleDateString()}`)
+                    ),
+                    el('div', { style: { display: 'flex', gap: '5px' } },
+                        el('button', { 
+                            style: { padding: '4px 8px', background: '#22c55e', color: 'white', borderRadius: '4px', fontSize: '12px' },
+                            onclick: () => this._handleRestore(item)
+                        }, 'Restore'),
+                        el('button', { 
+                            style: { padding: '4px 8px', background: '#ef4444', color: 'white', borderRadius: '4px', fontSize: '12px' },
+                            onclick: () => this._handleHardDelete(item)
+                        }, 'Del')
+                    )
+                );
+                list.appendChild(row);
+            });
+        }
+
+        new Modal('Recycle Bin', list).open();
+    }
+
+    async _handleRestore(item) {
+        const { storageManager } = await import('../core/db.js');
+        if (confirm(`Restore "${item.name || item.id}"?`)) {
+            await storageManager.runTransaction([item._store], 'readwrite', async (tx) => {
+                const record = { ...item, _deleted: false, updatedAt: new Date().toISOString() };
+                delete record._store; // Remove temp prop
+                await new Promise((resolve, reject) => {
+                    const req = tx.objectStore(item._store).put(record);
+                    req.onsuccess = resolve;
+                    req.onerror = reject;
+                });
+            });
+            Toast.show('Item restored');
+            // Close modal to refresh (simple way)
+            document.querySelector('.modal-overlay')?.remove();
+            this._showRecycleBin(); // Re-open to refresh list
+        }
+    }
+
+    async _handleHardDelete(item) {
+        const { storageManager } = await import('../core/db.js');
+        if (confirm(`Permanently delete "${item.name || item.id}"? This cannot be undone.`)) {
+            await storageManager.runTransaction([item._store], 'readwrite', async (tx) => {
+                await new Promise((resolve, reject) => {
+                    const req = tx.objectStore(item._store).delete(item.id);
+                    req.onsuccess = resolve;
+                    req.onerror = reject;
+                });
+            });
+            Toast.show('Item permanently deleted');
+            document.querySelector('.modal-overlay')?.remove();
+            this._showRecycleBin();
+        }
     }
 
     _renderInboxList(inbox, gateway) {
@@ -914,7 +1200,7 @@ export class DraftListView extends BaseView {
                         )
                     );
                     
-                    //  Swipe Left to Delete Logic
+                    // Swipe Left to Delete Logic
                     let startX = 0;
                     let currentX = 0;
                     const THRESHOLD = -80; // Swipe distance to trigger delete intent
