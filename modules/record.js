@@ -142,24 +142,25 @@ class RecordManager {
             id: UUID(),
             customerId,
             status: RecordStatus.DRAFT,
-            version: 'V1.0', // [Fix] 初始版本號
+            version: 'V1.0',
             
-            // [Fix] SOAP 結構化資料
+            // SOAP 結構化資料
             soap: {
-                s: initialData.soap?.s || '', // Subjective (主訴)
-                o: initialData.soap?.o || '', // Objective (客觀檢查)
-                a: initialData.soap?.a || '', // Assessment (評估)
-                p: initialData.soap?.p || ''  // Plan (計畫)
+                s: initialData.soap?.s || '', 
+                o: initialData.soap?.o || '', 
+                a: initialData.soap?.a || '', 
+                p: initialData.soap?.p || ''
             },
             
-            // [Fix] 人體圖選取狀態持久化
-            bodyParts: initialData.bodyParts || [], 
+            // [Fix] 新增 ROM 與 Assessments 欄位
+            rom: initialData.rom || {}, // { 'shoulder_flex': 120 }
+            assessments: initialData.assessments || [], // [{ id: 'test_1', result: '+' }]
             
+            bodyParts: initialData.bodyParts || [], 
             tags: initialData.tags || [],
             images: [],
             attachments: [],
-            
-            changeLog: [], // [Fix] 變更歷程
+            changeLog: [],
             
             // Legacy content fallback
             content: initialData.content || {},
@@ -173,13 +174,54 @@ class RecordManager {
     }
 
     /**
+     * 延伸上次紀錄 (Extend from Last Visit)
+     * 產生中文摘要並填入新紀錄的 Objective 欄位
+     */
+    async extendFrom(lastRecord) {
+        if (!lastRecord) throw new Error('No record to extend');
+
+        // 1. 生成摘要文字
+        const dateStr = new Date(lastRecord.updatedAt).toLocaleDateString();
+        const tagsStr = (lastRecord.tags || []).join(', ');
+        const partsStr = (lastRecord.bodyParts || []).join(', ');
+        
+        // 格式化 ROM 數據
+        let romStr = '';
+        if (lastRecord.rom) {
+            romStr = Object.entries(lastRecord.rom)
+                .map(([k, v]) => `${k}: ${v}°`)
+                .join(', ');
+        }
+
+        const summary = `
+[上次就診] ${dateStr}
+--------------------------------
+主訴: ${lastRecord.soap?.s || '無'}
+部位: ${partsStr}
+標籤: ${tagsStr}
+ROM: ${romStr || '無'}
+評估: ${lastRecord.soap?.a || '無'}
+--------------------------------
+`;
+
+        // 2. 建立新紀錄 (帶入摘要至 O，並複製 Tags 與 BodyParts 以便延續追蹤)
+        return await this.create(lastRecord.customerId, {
+            soap: {
+                s: '', // 主訴通常每次不同，留白
+                o: summary, // 摘要填入 O
+                a: '',
+                p: lastRecord.soap?.p || '' // 計畫通常可延續
+            },
+            tags: [...(lastRecord.tags || [])],
+            bodyParts: [...(lastRecord.bodyParts || [])],
+            rom: { ...(lastRecord.rom || {}) } // 複製上次角度作為參考基準
+        });
+    }
+
+    /**
      * 儲存/更新病歷 (ACID Transaction)
-     * @param {string} id 
-     * @param {Object} changes - 包含內容與版本策略 { soap, tags, versionStrategy, changeReason }
-     * @param {string} targetStatus 
      */
     async save(id, changes, targetStatus = RecordStatus.DRAFT) {
-        // 1. 準備交易涉及的 Stores
         const stores = [
             StorageKeys.RECORDS, 
             StorageKeys.DRAFTS, 
@@ -187,21 +229,12 @@ class RecordManager {
             StorageKeys.TAGS
         ];
 
-        // 2. 執行原子交易
         return await storageManager.runTransaction(stores, 'readwrite', async (tx) => {
-            // A. 讀取與驗證
             const current = await tx.get(StorageKeys.RECORDS, id);
             if (!current) throw new Error(ErrorCodes.STR_004);
             
-            // Draft 狀態下允許自由編輯，Finalized 狀態下禁止編輯 (需走 Revision)
-            if (current.status === RecordStatus.FINALIZED && targetStatus === RecordStatus.FINALIZED) {
-               // 這裡是防止已定稿的被覆蓋，除非是 Revision (Revision 也是新的一筆 Draft)
-               // 但若是在 Draft -> Finalized 的過程中，則是合法的
-            }
-            
             RecordFSM.validateTransition(current.status, targetStatus);
 
-            // B. 版本號計算 (僅在定稿時處理)
             let newVersion = current.version || 'V1.0';
             let newChangeLog = current.changeLog || [];
 
@@ -216,8 +249,6 @@ class RecordManager {
                 }
             }
 
-            // C. 建構更新物件
-            // 剔除 auxiliary fields (strategy, reason)
             const { versionStrategy, changeReason, ...realChanges } = changes;
             
             const updated = { 
@@ -230,16 +261,11 @@ class RecordManager {
             
             await tx.put(StorageKeys.RECORDS, updated);
 
-            // D. 若定稿 (Finalized) 的連動操作
             if (targetStatus === RecordStatus.FINALIZED) {
-                // 刪除草稿 (Atomic)
                 await draftManager.discard(id, tx);
                 await draftManager.discard(current.customerId, tx);
-
-                // 更新顧客統計 (Atomic)
                 await customerManager.updateVisitStats(current.customerId, updated.updatedAt, tx);
                 
-                // 同步標籤 (Atomic)
                 if (updated.tags && updated.tags.length > 0) {
                     await tagManager.syncTags(updated.tags, current.tags || [], tx);
                 }
@@ -249,15 +275,9 @@ class RecordManager {
         });
     }
 
-    /**
-     * 版本號遞增邏輯
-     * @param {string} currentVer "V1.0"
-     * @param {string} strategy "MAJOR" | "MINOR" | "NONE"
-     */
     _incrementVersion(currentVer, strategy) {
-        // Regex parse "V{major}.{minor}"
         const match = currentVer.match(/^V(\d+)\.(\d+)$/);
-        if (!match) return currentVer; // Fallback
+        if (!match) return currentVer;
 
         let major = parseInt(match[1], 10);
         let minor = parseInt(match[2], 10);
@@ -290,10 +310,6 @@ class RecordManager {
         return revision;
     }
 
-    /**
-     * 封存病歷 (Cold Storage)
-     * 原子操作：寫入 Archived -> 刪除 Records
-     */
     async archive(id) {
         const stores = [StorageKeys.RECORDS, StorageKeys.ARCHIVED];
         
@@ -301,14 +317,12 @@ class RecordManager {
             const record = await tx.get(StorageKeys.RECORDS, id);
             if (!record) throw new Error(ErrorCodes.STR_004);
 
-            // 1. 寫入 Archived Store
             await tx.put(StorageKeys.ARCHIVED, {
                 ...record,
                 archivedAt: new Date().toISOString(),
                 originalStore: StorageKeys.RECORDS
             });
 
-            // 2. 從 Records Store 刪除 (Soft Delete)
             await tx.delete(StorageKeys.RECORDS, id);
         });
 
@@ -324,5 +338,4 @@ class RecordManager {
         return await storageManager.get(StorageKeys.RECORDS, id);
     }
 }
-
 export const recordManager = new RecordManager();

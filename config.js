@@ -156,69 +156,113 @@ export const TissueStyles = Object.freeze({
     NERVE:         { s: 90, l: 50, label: '神經' }
 });
 
-// 4. 非解剖類專屬色票 (Category Palettes)
-// 由 UI/UX 定義，互不干擾，且完全不使用灰色
+// 4. 通用標籤色票 (Tag Palettes)
+// 提供三組風格迥異的色系，供病史、動作、個人標籤自由選用
+// 設計原則：高對比度、不與解剖標籤混淆、純粹顏色描述
 export const TagPalettes = Object.freeze({
-    // A. 病史 (HISTORY) - 醫療檔案風格
-    // 關鍵詞：慢性、醫療、警示
-    HISTORY: [
-        { id: 'chronic', val: '#701a75', label: '紫羅蘭 (慢性病史)' }, // Muted Purple
-        { id: 'medical', val: '#0e7490', label: '深青色 (醫療狀況)' }, // Clinical Cyan
-        { id: 'alert',   val: '#be123c', label: '胭脂紅 (重要警示)' }  // Muted Red
+    // 第一組：暖色/大地色系 (Warm/Earth Tones)
+    SET_A: [
+        { id: 'amber',      val: '#d97706', label: '琥珀金' },
+        { id: 'terracotta', val: '#9a3412', label: '陶土紅' },
+        { id: 'bronze',     val: '#854d0e', label: '青銅褐' }
     ],
 
-    // B. 動作模式 (MOVEMENT) - 運動科學風格
-    // 關鍵詞：動能、觀察、修正
-    MOVEMENT: [
-        { id: 'kinetic', val: '#ea580c', label: '活力橘 (動作障礙)' }, // Kinetic Orange
-        { id: 'flow',    val: '#4f46e5', label: '靛藍色 (控制問題)' }, // Indigo
-        { id: 'correct', val: '#16a34a', label: '信號綠 (代償模式)' }  // Signal Green
+    // 第二組：冷色/專業色系 (Cool/Professional Tones)
+    SET_B: [
+        { id: 'teal',       val: '#0f766e', label: '松石綠' },
+        { id: 'indigo',     val: '#4338ca', label: '靛青藍' },
+        { id: 'slate',      val: '#334155', label: '板岩灰' }
     ],
 
-    // C. 個人標籤 (PERSONAL) - 人文生活風格
-    // 關鍵詞：VIP、職業、心理
-    PERSONAL: [
-        { id: 'vip',     val: '#d97706', label: '琥珀金 (VIP/身分)' }, // Amber/Gold
-        { id: 'social',  val: '#db2777', label: '洋紅色 (個性/溝通)' }, // Magenta
-        { id: 'life',    val: '#854d0e', label: '青銅色 (職業/習慣)' }  // Bronze/Brown
+    // 第三組：鮮明/寶石色系 (Vibrant/Jewel Tones)
+    SET_C: [
+        { id: 'magenta',    val: '#be185d', label: '洋紅色' },
+        { id: 'violet',     val: '#7c3aed', label: '紫羅蘭' },
+        { id: 'emerald',    val: '#047857', label: '寶石綠' }
     ]
 });
 
 /**
+ * 標準 ROM 定義 (Standard Range of Motion)
+ * 增加 sideType 屬性以區分：
+ * - 'none': 不分左右 (如軀幹前屈)
+ * - 'lr': 分左右側 (如肩屈曲)
+ * - 'rot': 分左旋/右旋 (如頸椎旋轉)
+ */
+export const StandardROM = Object.freeze([
+  // --- 頸椎 (Cervical Spine) ---
+  { id: 'neck_flex',      label: '頸椎前屈', sideType: 'none', min: 0, max: 50,  norm: 45 },
+  { id: 'neck_ext',       label: '頸椎後伸', sideType: 'none', min: 0, max: 70,  norm: 45 },
+  { id: 'neck_side_flex', label: '頸椎側屈', sideType: 'lr',   min: 0, max: 45,  norm: 45 },
+  { id: 'neck_rot',       label: '頸椎旋轉', sideType: 'rot',  min: 0, max: 90,  norm: 80 },
+
+  // --- 胸腰椎 (Thoracolumbar Spine) ---
+  { id: 'trunk_flex',      label: '軀幹前屈', sideType: 'none', min: 0, max: 80,  norm: 60 },
+  { id: 'trunk_ext',       label: '軀幹後伸', sideType: 'none', min: 0, max: 30,  norm: 25 },
+  { id: 'trunk_side_flex', label: '軀幹側屈', sideType: 'lr',   min: 0, max: 35,  norm: 35 },
+  { id: 'trunk_rot',       label: '軀幹旋轉', sideType: 'rot',  min: 0, max: 45,  norm: 45 },
+
+  // --- 肩關節 (Shoulder) ---
+  { id: 'shoulder_flex',  label: '肩屈曲',     sideType: 'lr', min: 0, max: 180, norm: 180 },
+  { id: 'shoulder_ext',   label: '肩後伸',     sideType: 'lr', min: 0, max: 60,  norm: 50 },
+  { id: 'shoulder_abd',   label: '肩外展',     sideType: 'lr', min: 0, max: 180, norm: 180 },
+  { id: 'shoulder_er',    label: '肩外旋',     sideType: 'lr', min: 0, max: 90,  norm: 90 },
+  { id: 'shoulder_ir',    label: '肩內旋',     sideType: 'lr', min: 0, max: 90,  norm: 70 },
+  { id: 'shoulder_h_abd', label: '肩水平外展', sideType: 'lr', min: 0, max: 45,  norm: 45 },
+  { id: 'shoulder_h_add', label: '肩水平內收', sideType: 'lr', min: 0, max: 135, norm: 130 },
+
+  // --- 肘與前臂 (Elbow & Forearm) ---
+  { id: 'elbow_flex',  label: '肘屈曲',   sideType: 'lr', min: 0, max: 150, norm: 145 },
+  { id: 'elbow_ext',   label: '肘伸展',   sideType: 'lr', min: -10, max: 0, norm: 0 },
+  { id: 'forearm_pro', label: '前臂旋前', sideType: 'lr', min: 0, max: 80,  norm: 80 },
+  { id: 'forearm_sup', label: '前臂旋後', sideType: 'lr', min: 0, max: 80,  norm: 80 },
+
+  // --- 腕關節 (Wrist) ---
+  { id: 'wrist_flex', label: '腕屈曲', sideType: 'lr', min: 0, max: 80,  norm: 80 },
+  { id: 'wrist_ext',  label: '腕伸展', sideType: 'lr', min: 0, max: 70,  norm: 70 },
+  { id: 'wrist_rd',   label: '橈側偏', sideType: 'lr', min: 0, max: 20,  norm: 20 },
+  { id: 'wrist_ud',   label: '尺側偏', sideType: 'lr', min: 0, max: 30,  norm: 30 },
+
+  // --- 髖關節 (Hip Joint) ---
+  { id: 'hip_flex', label: '髖屈曲', sideType: 'lr', min: 0, max: 125, norm: 120 },
+  { id: 'hip_ext',  label: '髖後伸', sideType: 'lr', min: 0, max: 30,  norm: 20 },
+  { id: 'hip_abd',  label: '髖外展', sideType: 'lr', min: 0, max: 45,  norm: 45 },
+  { id: 'hip_add',  label: '髖內收', sideType: 'lr', min: 0, max: 30,  norm: 25 },
+  { id: 'hip_er',   label: '髖外旋', sideType: 'lr', min: 0, max: 50,  norm: 45 },
+  { id: 'hip_ir',   label: '髖內旋', sideType: 'lr', min: 0, max: 45,  norm: 35 },
+
+  // --- 膝關節 (Knee Joint) ---
+  { id: 'knee_flex', label: '膝屈曲', sideType: 'lr', min: 0, max: 150, norm: 135 },
+  { id: 'knee_ext',  label: '膝伸展', sideType: 'lr', min: -10, max: 0, norm: 0 },
+
+  // --- 踝關節與足部 (Ankle & Foot) ---
+  { id: 'ankle_df',  label: '踝背屈', sideType: 'lr', min: 0, max: 20,  norm: 20 },
+  { id: 'ankle_pf',  label: '踝蹠屈', sideType: 'lr', min: 0, max: 50,  norm: 45 },
+  { id: 'ankle_inv', label: '足內翻', sideType: 'lr', min: 0, max: 35,  norm: 35 },
+  { id: 'ankle_eve', label: '足外翻', sideType: 'lr', min: 0, max: 20,  norm: 15 }
+]);
+
+/**
  * 解剖學權重表 (AnatomicalWeights)
  * 用於搜尋排序與 TagSelector 列表排序
- * 數值越高，排序越靠前
  */
 export const AnatomicalWeights = Object.freeze({
-    // --- 核心中軸與生命徵象 (最高權重) ---
     'Head': 100, '頭': 100,
     'Neck': 95,  '頸': 95,
-    'Torso': 90, // 舊相容
-    
-    // --- 軀幹核心 (次高權重) ---
     'Chest': 85, '胸': 85,
     'Back': 85,  '背': 85,
     'Waist': 85, '腰': 85,
     'Abdomen': 85, '腹': 85,
-    
-    // --- 肢體根部與大關節 (中權重) ---
     'Shoulder': 80, '肩': 80,
     'Hip': 80,      '臀': 80,
     'Joint': 80,    '關節': 80,
-
-    // --- 四肢段 (中低權重) ---
     'Arm': 70,   '臂': 70,
-    'Leg': 70,   '大腿': 70, '小腿': 70, // 包含 Leg 舊相容
-
-    // --- 末端 (低權重) ---
+    'Leg': 70,   '大腿': 70, '小腿': 70,
     'Hand': 60,  '手': 60,
     'Foot': 60,  '足': 60,
-
-// --- 其他 ---
     'Skin': 40,
     'General': 10
 });
-
 /**
  * 動作評估資料庫 (Assessment Database)
  * 根據選取的部位 (Key) 自動篩選測試項目 (Values)
