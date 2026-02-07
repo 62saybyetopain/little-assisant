@@ -2,43 +2,42 @@
    1. Variables & Root (Optimized)
    ========================================= */
 :root {
-    /* Brand Colors */
     --primary: #0ea5e9;
     --primary-dark: #0284c7;
-    --primary-soft: #e0f2fe;
+    --primary-soft: #f0f9ff;
     
-    /* Functional Colors */
+    /* 專業功能色 */
     --success: #10b981;
     --warning: #f59e0b;
     --danger: #ef4444;
     
-    /* Neutrals */
-    --text-main: #0f172a;
-    --text-secondary: #64748b;
+    /* 提升對比的中性色 */
+    --text-main: #1e293b;
+    --text-secondary: #475569;
     --text-muted: #94a3b8;
     --surface: #ffffff;
-    --background: #f8fafc;
+    --background: #f1f5f9; /* 稍微加深背景色，凸顯卡片 */
     --border: #e2e8f0;
     
-    /* Dimensions */
-    --header-height: 64px;
-    --radius-sm: 8px;
-    --radius-md: 12px;
+    /* 尺寸與邊距 */
+    --header-height: 60px;
+    --radius-sm: 6px;
+    --radius-md: 10px;
     --radius-lg: 16px;
     --radius-full: 9999px;
-    --fab-size: 60px;
+    --fab-size: 56px;
     
-    /* Z-index map */
+    /* 層級 */
     --z-header: 100;
     --z-fab: 500;
     --z-modal: 1000;
     --z-toast: 2000;
     
-    /* Effects */
-    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
-    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-    --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    /* 現代化陰影：使用更細緻的擴散 */
+    --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    --shadow-lg: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+    --transition: all 0.2s ease-in-out;
 }
 
 /* =========================================
@@ -168,14 +167,20 @@ button {
 }
 
 /* Search Bar */
-.search-bar {
+.search-bar, .soap-textarea {
     width: 100%;
-    padding: 16px;
-    border: none;
-    border-bottom: 1px solid var(--border);
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
     background-color: var(--surface);
     font-size: 16px;
     outline: none;
+    transition: var(--transition);
+}
+
+.search-bar:focus, .soap-textarea:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-soft);
 }
 
 /* List Items */
@@ -296,14 +301,16 @@ button {
 
 .modal-container {
     background-color: var(--surface);
-    width: 90%;
-    max-width: 420px;
+    width: 92%;
+    max-width: 400px;
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
     display: flex;
     flex-direction: column;
-    max-height: 85dvh;
-    animation: slideUp 0.3s ease-out;
+    max-height: 80dvh; /* 縮小高度，留出更多邊距感 */
+    margin: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.1); /* 微妙的邊框白邊 */
+    animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* =========================================
