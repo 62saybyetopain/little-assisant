@@ -12,7 +12,7 @@ import { recordManager, draftManager } from '../modules/record.js';
 import { searchEngine } from '../core/search.js';
 import { storageManager } from '../core/db.js'; 
 import { EventBus } from '../core/utils.js';
-import { EventTypes, RecordStatus, StandardROM } from '../config.js';
+import { EventTypes, RecordStatus } from '../config.js';
 
 // --- Base View ---
 class BaseView {
@@ -30,14 +30,14 @@ export class CustomerListView extends BaseView {
         super();
         this.router = router;
         this.items = [];
-        this.draftSet = new Set(); // Cache for draft existence
+        this.draftSet = new Set(); // [Fix] Cache for draft existence
         this.rowHeight = 60; // px
         this.viewportHeight = 0;
         this.render();
     }
 
     async render() {
-        // 0. Header with Sync Status
+        // [Fix] 0. Header with Sync Status
         const header = this._renderHeader();
 
         // 1. Search Bar
@@ -60,7 +60,7 @@ export class CustomerListView extends BaseView {
         this.listContainer.append(this.listSpacer, this.listContent);
 
         // 3. FAB (Add Button)
-        // 絕對唯讀：無痕模式下隱藏新增入口
+        // [Fix] 絕對唯讀：無痕模式下隱藏新增入口
         if (!storageManager.isEphemeral) {
             const fab = el('button', {
                 className: 'fab',
@@ -118,7 +118,7 @@ export class CustomerListView extends BaseView {
     }
 
     async _loadData() {
-        // Load Drafts in parallel to identify icons
+        // [Fix] Load Drafts in parallel to identify icons
         const [allDrafts, _] = await Promise.all([
             draftManager.getAll(),
             Promise.resolve() // Placeholder if needed
@@ -133,7 +133,7 @@ export class CustomerListView extends BaseView {
     }
 
     _handleSearch(query) {
-        // 搜尋結果擴充：允許更多結果以便滾動載入，Virtual Scroll 會處理 DOM 效能
+        // [Fix] 搜尋結果擴充：允許更多結果以便滾動載入，Virtual Scroll 會處理 DOM 效能
         // 若資料量真的極大(>10萬)，searchEngine.search 內部應支援 cursor 分頁
         this.items = searchEngine.search(query, { limit: 500, sort: 'relevance' }); 
         
@@ -161,7 +161,7 @@ export class CustomerListView extends BaseView {
             const item = this.items[i];
             const hasDraft = this.draftSet.has(item.id);
 
-            // 長按偵測變數 (Closure scope)
+            // [Fix] 長按偵測變數 (Closure scope)
             let pressTimer = null;
             let isLongPress = false;
 
@@ -280,7 +280,7 @@ export class CustomerListView extends BaseView {
             type: 'tel', placeholder: 'Phone',
             onblur: (e) => {
                 const val = e.target.value;
-                if (val && !/^\d{3,10}$/.test(val)) { // Phone Regex
+                if (val && !/^\d{3,10}$/.test(val)) { // [Fix] Phone Regex
                     feedback.textContent = '❌ Invalid Phone Format';
                     return;
                 }
@@ -447,7 +447,7 @@ export class RecordEditorView extends BaseView {
         this.autoSaveTimer = null;
         this.currentTab = 'tab-visual'; // Default to Visual for quick entry
         
-        // 初始化實例屬性，避免 undefined
+        // [Fix] 初始化實例屬性，避免 undefined
         this.bodyMap = null;
         this.tagSelector = null;
         this.assessmentContainer = null;
@@ -541,7 +541,7 @@ export class RecordEditorView extends BaseView {
         this.data.soap = this.data.soap || {};
         this.data.tags = this.data.tags || [];
         this.data.bodyParts = this.data.bodyParts || [];
-        this.data.rom = this.data.rom || {}; // 初始化 ROM 資料
+        this.data.rom = this.data.rom || {}; // [Fix] 初始化 ROM 資料
         const allTags = await tagManager.getAll();
 
         // --- UI Construction ---
@@ -569,7 +569,7 @@ export class RecordEditorView extends BaseView {
         }, this.data.status === RecordStatus.FINALIZED);
 
         // 3. Tab Navigation (S, O, A, P)
-        // 移除獨立 Visual Tab，整合至 O
+        // [Fix] 移除獨立 Visual Tab，整合至 O
         const tabs = [
             { id: 'tab-s', label: 'S (主訴)' },
             { id: 'tab-o', label: 'O (客觀)' },
@@ -656,90 +656,38 @@ export class RecordEditorView extends BaseView {
         this.root.append(header, navBar, contentContainer, actions);
     }
 
-    /**
-     * ROM 輸入介面產生器 (動態版本)
-     * 依據 StandardROM 配置自動區分左右側與旋轉方向
-     */
+    // [Fix] ROM 輸入介面產生器
     _renderROMInputs() {
-        // 使用 CSS Grid 雙欄佈局
-        const container = el('div', { 
-            style: { 
-                display: 'grid', 
-                gridTemplateColumns: '1fr 1fr', 
-                gap: '12px',
-                padding: '4px'
-            } 
-        });
+        const container = el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' } });
         
-        // 遍歷 config.js 中定義的所有標準動作
-        StandardROM.forEach(action => {
-            let variants = [];
+        // 常用關節定義 (未來可移至 Config)
+        const joints = [
+            { id: 'shoulder_flex_r', label: 'R-Shoulder Flex' },
+            { id: 'shoulder_abd_r',  label: 'R-Shoulder Abd' },
+            { id: 'neck_rot_r',      label: 'R-Neck Rot' },
+            { id: 'neck_rot_l',      label: 'L-Neck Rot' }
+        ];
 
-            // 依據 sideType 決定生成的欄位數量與標籤
-            if (action.sideType === 'lr') {
-                // 區分左右側
-                variants = [
-                    { id: `${action.id}_l`, label: `左-${action.label}` },
-                    { id: `${action.id}_r`, label: `右-${action.label}` }
-                ];
-            } else if (action.sideType === 'rot') {
-                // 區分左旋與右旋
-                variants = [
-                    { id: `${action.id}_l`, label: `${action.label}(左旋)` },
-                    { id: `${action.id}_r`, label: `${action.label}(右旋)` }
-                ];
-            } else {
-                // 單一動作 (如軀幹前屈)
-                variants = [{ id: action.id, label: action.label }];
-            }
-
-            // 渲染每一個變體滑桿
-            variants.forEach(v => {
-                const val = this.data.rom[v.id] || 0;
-                
-                // 頂部標籤與數值顯示 (包含正常值參考)
-                const labelEl = el('div', { 
-                    style: 'font-size: 12px; display: flex; justify-content: space-between; margin-bottom: 4px;' 
-                }, 
-                    el('span', { style: 'color: #475569;' }, v.label),
-                    el('div', {}, 
-                        el('span', { className: 'rom-val', style: 'font-weight: bold; color: #2563eb;' }, `${val}°`),
-                        el('span', { style: 'color: #94a3b8; font-size: 10px; margin-left: 4px;' }, `(目標:${action.norm}°)`)
-                    )
-                );
-                
-                // 滑桿本體
-                const slider = el('input', { 
-                    type: 'range', 
-                    min: action.min, 
-                    max: action.max, 
-                    value: val,
-                    step: 1,
-                    style: { width: '100%', cursor: 'pointer' },
-                    oninput: (e) => {
-                        const newVal = parseInt(e.target.value);
-                        labelEl.querySelector('.rom-val').textContent = `${newVal}°`;
-                        this.data.rom[v.id] = newVal;
-                        this._markDirty();
-                    }
-                });
-
-                // 卡片容器
-                const wrapper = el('div', { 
-                    className: 'rom-slider-card',
-                    style: { 
-                        background: '#fff', 
-                        padding: '10px', 
-                        borderRadius: '8px', 
-                        border: '1px solid #e2e8f0',
-                        boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
-                    } 
-                }, labelEl, slider);
-
-                container.appendChild(wrapper);
+        joints.forEach(j => {
+            const val = this.data.rom[j.id] || 0;
+            const labelEl = el('div', { style: 'font-size: 12px; display: flex; justify-content: space-between;' }, 
+                el('span', {}, j.label),
+                el('span', { className: 'rom-val', style: 'font-weight: bold; color: #2563eb;' }, `${val}°`)
+            );
+            
+            const slider = el('input', { 
+                type: 'range', min: 0, max: 180, value: val,
+                style: { width: '100%', margin: '5px 0' },
+                oninput: (e) => {
+                    labelEl.querySelector('.rom-val').textContent = `${e.target.value}°`;
+                    this.data.rom[j.id] = parseInt(e.target.value);
+                    this._markDirty();
+                }
             });
-        });
 
+            const wrapper = el('div', { style: { background: '#fff', padding: '8px', borderRadius: '6px', border: '1px solid #eee' } }, labelEl, slider);
+            container.appendChild(wrapper);
+        });
         return container;
     }
 
@@ -752,6 +700,12 @@ export class RecordEditorView extends BaseView {
                 if (!this.data.soap) this.data.soap = {};
                 this.data.soap[soapKey] = e.target.value;
                 this._markDirty();
+            },
+            // [防彈佈局] 處理虛擬鍵盤彈出時的視窗對齊
+            onfocus: (e) => {
+                setTimeout(() => {
+                    e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 300); // 延遲等待鍵盤動畫完成
             },
             disabled: this.data.status === RecordStatus.FINALIZED
         });
@@ -884,7 +838,7 @@ export class RecordEditorView extends BaseView {
                 list.appendChild(btn);
             });
 
-            // 宣告 modal 變數以便 onclick 閉包使用
+            // [Fix] 宣告 modal 變數以便 onclick 閉包使用
             const modal = new Modal('Select Template', list);
             modal.open();
         });
@@ -892,33 +846,37 @@ export class RecordEditorView extends BaseView {
 
     async _applyTemplate(template) {
         const { templateManager } = await import('../modules/record.js');
-        
         const hasContent = (this.data.soap?.s || this.data.soap?.o || this.data.soap?.a || this.data.soap?.p);
         let strategy = 'Append';
 
         if (hasContent) {
-            if (confirm(`Current record is not empty.\nClick OK to APPEND (Keep existing).\nClick Cancel to OVERRIDE (Replace all).`)) {
-                strategy = 'Append';
-            } else {
+            if (!confirm("目前紀錄已有內容。\n點擊「確定」進行疊加 (Append)。\n點擊「取消」進行覆蓋 (Override)。")) {
                 strategy = 'Override';
             }
         }
 
+        // [方案 A] 執行模板前先建立快照備份 [cite: 1284]
+        const backupId = `${this.recordId || this.customerId}_backup`;
+        await draftManager.save(backupId, JSON.parse(JSON.stringify(this.data)));
+
+        // 執行合併邏輯 [cite: 1271]
         const mergedRecord = templateManager.merge(this.data, template, strategy);
 
+        // 更新本地數據模型 [cite: 919, 1300]
         this.data.soap = mergedRecord.soap;
         this.data.tags = mergedRecord.tags;
         this.data.bodyParts = mergedRecord.bodyParts;
-        this.data.painScale = mergedRecord.painScale;
+        this.data.rom = mergedRecord.rom || {};
 
-        // 更新 UI
+        // 同步刷新 UI 顯示 [cite: 912, 951]
         ['s', 'o', 'a', 'p'].forEach(key => {
-            const el = this.root.querySelector(`#tab-${key} textarea`);
-            if (el) el.value = this.data.soap[key] || '';
+            const textarea = this.root.querySelector(`#tab-${key} textarea`);
+            if (textarea) textarea.value = this.data.soap[key] || '';
         });
 
         if (this.tagSelector) {
-            mergedRecord.tags.forEach(t => this.tagSelector._addTag(t));
+            this.tagSelector.selected = new Set(this.data.tags);
+            this.tagSelector.render();
         }
 
         if (this.bodyMap) {
@@ -928,7 +886,28 @@ export class RecordEditorView extends BaseView {
         this._markDirty();
         this._updateAssessmentSuggestions(this.data.bodyParts); 
         
-        Toast.show(`Template "${template.title}" applied (${strategy}).`);
+        // 顯示通知並動態掛載撤銷按鈕 [cite: 755, 1164]
+        import('./components.js').then(({ Toast, el }) => {
+            Toast.show(`已套用模板: ${template.title}`, 'success');
+            
+            const undoBtn = el('button', {
+                style: { marginLeft: '12px', color: '#fff', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px' },
+                onclick: async (e) => {
+                    e.preventDefault();
+                    const backup = await draftManager.get(backupId);
+                    if (backup) {
+                        this.data = backup.data;
+                        await this.render(); 
+                        Toast.show('已還原至套用前狀態', 'info');
+                    }
+                }
+            }, '撤銷');
+            
+            // 確保按鈕掛載在最新的 Toast 上 [cite: 759, 1162]
+            const toastElements = document.querySelectorAll('.toast');
+            const lastToast = toastElements[toastElements.length - 1];
+            if (lastToast) lastToast.appendChild(undoBtn);
+        });
     }
 
     onLeave() {
@@ -958,15 +937,15 @@ export class SettingsView extends BaseView {
             style: { display: 'flex', alignItems: 'center', padding: '15px', background: '#fff', borderBottom: '1px solid #eee', position: 'sticky', top: 0, zIndex: 10 } 
         },
             el('button', { onclick: () => this.router.back(), style: 'font-size: 20px; margin-right: 15px; cursor: pointer;' }, '←'),
-            el('h2', { style: 'margin: 0; font-size: 18px;' }, '系統設定 (Settings)')
+            el('h2', { style: 'margin: 0; font-size: 18px;' }, 'System Settings')
         );
 
         // 1. System Management (CRUD Interfaces)
         const adminSection = el('div', { className: 'settings-section', style: { marginBottom: '20px', padding: '15px', background: '#fff', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' } },
-            el('h3', { style: 'margin-top: 0; color: #333;' }, '系統管理'),
-            this._createMenuBtn('🏷️ 標籤管理', () => this._openTagManager()),
-            this._createMenuBtn('💪 動作評估編輯', () => this._openAssessmentEditor()),
-            this._createMenuBtn('📋 模板建立', () => this._openTemplateBuilder())
+            el('h3', { style: 'margin-top: 0; color: #333;' }, 'System Management'),
+            this._createMenuBtn('🏷️ Tag Management', () => this._openTagManager()),
+            this._createMenuBtn('💪 Assessment Editor', () => this._openAssessmentEditor()),
+            this._createMenuBtn('📋 Template Builder', () => this._openTemplateBuilder())
         );
 
         // 2. P2P Synchronization
@@ -974,11 +953,11 @@ export class SettingsView extends BaseView {
         const currentName = localStorage.getItem('device_name') || `Device-${peerId.slice(0, 4)}`;
 
         const syncSection = el('div', { className: 'settings-section', style: { marginBottom: '20px', padding: '15px', background: '#fff', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' } },
-            el('h3', { style: 'margin-top: 0; color: #333;' }, 'P2P 同步設定'),
+            el('h3', { style: 'margin-top: 0; color: #333;' }, 'P2P Synchronization'),
             
             // Device Name
             el('div', { style: { marginBottom: '15px' } },
-                el('label', { style: { display: 'block', fontSize: '12px', color: '#666', marginBottom: '5px' } }, '裝置名稱'),
+                el('label', { style: { display: 'block', fontSize: '12px', color: '#666', marginBottom: '5px' } }, 'Device Name'),
                 el('div', { style: { display: 'flex', gap: '8px' } },
                     el('input', { 
                         type: 'text', value: currentName, id: 'device-name-input',
@@ -995,74 +974,41 @@ export class SettingsView extends BaseView {
                                     syncGateway.peerManager.deviceName = newName;
                                     syncGateway.peerManager.announce();
                                 }
-                                Toast.show('裝置名稱已儲存');
+                                Toast.show('Device name saved');
                             }
                         }
-                    }, '儲存')
+                    }, 'Save')
                 )
             ),
 
             // Peer ID Display
             el('div', { style: { background: '#f1f5f9', padding: '10px', borderRadius: '6px', marginBottom: '15px' } },
-                el('div', { style: { fontSize: '12px', color: '#64748b' } }, '我的 ID (請分享給對方):'),
+                el('div', { style: { fontSize: '12px', color: '#64748b' } }, 'MY PEER ID (Share this):'),
                 el('div', { style: { fontWeight: 'bold', fontFamily: 'monospace', fontSize: '16px', wordBreak: 'break-all' } }, peerId)
             ),
 
-            // Sync Mode Selection
-            el('div', { style: { marginBottom: '15px' } },
-                el('label', { style: { display: 'block', fontSize: '12px', color: '#666', marginBottom: '5px' } }, '同步模式'),
-                el('div', { style: { display: 'flex', gap: '15px' } },
-                    el('label', { style: { display: 'flex', alignItems: 'center', cursor: 'pointer' } },
-                        el('input', { type: 'radio', name: 'sync-mode', value: 'MERGE', checked: true, style: 'margin-right: 5px;' }),
-                        '合併模式 (雙向)'
-                    ),
-                    el('label', { style: { display: 'flex', alignItems: 'center', cursor: 'pointer' } },
-                        el('input', { type: 'radio', name: 'sync-mode', value: 'MIRROR', style: 'margin-right: 5px;' }),
-                        '鏡像模式 (單向覆蓋)'
-                    )
-                )
-            ),
-
-            // Connection Methods
-            el('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
-                // Method 1: Broadcast
+            // Scan / Connect
+            el('div', { style: { display: 'flex', gap: '8px' } },
                 el('button', { 
                     id: 'btn-scan',
                     className: 'btn-secondary',
-                    style: { padding: '10px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '6px', transition: 'all 0.3s' },
+                    style: { flex: 1, padding: '10px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '6px', transition: 'all 0.3s' },
                     onclick: (e) => this._handleScan(e.target)
-                }, '📡 區域廣播掃描 (Scan)'),
-                
-                // Method 2: Direct Connect
-                el('div', { style: { display: 'flex', gap: '8px' } },
-                    el('input', { id: 'target-peer-id', placeholder: '輸入對方 ID 連線...', style: 'flex: 1; padding: 8px; border: 1px solid #ddd; borderRadius: 4px;' }),
-                    el('button', { 
-                        className: 'btn-primary',
-                        style: { padding: '8px 12px', background: '#3b82f6', color: 'white', borderRadius: '4px' },
-                        onclick: () => {
-                            const target = document.getElementById('target-peer-id').value.trim();
-                            if (target) {
-                                // 這裡假設 PeerManager 有 connect 方法，若無則需實作
-                                // 目前僅示意 UI
-                                Toast.show(`嘗試連線至: ${target}`);
-                            }
-                        }
-                    }, '連線')
-                )
+                }, '📡 Scan / Broadcast'),
             )
         );
 
         // 3. Data Management (Recycle Bin & Integrity)
         const dataSection = el('div', { className: 'settings-section', style: { padding: '15px', background: '#fff', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' } },
-            el('h3', { style: 'margin-top: 0; color: #333;' }, '資料管理'),
-            this._createMenuBtn('♻️ 回收桶 (還原資料)', () => this._showRecycleBin()),
-            this._createMenuBtn('🛡️ 檢查資料完整性 (清除幽靈檔案)', () => this._handleIntegrityCheck()),
+            el('h3', { style: 'margin-top: 0; color: #333;' }, 'Data Management'),
+            this._createMenuBtn('♻️ Recycle Bin (Restore Data)', () => this._showRecycleBin()),
+            this._createMenuBtn('🛡️ Check Data Integrity (Fix Orphans)', () => this._handleIntegrityCheck()),
             
             el('button', { 
                 className: 'btn-secondary',
                 style: { width: '100%', padding: '12px', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', marginTop: '10px', background: 'white' },
                 onclick: () => this._handleFactoryReset()
-            }, '🗑️ 原廠重置 (清空所有資料)')
+            }, '🗑️ Factory Reset (Clear All)')
         );
 
         this.root.innerHTML = '';
@@ -1094,33 +1040,33 @@ export class SettingsView extends BaseView {
                     el('button', { 
                         style: { color: 'red', fontSize: '12px' },
                         onclick: async () => {
-                            if(confirm(`確定刪除標籤 "${tag.name}"?`)) {
+                            if(confirm(`Delete tag "${tag.name}"?`)) {
                                 await tagManager.delete(tag.id);
                                 tags.splice(tags.indexOf(tag), 1);
                                 renderList();
                             }
                         }
-                    }, '刪除')
+                    }, 'Del')
                 ));
             });
         };
         renderList();
 
-        const input = el('input', { type: 'text', placeholder: '新標籤名稱', style: 'width: 100%; padding: 8px; margin-bottom: 5px;' });
+        const input = el('input', { type: 'text', placeholder: 'New Tag Name', style: 'width: 100%; padding: 8px; margin-bottom: 5px;' });
         const typeSelect = el('select', { style: 'width: 100%; padding: 8px; margin-bottom: 10px;' },
-            el('option', { value: 'PERSONAL' }, '個人 (Personal)'),
-            el('option', { value: 'HISTORY' }, '病史 (History)'),
-            el('option', { value: 'MOVEMENT' }, '動作 (Movement)')
+            el('option', { value: 'PERSONAL' }, 'Personal (General)'),
+            el('option', { value: 'HISTORY' }, 'History (Medical)'),
+            el('option', { value: 'MOVEMENT' }, 'Movement (Observation)')
         );
 
-        new Modal('標籤管理', el('div', {}, list, input, typeSelect), async () => {
+        new Modal('Tag Manager', el('div', {}, list, input, typeSelect), async () => {
             if (input.value) {
                 await tagManager.saveTagDefinition({
                     name: input.value,
                     type: typeSelect.value,
                     paletteColor: '#3b82f6' 
                 });
-                Toast.show('標籤已建立');
+                Toast.show('Tag created');
             }
         }).open();
     }
@@ -1130,6 +1076,7 @@ export class SettingsView extends BaseView {
         const { StorageKeys } = await import('../config.js');
         const { storageManager } = await import('../core/db.js');
 
+        // 讀取自訂評估 (從 META store)
         const meta = await storageManager.get(StorageKeys.META, 'custom_assessments');
         const customAssessments = meta ? meta.data : [];
 
@@ -1138,7 +1085,7 @@ export class SettingsView extends BaseView {
         const renderList = () => {
             list.innerHTML = '';
             if (customAssessments.length === 0) {
-                list.innerHTML = '<div style="padding:10px; color:#999; text-align:center;">尚無自訂評估項目</div>';
+                list.innerHTML = '<div style="padding:10px; color:#999; text-align:center;">No custom assessments yet.</div>';
             }
             customAssessments.forEach((item, index) => {
                 list.appendChild(el('div', { style: { padding: '8px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
@@ -1149,28 +1096,28 @@ export class SettingsView extends BaseView {
                     el('button', { 
                         style: { color: 'red', fontSize: '12px' },
                         onclick: async () => {
-                            if(confirm(`確定刪除 "${item.name}"?`)) {
+                            if(confirm(`Delete "${item.name}"?`)) {
                                 customAssessments.splice(index, 1);
                                 await storageManager.put(StorageKeys.META, { id: 'custom_assessments', data: customAssessments });
                                 renderList();
                             }
                         }
-                    }, '刪除')
+                    }, 'Del')
                 ));
             });
         };
         renderList();
 
         const regionSelect = el('select', { style: 'width: 100%; padding: 8px; margin-bottom: 5px;' },
-            el('option', { value: 'Shoulder' }, '肩部 (Shoulder)'),
-            el('option', { value: 'Knee' }, '膝部 (Knee)'),
-            el('option', { value: 'Spine' }, '脊椎 (Spine)'),
-            el('option', { value: 'Hip' }, '髖部 (Hip)')
+            el('option', { value: 'Shoulder' }, 'Shoulder'),
+            el('option', { value: 'Knee' }, 'Knee'),
+            el('option', { value: 'Spine' }, 'Spine'),
+            el('option', { value: 'Hip' }, 'Hip')
         );
-        const nameInput = el('input', { type: 'text', placeholder: '測試名稱 (例: Empty Can)', style: 'width: 100%; padding: 8px; margin-bottom: 5px;' });
-        const positiveInput = el('input', { type: 'text', placeholder: '陽性反應 (例: 棘上肌撕裂)', style: 'width: 100%; padding: 8px; margin-bottom: 5px;' });
+        const nameInput = el('input', { type: 'text', placeholder: 'Test Name (e.g. Empty Can)', style: 'width: 100%; padding: 8px; margin-bottom: 5px;' });
+        const positiveInput = el('input', { type: 'text', placeholder: 'Positive Sign (e.g. Supraspinatus tear)', style: 'width: 100%; padding: 8px; margin-bottom: 5px;' });
 
-        new Modal('動作評估編輯', el('div', {}, list, el('hr'), el('h4', {style:'margin:5px 0'}, '新增項目'), regionSelect, nameInput, positiveInput), async () => {
+        new Modal('Assessment Editor', el('div', {}, list, el('hr'), el('h4', {style:'margin:5px 0'}, 'Add New'), regionSelect, nameInput, positiveInput), async () => {
             if (nameInput.value && positiveInput.value) {
                 customAssessments.push({
                     id: 'cust_' + Date.now(),
@@ -1179,18 +1126,18 @@ export class SettingsView extends BaseView {
                     positive: positiveInput.value
                 });
                 await storageManager.put(StorageKeys.META, { id: 'custom_assessments', data: customAssessments });
-                Toast.show('評估項目已儲存');
+                Toast.show('Assessment saved');
             }
         }).open();
     }
 
     // --- Feature: Template Builder CRUD ---
     async _openTemplateBuilder() {
-        const titleInput = el('input', { type: 'text', placeholder: '模板標題', style: 'width: 100%; margin-bottom: 10px; padding: 8px;' });
-        const sInput = el('textarea', { placeholder: '主訴 (S)', style: 'width: 100%; height: 60px; margin-bottom: 5px;' });
-        const oInput = el('textarea', { placeholder: '客觀 (O)', style: 'width: 100%; height: 60px; margin-bottom: 5px;' });
+        const titleInput = el('input', { type: 'text', placeholder: 'Template Title', style: 'width: 100%; margin-bottom: 10px; padding: 8px;' });
+        const sInput = el('textarea', { placeholder: 'Subjective (S)', style: 'width: 100%; height: 60px; margin-bottom: 5px;' });
+        const oInput = el('textarea', { placeholder: 'Objective (O)', style: 'width: 100%; height: 60px; margin-bottom: 5px;' });
         
-        new Modal('新增模板', el('div', {}, titleInput, sInput, oInput), async () => {
+        new Modal('New Template', el('div', {}, titleInput, sInput, oInput), async () => {
             if (!titleInput.value) return;
             const { storageManager } = await import('../core/db.js');
             const { StorageKeys } = await import('../config.js');
@@ -1202,7 +1149,7 @@ export class SettingsView extends BaseView {
                 tags: [],
                 bodyParts: []
             });
-            Toast.show('模板已儲存');
+            Toast.show('Template saved');
         }).open();
     }
 
@@ -1211,8 +1158,9 @@ export class SettingsView extends BaseView {
         console.log('[Settings] Scan button clicked');
         import('../core/sync.js').then(({ syncGateway }) => {
             if (syncGateway.peerManager) {
+                // Visual Feedback
                 const originalText = btn.textContent;
-                btn.textContent = '📡 廣播中...';
+                btn.textContent = '📡 Broadcasting...';
                 btn.style.background = '#e0f2fe';
                 btn.style.borderColor = '#3b82f6';
                 
@@ -1223,16 +1171,16 @@ export class SettingsView extends BaseView {
                     btn.textContent = originalText;
                     btn.style.background = '#f8fafc';
                     btn.style.borderColor = '#cbd5e1';
-                    Toast.show('掃描訊號已發送，等待回應...');
+                    Toast.show('Scan signal sent. Waiting for peers...');
                 }, 2000);
             } else {
                 console.error('[Settings] SyncGateway not ready');
-                Toast.show('同步閘道尚未就緒', 'error');
+                Toast.show('Sync Gateway not ready', 'error');
             }
         });
     }
 
-    // --- Feature: Recycle Bin (Batch Operation) ---
+    // --- Feature: Recycle Bin (Fixed with _rawTx) ---
     async _showRecycleBin() {
         const { storageManager } = await import('../core/db.js');
         const { StorageKeys } = await import('../config.js');
@@ -1242,6 +1190,7 @@ export class SettingsView extends BaseView {
 
         await storageManager.runTransaction(stores, 'readonly', async (tx) => {
             for (const storeName of stores) {
+                // [Fix] 使用 _rawTx 存取底層 IDB 以獲取包含 _deleted 的資料
                 if (tx._rawTx) {
                     const rawReq = tx._rawTx.objectStore(storeName).getAll();
                     const rawItems = await new Promise((resolve, reject) => {
@@ -1249,7 +1198,7 @@ export class SettingsView extends BaseView {
                         rawReq.onerror = () => reject(rawReq.error);
                     });
                     const deleted = rawItems.filter(item => item._deleted);
-                    deleted.forEach(item => deletedItems.push({ ...item, _store: storeName, _selected: false }));
+                    deleted.forEach(item => deletedItems.push({ ...item, _store: storeName }));
                 }
             }
         });
@@ -1257,95 +1206,73 @@ export class SettingsView extends BaseView {
         const list = el('div', { style: { maxHeight: '400px', overflowY: 'auto' } });
         
         if (deletedItems.length === 0) {
-            list.innerHTML = '<div style="padding:20px; text-align:center; color:#888;">回收桶是空的</div>';
+            list.innerHTML = '<div style="padding:20px; text-align:center; color:#888;">Recycle Bin is empty.</div>';
         } else {
-            // Header Row
-            list.appendChild(el('div', { style: { padding: '10px', borderBottom: '2px solid #eee', fontWeight: 'bold', display: 'flex' } },
-                el('div', { style: { width: '30px' } }, '選'),
-                el('div', { style: { flex: 1 } }, '項目名稱'),
-                el('div', { style: { width: '80px' } }, '刪除日期')
-            ));
-
             deletedItems.forEach(item => {
-                const checkbox = el('input', { type: 'checkbox', style: 'margin: 0;' });
-                checkbox.onchange = (e) => { item._selected = e.target.checked; };
-
                 const row = el('div', { 
-                    style: { padding: '10px', borderBottom: '1px solid #eee', display: 'flex', alignItems: 'center' } 
+                    style: { padding: '10px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' } 
                 },
-                    el('div', { style: { width: '30px' } }, checkbox),
-                    el('div', { style: { flex: 1 } }, 
+                    el('div', {}, 
                         el('div', { style: { fontWeight: 'bold' } }, item.name || (item.id ? item.id.slice(0, 8) : 'Unknown')),
-                        el('div', { style: { fontSize: '12px', color: '#666' } }, item._store)
+                        el('div', { style: { fontSize: '12px', color: '#666' } }, `${item._store} | Deleted: ${new Date(item.updatedAt).toLocaleDateString()}`)
                     ),
-                    el('div', { style: { width: '80px', fontSize: '12px', color: '#666' } }, new Date(item.updatedAt).toLocaleDateString())
+                    el('div', { style: { display: 'flex', gap: '5px' } },
+                        el('button', { 
+                            style: { padding: '4px 8px', background: '#22c55e', color: 'white', borderRadius: '4px', fontSize: '12px' },
+                            onclick: () => this._handleRestore(item)
+                        }, 'Restore'),
+                        el('button', { 
+                            style: { padding: '4px 8px', background: '#ef4444', color: 'white', borderRadius: '4px', fontSize: '12px' },
+                            onclick: () => this._handleHardDelete(item)
+                        }, 'Del')
+                    )
                 );
                 list.appendChild(row);
             });
         }
 
-        // Batch Actions
-        const batchActions = el('div', { style: { display: 'flex', gap: '10px', marginTop: '15px', paddingTop: '10px', borderTop: '1px solid #eee' } },
-            el('button', { 
-                className: 'btn-primary',
-                style: { flex: 1, background: '#22c55e' },
-                onclick: async () => {
-                    const selected = deletedItems.filter(i => i._selected);
-                    if (selected.length === 0) return Toast.show('請先勾選項目');
-                    if (confirm(`確定還原 ${selected.length} 個項目?`)) {
-                        await this._batchRestore(selected);
-                        document.querySelector('.modal-overlay')?.remove();
-                        this._showRecycleBin();
-                    }
-                }
-            }, '還原選取'),
-            el('button', { 
-                className: 'btn-secondary',
-                style: { flex: 1, color: '#ef4444', borderColor: '#ef4444' },
-                onclick: async () => {
-                    const selected = deletedItems.filter(i => i._selected);
-                    if (selected.length === 0) return Toast.show('請先勾選項目');
-                    if (confirm(`確定永久刪除 ${selected.length} 個項目? 此動作無法復原!`)) {
-                        await this._batchHardDelete(selected);
-                        document.querySelector('.modal-overlay')?.remove();
-                        this._showRecycleBin();
-                    }
-                }
-            }, '永久刪除')
-        );
-
-        new Modal('回收桶', el('div', {}, list, batchActions)).open();
+        new Modal('Recycle Bin', list).open();
     }
 
-    async _batchRestore(items) {
+    async _handleRestore(item) {
         const { storageManager } = await import('../core/db.js');
-        await storageManager.runTransaction(items.map(i => i._store), 'readwrite', async (tx) => {
-            for (const item of items) {
-                if (tx.restore) await tx.restore(item._store, item);
-            }
-        });
-        Toast.show(`${items.length} 個項目已還原`);
+        if (confirm(`Restore "${item.name || item.id}"?`)) {
+            await storageManager.runTransaction([item._store], 'readwrite', async (tx) => {
+                // 使用 db.js 新增的 restore 方法
+                if (tx.restore) {
+                    await tx.restore(item._store, item);
+                }
+            });
+            Toast.show('Item restored');
+            document.querySelector('.modal-overlay')?.remove();
+            this._showRecycleBin();
+        }
     }
 
-    async _batchHardDelete(items) {
+    async _handleHardDelete(item) {
         const { storageManager } = await import('../core/db.js');
-        await storageManager.runTransaction(items.map(i => i._store), 'readwrite', async (tx) => {
-            for (const item of items) {
-                if (tx.hardDelete) await tx.hardDelete(item._store, item.id);
-            }
-        });
-        Toast.show(`${items.length} 個項目已永久刪除`);
+        if (confirm(`Permanently delete? This cannot be undone.`)) {
+            await storageManager.runTransaction([item._store], 'readwrite', async (tx) => {
+                // 使用 db.js 新增的 hardDelete 方法
+                if (tx.hardDelete) {
+                    await tx.hardDelete(item._store, item.id);
+                }
+            });
+            Toast.show('Item permanently deleted');
+            document.querySelector('.modal-overlay')?.remove();
+            this._showRecycleBin();
+        }
     }
 
     // --- Feature: Data Integrity Check (Ghost Data Cleaner) ---
     async _handleIntegrityCheck() {
-        Toast.show('掃描幽靈檔案中...', 'info');
+        Toast.show('Scanning for orphans...', 'info');
         const report = await searchEngine.checkIntegrity();
         
         if (report.orphanCount === 0) {
-            alert('✅ 系統健康，無幽靈檔案。');
+            alert('✅ System Healthy. No ghost data found.');
         } else {
-            const msg = `⚠️ 發現 ${report.orphanCount} 個孤兒紀錄 (幽靈檔案)。\nIDs: ${report.orphanIds.join(', ')}\n\n是否立即清除?`;
+            const msg = `⚠️ Found ${report.orphanCount} orphan records (Ghost Data).\nIDs: ${report.orphanIds.join(', ')}\n\nClean them up?`;
             if (confirm(msg)) {
                 const { storageManager } = await import('../core/db.js');
                 const { StorageKeys } = await import('../config.js');
@@ -1360,15 +1287,15 @@ export class SettingsView extends BaseView {
                     }
                 });
                 
-                Toast.show(`已清除 ${report.orphanCount} 個孤兒紀錄。`, 'success');
+                Toast.show(`Cleaned ${report.orphanCount} orphans.`, 'success');
                 setTimeout(() => window.location.reload(), 1000);
             }
         }
     }
 
     async _handleFactoryReset() {
-        if (confirm('嚴重警告: 您確定要刪除所有資料嗎?')) {
-            if (confirm('最終確認: 此動作無法復原!')) {
+        if (confirm('CRITICAL WARNING: Are you sure you want to delete ALL data?')) {
+            if (confirm('Final Confirmation: This action is irreversible.')) {
                 try {
                     const { syncGateway } = await import('../core/sync.js');
                     syncGateway.stop();
@@ -1376,19 +1303,22 @@ export class SettingsView extends BaseView {
                     const req = indexedDB.deleteDatabase('LocalFirstDB');
                     
                     req.onsuccess = () => {
+                        // [Fix] Clear LocalStorage to remove Ghost Index
                         localStorage.clear();
-                        alert('系統重置完成，即將重新載入...');
+                        
+                        alert('System Reset Complete. Reloading...');
                         window.location.reload();
                     };
-                    req.onerror = () => alert('重置失敗');
-                    req.onblocked = () => alert('重置被阻擋: 請關閉其他分頁。');
+                    req.onerror = () => alert('Reset Failed');
+                    req.onblocked = () => alert('Reset Blocked: Please close other tabs.');
                 } catch (e) {
-                    alert('錯誤: ' + e.message);
+                    alert('Error: ' + e.message);
                 }
             }
         }
     }
-}// --- Draft List View ---
+}
+// --- Draft List View ---
 export class DraftListView extends BaseView {
     constructor(router) {
         super();
@@ -1441,7 +1371,7 @@ export class DraftListView extends BaseView {
                         )
                     );
                     
-                    // Swipe Left to Delete Logic
+                    // [Fix] Swipe Left to Delete Logic
                     let startX = 0;
                     let currentX = 0;
                     const THRESHOLD = -80; // Swipe distance to trigger delete intent

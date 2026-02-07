@@ -24,39 +24,35 @@ class TemplateManager {
     merge(currentRecord, template, strategy = 'Append') {
         if (!template) throw new Error('Template is null');
 
-        // 1. SOAP Text Merge (Data Structure Alignment)
-        // 確保針對 s, o, a, p 四個欄位分別處理，符合 DB Schema
-        const newSoap = { ...currentRecord.soap };
+        // [數據隔離] 深度複製原始紀錄，確保合併過程不影響快照
+        const result = JSON.parse(JSON.stringify(currentRecord));
+        const newSoap = result.soap || { s: '', o: '', a: '', p: '' };
         const tplSoap = template.soap || {};
         
         ['s', 'o', 'a', 'p'].forEach(key => {
             const tplText = tplSoap[key] || '';
             const currText = newSoap[key] || '';
             
-            if (!tplText) return; // 模板無該欄位內容，跳過
+            if (!tplText) return; 
 
             if (strategy === 'Override' || !currText) {
                 newSoap[key] = tplText;
             } else {
-                // Append mode: 自動換行疊加
                 newSoap[key] = currText + '\n' + tplText;
             }
         });
 
-        // 2. Tags Merge (Union Set)
-        const currentTags = new Set(currentRecord.tags || []);
+        const currentTags = new Set(result.tags || []);
         if (template.tags) {
             template.tags.forEach(t => currentTags.add(t));
         }
 
-        // 3. Body Parts Merge (Union Set)
-        const currentParts = new Set(currentRecord.bodyParts || []);
+        const currentParts = new Set(result.bodyParts || []);
         if (template.bodyParts) {
             template.bodyParts.forEach(p => currentParts.add(p));
         }
 
-        // 4. Numeric Values (Override Logic)
-        let painScale = currentRecord.painScale;
+        let painScale = result.painScale;
         if (template.painScale !== undefined) {
             if (painScale === undefined || painScale === null || strategy === 'Override') {
                 painScale = template.painScale;
@@ -64,7 +60,7 @@ class TemplateManager {
         }
 
         return {
-            ...currentRecord,
+            ...result,
             soap: newSoap,
             tags: Array.from(currentTags),
             bodyParts: Array.from(currentParts),

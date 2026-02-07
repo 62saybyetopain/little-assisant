@@ -2,8 +2,8 @@
  * src/main.js
  * 應用程式入口 (The Bootstrapper)
  * 
- * @description 負責初始化系統、掛載路由、偵測環境並啟動 UI。
-* 包含 Integrity Guard 與 Ephemeral Detector 安全機制。
+ * @description 負責啟動系統並確保核心元件（DB, Search）同步就緒後才啟動 UI。
+ * [PATCH-v6.3.1] 修正啟動競爭與無痕模式路由保護邏輯。
  */
 
 import { storageManager } from './core/db.js';
@@ -13,36 +13,24 @@ import { EventTypes } from './config.js';
 import { CustomerListView, CustomerDetailView, RecordEditorView, SettingsView, DraftListView } from './ui/views.js';
 import { Toast } from './ui/components.js';
 
-// --- 1. Code Integrity Guard (1.2) ---
 const IntegrityGuard = {
     check() {
-        // 檢查關鍵模組是否包含 Git 衝突標記
-        const criticalFunctions = [
-            storageManager.runTransaction,
-            App.prototype.init
-        ];
-
+        const criticalFunctions = [storageManager.runTransaction, App.prototype.init];
         for (const fn of criticalFunctions) {
             const code = fn.toString();
             if (code.includes('<<<<<<<') || code.includes('=======')) {
                 throw new Error('FATAL: Code integrity violation. Git conflict markers detected.');
             }
         }
-        console.log('🛡️ Code Integrity Check Passed');
     }
 };
 
-// --- 2. Ephemeral Detector (1.3) ---
 const EphemeralDetector = {
     async check() {
         if (navigator.storage && navigator.storage.estimate) {
             const estimate = await navigator.storage.estimate();
-            // 嚴格判定：Quota 極小 (通常無痕模式 Quota 會被限制)
             if (estimate.quota < 120 * 1024 * 1024) { 
-                console.warn('[System] Ephemeral Mode Detected (Low Quota).');
-                // 通知 StorageManager 鎖定寫入
                 storageManager.setEphemeralMode(true);
-                Toast.show('⚠️ Incognito Mode Detected. App is Read-Only.', 'warning', 10000);
                 return true;
             }
         }
@@ -50,7 +38,6 @@ const EphemeralDetector = {
     }
 };
 
-// --- Router ---
 class Router {
     constructor(routes) {
         this.routes = routes;
@@ -67,44 +54,29 @@ class Router {
         const hash = window.location.hash.slice(1) || 'list';
         const [path, query] = hash.split('?');
 
-        //  無痕模式路由守衛 (Incognito Route Guard)
-        // 設計目的：防止使用者在無寫入權限的環境下嘗試編輯，導致 UX 挫折
+        // [Fix] 無痕模式存取限制
         if (storageManager.isEphemeral) {
-            const restrictedPaths = ['record', 'drafts'];
-            const isRestricted = restrictedPaths.some(p => path.startsWith(p));
-            
-            if (isRestricted) {
-                console.warn('[Router] Navigation blocked: Incognito Mode');
-                // 動態載入 Toast 以避免循環依賴，並給予使用者明確回饋
-                import('./ui/components.js').then(({ Toast }) => {
-                    Toast.show('編輯功能在無痕模式下已停用', 'warning');
-                });
-                
-                // 強制重導向回列表頁
+            const restricted = ['record', 'drafts'];
+            if (restricted.some(p => path.startsWith(p))) {
+                Toast.show('編輯功能在無痕模式下已停用', 'warning');
                 if (path !== 'list') this.navigate('list');
                 return;
             }
         }
 
         if (this.currentView && this.currentView.onLeave) {
-            const canLeave = this.currentView.onLeave();
-            if (!canLeave) return;
+            if (!this.currentView.onLeave()) return;
         }
 
         let MatchedView = null;
         let params = {};
-
         for (const [pattern, ViewClass] of Object.entries(this.routes)) {
             const regexPattern = pattern.replace(/:([^/]+)/g, '([^/]+)');
-            const regex = new RegExp(`^${regexPattern}$`);
-            const match = path.match(regex);
-
+            const match = path.match(new RegExp(`^${regexPattern}$`));
             if (match) {
                 MatchedView = ViewClass;
                 const paramNames = (pattern.match(/:([^/]+)/g) || []).map(s => s.slice(1));
-                match.slice(1).forEach((val, index) => {
-                    params[paramNames[index]] = val;
-                });
+                match.slice(1).forEach((val, index) => { params[paramNames[index]] = val; });
                 break;
             }
         }
@@ -119,106 +91,66 @@ class Router {
     }
 }
 
-// --- App Bootstrapper ---
 class App {
     constructor() {
         this.loadingOverlay = null;
+        this.router = new Router({
+            'list': CustomerListView,
+            'customer/:id': CustomerDetailView,
+            'record/:id': RecordEditorView,
+            'settings': SettingsView,
+            'drafts': DraftListView
+        });
     }
 
     async init() {
-        console.log('🚀 App Initializing...');
-        
         try {
-            // 1. Integrity Check (First thing!)
             IntegrityGuard.check();
-
-            // 2. Error Handling
             ErrorHandler.init();
 
-            // 3. Environment Check (Gate)
-            await EphemeralDetector.check();
-
-            // 4. Core Init
+            // 1. 環境偵測與持久層啟動
+            const isEphemeral = await EphemeralDetector.check();
             await storageManager.init();
-            searchEngine.init();
+            
+            if (isEphemeral) {
+                Toast.show('⚠️ 無痕模式：資料不會永久保存', 'warning', 8000);
+            }
 
-            // 5. UI Initialization
-            const routes = {
-                'list': CustomerListView,
-                'customer/:id': CustomerDetailView,
-                'record/:id': RecordEditorView,
-                'settings': SettingsView,
-                'drafts': DraftListView
-            };
+            // 2. [PATCH] 同步搜尋索引：確保列表渲染時索引已就緒
+            await searchEngine.init();
 
-            this.router = new Router(routes);
+            // 3. 啟動路由介面
             this.router.start();
 
-            //  Global Dirty Check (Prevent Tab Close)
-            window.onbeforeunload = (e) => {
-                if (this.router.currentView && this.router.currentView.isDirty) {
-                    e.preventDefault();
-                    e.returnValue = ''; // Standard for Chrome
-                    return '';
-                }
-            };
+            EventBus.emit(EventTypes.SYSTEM.READY);
 
-            // [Fix] 移除初始化載入畫面 (Remove Loading Screen)
-            // 確保 UI 初始化完成後，將靜態的 Loading DOM 移除，展示真正的 App 介面
+            // 移除啟動遮罩
             const loader = document.querySelector('.loading-screen');
-            if (loader) loader.remove();
-
-            // 6. Global Event Listeners
-            EventBus.on(EventTypes.SYSTEM.ERROR, (err) => Toast.show(err.message, 'error'));
-            EventBus.on(EventTypes.SYSTEM.QUOTA_WARN, () => Toast.show('Storage Full!', 'error'));
-            
-            //  傳輸鎖定 UI 處理 (Modal/Overlay)
-            // 補足 P2P 同步時的視覺回饋，避免使用者誤以為當機
-            EventBus.on(EventTypes.UI.MODAL, (payload) => this._handleGlobalModal(payload));
-
-            //  背景完整性檢測 (Delayed Start)
-            // 啟動 5 秒後執行，避免影響首屏渲染效能 (Non-blocking)
-            setTimeout(() => {
-                console.log('[System] Triggering background integrity check...');
-                searchEngine.checkIntegrity().then(report => {
-                    if (report && report.orphanCount > 0) {
-                        console.warn('[Integrity] Orphans found:', report);
-                        EventBus.emit(EventTypes.SYSTEM.INTEGRITY_FAIL, report);
-                    } else {
-                        console.log('[Integrity] System healthy.');
-                    }
-                });
-            }, 5000);
-            
-            console.log('✅ App Ready');
+            if (loader) {
+                loader.style.opacity = '0';
+                setTimeout(() => loader.remove(), 300);
+            }
             
         } catch (error) {
-            document.body.innerHTML = `<div style="padding:20px; color:red; font-family:sans-serif;">
-                <h1>System Halted</h1>
-                <p>${error.message}</p>
-            </div>`;
-            console.error(error);
+            document.body.innerHTML = `<div class="fatal-error"><h1>System Halted</h1><p>${error.message}</p></div>`;
+            console.error('[Boot] initialization failed:', error);
         }
+
+        EventBus.on(EventTypes.UI.MODAL, (p) => this._handleGlobalModal(p));
     }
 
-    /**
-     * 處理全域 Modal 事件 (主要用於 P2P 傳輸鎖定)
-     * 實作全螢幕遮罩，攔截所有點擊
-     */
     _handleGlobalModal(payload) {
         if (payload.type === 'LOADING') {
-            if (!this.loadingOverlay) {
-                this.loadingOverlay = document.createElement('div');
-                this.loadingOverlay.className = 'modal-overlay';
-                this.loadingOverlay.style.zIndex = '9999'; // 最高層級
-                this.loadingOverlay.innerHTML = `
-                    <div class="modal-container" style="text-align:center; padding:30px;">
-                        <div class="spinner" style="margin:0 auto 20px;"></div>
-                        <h3>${payload.message || 'Processing...'}</h3>
-                    </div>
-                `;
-                document.body.appendChild(this.loadingOverlay);
-            }
+            if (this.loadingOverlay) return;
+            this.loadingOverlay = document.createElement('div');
+            this.loadingOverlay.className = 'modal-overlay';
+            this.loadingOverlay.style.zIndex = '9999';
+            this.loadingOverlay.innerHTML = `
+                <div class="modal-container" style="text-align:center; padding:30px;">
+                    <div class="spinner" style="margin:0 auto 20px;"></div>
+                    <h3>${payload.message || '處理中...'}</h3>
+                </div>`;
+            document.body.appendChild(this.loadingOverlay);
         } else if (payload.type === 'CLOSE') {
             if (this.loadingOverlay) {
                 this.loadingOverlay.remove();
