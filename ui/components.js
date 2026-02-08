@@ -90,6 +90,8 @@ export class Modal {
 }
 
 // --- Tag Selector ---
+import { TagType, BodyRegions, TissueStyles, AnatomicalWeights } from '../config.js';
+
 export class TagSelector {
     constructor(selectedTags = [], availableTags = [], onChange) {
         this.selected = new Set(selectedTags);
@@ -99,14 +101,11 @@ export class TagSelector {
         this.render();
     }
 
-    /**
-     * [PATCH-v6.3.1] 支援分群渲染邏輯
-     */
     render() {
         this.element.innerHTML = '';
         
-        // 1. 已選取標籤顯示區
-        const selectedContainer = el('div', { className: 'selected-tags' });
+        // 1. 頂部已選取區域
+        const selectedContainer = el('div', { className: 'selected-tags-grid' });
         this.selected.forEach(tagName => {
             const tagData = this.available.find(t => t.name === tagName) || { color: '#64748b' };
             const chip = el('span', { 
@@ -114,73 +113,85 @@ export class TagSelector {
                 style: { backgroundColor: tagData.color }
             }, 
                 tagName,
-                el('span', { 
-                    className: 'tag-remove', 
-                    onclick: () => this._removeTag(tagName) 
-                }, ' ×')
+                el('span', { className: 'tag-remove', onclick: () => this._removeTag(tagName) }, ' ×')
             );
             selectedContainer.appendChild(chip);
         });
 
-        // 2. 輸入與搜尋區
-        const input = el('input', { 
-            type: 'text', 
-            placeholder: '新增或搜尋標籤... (Enter 加入)',
-            onkeydown: (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    this._addTag(e.target.value);
-                    e.target.value = '';
-                }
-            }
+        // 2. 模式切換與輸入區域
+        const inputArea = el('div', { className: 'tag-input-group' });
+        const nameInput = el('input', { 
+            type: 'text', placeholder: '搜尋或自訂...',
+            className: 'tag-main-input'
         });
 
-        // 3. [PATCH] 智慧建議分群 (解剖部位 vs 診斷標籤)
-        const anatomyList = el('div', { className: 'tag-group-list' });
-        const personalList = el('div', { className: 'tag-group-list' });
-
-        const sorted = this._sortTags(this.available);
+        // 3. [核心] 解剖智慧建立區 (Anatomy Quick-Builder)
+        const anatomyBuilder = el('div', { className: 'anatomy-builder' });
         
-        sorted.slice(0, 40).forEach(tag => {
-            if (this.selected.has(tag.name)) return;
+        const regionSelect = el('select', { className: 'mini-select' },
+            el('option', { value: '' }, '--部位--'),
+            ...Object.values(BodyRegions).map(r => el('option', { value: r.id }, r.label))
+        );
 
+        const tissueSelect = el('select', { className: 'mini-select' },
+            el('option', { value: '' }, '--組織--'),
+            ...Object.entries(TissueStyles).map(([key, t]) => el('option', { value: key }, t.label))
+        );
+
+        const btnAddAnatomy = el('button', {
+            className: 'btn-add-anatomy',
+            onclick: () => this._handleAnatomyAdd(regionSelect.value, tissueSelect.value)
+        }, '+');
+
+        anatomyBuilder.append(regionSelect, tissueSelect, btnAddAnatomy);
+
+        // 4. 推薦列表
+        const suggestionsArea = this._renderSuggestions();
+
+        this.element.append(selectedContainer, anatomyBuilder, nameInput, suggestionsArea);
+    }
+
+    _handleAnatomyAdd(regionId, tissueKey) {
+        if (!regionId || !tissueKey) return;
+        
+        const region = Object.values(BodyRegions).find(r => r.id === regionId);
+        const tissue = TissueStyles[tissueKey];
+        const tagName = `${region.label}-${tissue.label}`;
+        
+        // HSL 演算：Hue 來自部位，Saturation/Lightness 來自組織類型
+        const color = `hsl(${region.hue}, ${tissue.s}%, ${tissue.l}%)`;
+        
+        this._addTag(tagName, { type: TagType.ANATOMY, color: color });
+    }
+
+    _renderSuggestions() {
+        const container = el('div', { className: 'tag-suggestions' });
+        const sorted = [...this.available].sort((a, b) => (b.count || 0) - (a.count || 0));
+        
+        sorted.slice(0, 15).forEach(tag => {
+            if (this.selected.has(tag.name)) return;
             const chip = el('span', { 
                 className: 'tag-chip suggestion',
                 style: { backgroundColor: tag.color || '#cbd5e1' },
-                onclick: () => this._addTag(tag.name)
+                onclick: () => this._addTag(tag.name, tag)
             }, tag.name);
-
-            if (tag.type === TagType.ANATOMY) {
-                anatomyList.appendChild(chip);
-            } else {
-                personalList.appendChild(chip);
-            }
+            container.appendChild(chip);
         });
-
-        const suggestionsArea = el('div', { className: 'tag-suggestions' },
-            el('div', { className: 'tag-group' }, el('h6', {}, '解剖部位標記'), anatomyList),
-            el('div', { className: 'tag-group' }, el('h6', {}, '常用診斷與標籤'), personalList)
-        );
-
-        this.element.append(selectedContainer, input, suggestionsArea);
+        return container;
     }
 
-    _sortTags(tags) {
-        return [...tags].sort((a, b) => {
-            const getW = (tagName) => AnatomicalWeights[tagName] || 0;
-            const weightA = getW(a.name);
-            const weightB = getW(b.name);
-
-            if (weightA !== weightB) return weightB - weightA;
-            if ((a.count || 0) !== (b.count || 0)) return (b.count || 0) - (a.count || 0);
-            return a.name.length - b.name.length;
-        });
-    }
-
-    _addTag(name) {
+    _addTag(name, metadata = {}) {
         const cleanName = name.trim();
         if (cleanName && !this.selected.has(cleanName)) {
             this.selected.add(cleanName);
+            // 若為新建立的標籤且未提供顏色，給予預設
+            if (!this.available.find(t => t.name === cleanName)) {
+                this.available.push({ 
+                    name: cleanName, 
+                    color: metadata.color || '#94a3b8', 
+                    type: metadata.type || TagType.PERSONAL 
+                });
+            }
             this.render();
             this.onChange(Array.from(this.selected));
         }
@@ -203,6 +214,7 @@ export class BodyMap {
         this.element = this._renderContainer();
     }
 
+    // 擴充全肢體路徑 (精確座標)
     static get PATHS() {
         return {
             FRONT: [
@@ -210,14 +222,35 @@ export class BodyMap {
                 { id: 'Neck', label: '頸', d: 'M85,35 L115,35 L120,50 L80,50 Z' },
                 { id: 'Chest', label: '胸', d: 'M70,50 L130,50 L125,100 L75,100 Z' },
                 { id: 'Abdomen', label: '腹', d: 'M75,100 L125,100 L120,160 L80,160 Z' },
+                // 上肢 (左)
                 { id: 'Shoulder-L', label: '左肩', d: 'M130,50 L155,55 L150,75 L130,70 Z' },
+                { id: 'Elbow-L', label: '左肘', d: 'M150,75 L165,115 L145,115 L135,75 Z' },
+                { id: 'Wrist-L', label: '左腕', d: 'M145,115 L155,145 L135,145 L130,115 Z' },
+                { id: 'Hand-L', label: '左手', d: 'M135,145 L145,175 L125,175 L120,145 Z' },
+                // 上肢 (右)
                 { id: 'Shoulder-R', label: '右肩', d: 'M70,50 L45,55 L50,75 L70,70 Z' },
-                { id: 'Hip', label: '骨盆', d: 'M80,160 L120,160 L130,190 L70,190 Z' }
+                { id: 'Elbow-R', label: '右肘', d: 'M50,75 L35,115 L55,115 L65,75 Z' },
+                { id: 'Wrist-R', label: '右腕', d: 'M55,115 L45,145 L65,145 L70,115 Z' },
+                { id: 'Hand-R', label: '右手', d: 'M65,145 L55,175 L75,175 L80,145 Z' },
+                // 下肢 (左)
+                { id: 'Hip-L', label: '左髖', d: 'M100,160 L125,160 L130,195 L100,195 Z' },
+                { id: 'Thigh-L', label: '左大腿', d: 'M100,195 L130,195 L125,260 L100,260 Z' },
+                { id: 'Knee-L', label: '左膝', d: 'M100,260 L125,260 L120,285 L100,285 Z' },
+                { id: 'Leg-L', label: '左小腿', d: 'M100,285 L120,285 L115,350 L100,350 Z' },
+                { id: 'Foot-L', label: '左足', d: 'M100,350 L120,350 L125,375 L95,375 Z' },
+                // 下肢 (右)
+                { id: 'Hip-R', label: '右髖', d: 'M75,160 L100,160 L100,195 L70,195 Z' },
+                { id: 'Thigh-R', label: '右大腿', d: 'M70,195 L100,195 L100,260 L75,260 Z' },
+                { id: 'Knee-R', label: '右膝', d: 'M75,260 L100,260 L100,285 L80,285 Z' },
+                { id: 'Leg-R', label: '右小腿', d: 'M80,285 L100,285 L100,350 L85,350 Z' },
+                { id: 'Foot-R', label: '右足', d: 'M85,350 L100,350 L105,375 L75,375 Z' }
             ],
             BACK: [
                 { id: 'Back-Upper', label: '上背', d: 'M70,50 L130,50 L125,110 L75,110 Z' },
                 { id: 'Back-Lower', label: '下背', d: 'M75,110 L125,110 L120,160 L80,160 Z' },
-                { id: 'Glutes', label: '臀部', d: 'M80,160 L120,160 L130,190 L70,190 Z' }
+                { id: 'Glutes', label: '臀部', d: 'M80,160 L120,160 L130,195 L70,195 Z' },
+                { id: 'Hamstring-L', label: '左後大腿', d: 'M100,195 L130,195 L125,260 L100,260 Z' },
+                { id: 'Hamstring-R', label: '右後大腿', d: 'M70,195 L100,195 L100,260 L75,260 Z' }
             ]
         };
     }
@@ -225,31 +258,49 @@ export class BodyMap {
     _renderContainer() {
         const container = el('div', { className: 'body-map-container' });
         const controls = el('div', { className: 'body-map-controls segmented-control' });
+        
         const btnFront = el('button', { 
             className: 'segment-btn active', 
-            onclick: () => this._switchView('FRONT', btnFront, btnBack) 
+            onclick: (e) => this._switchView('FRONT', e.target) 
         }, '正面');
+        
         const btnBack = el('button', { 
             className: 'segment-btn', 
-            onclick: () => this._switchView('BACK', btnFront, btnBack) 
+            onclick: (e) => this._switchView('BACK', e.target) 
         }, '背面');
         
         controls.append(btnFront, btnBack);
-        this.svgContainer = el('div', { className: 'svg-wrapper' });
+        
+        // 加入動畫包裝層
+        this.svgWrapper = el('div', { 
+            className: 'svg-wrapper transition-fade',
+            style: { transition: 'opacity 0.2s ease-in-out' }
+        });
+        
         this._renderSVG();
-        container.append(controls, this.svgContainer);
+        container.append(controls, this.svgWrapper);
         return container;
     }
 
-    _switchView(view, activeBtn, inactiveBtn) {
-        this.currentView = view;
-        activeBtn.classList.add('active');
-        inactiveBtn.classList.remove('active');
-        this._renderSVG();
+    _switchView(view, targetBtn) {
+        if (this.currentView === view) return;
+        
+        // 觸發淡出動畫
+        this.svgWrapper.style.opacity = '0';
+        
+        setTimeout(() => {
+            this.currentView = view;
+            const parent = targetBtn.parentElement;
+            parent.querySelectorAll('.segment-btn').forEach(b => b.classList.remove('active'));
+            targetBtn.classList.add('active');
+            
+            this._renderSVG();
+            this.svgWrapper.style.opacity = '1';
+        }, 200);
     }
 
     _renderSVG() {
-        this.svgContainer.innerHTML = '';
+        this.svgWrapper.innerHTML = '';
         const svgNS = "http://www.w3.org/2000/svg";
         const svg = document.createElementNS(svgNS, "svg");
         svg.setAttribute("viewBox", "0 0 200 400");
@@ -259,13 +310,14 @@ export class BodyMap {
             const path = document.createElementNS(svgNS, "path");
             path.setAttribute("d", part.d);
             path.setAttribute("class", `body-part ${this.selectedParts.has(part.id) ? 'active' : ''}`);
+            path.setAttribute("data-label", part.label); // 用於 CSS Tooltip
             
             if (!this.readOnly) {
                 path.onclick = () => this._togglePart(part.id, path);
             }
             svg.appendChild(path);
         });
-        this.svgContainer.appendChild(svg);
+        this.svgWrapper.appendChild(svg);
     }
 
     _togglePart(partId, element) {
@@ -276,15 +328,76 @@ export class BodyMap {
             this.selectedParts.add(partId);
             element.classList.add('active');
         }
-        if (this.onChange) {
-            this.onChange(Array.from(this.selectedParts));
-        }
+        if (this.onChange) this.onChange(Array.from(this.selectedParts));
     }
 
     updateSelection(newParts) {
         this.selectedParts = new Set(newParts || []);
-        // 重新渲染 SVG 以反映新的 active class 狀態
         this._renderSVG();
+    }
+}
+
+export class ROMSlider {
+    /**
+     * @param {Object} config - { id, label, min, max, norm, value, onChange }
+     */
+    constructor({ id, label, min = 0, max = 180, norm = 150, value = 0, onChange }) {
+        this.id = id;
+        this.label = label;
+        this.min = min;
+        this.max = max;
+        this.norm = norm;
+        this.value = value;
+        this.onChange = onChange;
+        this.element = this._render();
+    }
+
+    _render() {
+        const percentage = ((this.value - this.min) / (this.max - this.min)) * 100;
+        const normPercentage = ((this.norm - this.min) / (this.max - this.min)) * 100;
+
+        const labelRow = el('div', { className: 'rom-label-row' },
+            el('span', { className: 'rom-name' }, this.label),
+            el('span', { className: 'rom-value' }, `${this.value}°`)
+        );
+
+        // 建立帶有「健康區間」背景的 Slider
+        const slider = el('input', {
+            type: 'range',
+            className: 'rom-input',
+            min: this.min,
+            max: this.max,
+            value: this.value,
+            style: {
+                // 背景：從 0 到 norm 是綠色(或淺藍)背景區間，代表正常範圍參考
+                background: `linear-gradient(to right, #e0f2fe 0%, #e0f2fe ${normPercentage}%, #f1f5f9 ${normPercentage}%, #f1f5f9 100%)`
+            },
+            oninput: (e) => {
+                const newVal = parseInt(e.target.value);
+                this.value = newVal;
+                labelRow.querySelector('.rom-value').textContent = `${newVal}°`;
+                if (this.onChange) this.onChange(newVal);
+                
+                // 動態更新數值顏色 (若低於 norm 太多顯示警告色)
+                const valEl = labelRow.querySelector('.rom-value');
+                valEl.style.color = newVal < (this.norm * 0.7) ? 'var(--danger)' : 'var(--primary)';
+            }
+        });
+
+        const container = el('div', { className: 'rom-item-container' }, labelRow, slider);
+        
+        // 標記正常值刻度 (Normal Indicator)
+        const indicator = el('div', { 
+            className: 'rom-norm-mark',
+            style: { left: `${normPercentage}%` },
+            title: `正常值: ${this.norm}°`
+        });
+        
+        const trackWrapper = el('div', { style: 'position:relative' }, slider, indicator);
+        container.innerHTML = '';
+        container.append(labelRow, trackWrapper);
+        
+        return container;
     }
 }
 // --- Action Sheet (Mobile) ---

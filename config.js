@@ -115,45 +115,33 @@ export const TagType = Object.freeze({
     PERSONAL: 'PERSONAL'   // 個人 (固定色票 - 人文/識別感)
 });
 
-// 2. 身體部位與色相 (Anatomy Hues)
-// 維持全光譜，作為解剖標籤的基底
+// 2. 身體部位與色相 (Anatomy Hues) - 對應 BodyMap ID
 export const BodyRegions = Object.freeze({
-    HEAD:     { id: 'HEAD',     hue: 0,   label: '頭' },
-    NECK:     { id: 'NECK',     hue: 15,  label: '頸' },
-    SHOULDER: { id: 'SHOULDER', hue: 35,  label: '肩' },
-    ARM:      { id: 'ARM',      hue: 55,  label: '臂' }, // 微調區隔
-    HAND:     { id: 'HAND',     hue: 75,  label: '手' },
-    CHEST:    { id: 'CHEST',    hue: 170, label: '胸' },
-    BACK:     { id: 'BACK',     hue: 200, label: '背' },
-    WAIST:    { id: 'WAIST',    hue: 220, label: '腰' },
-    ABDOMEN:  { id: 'ABDOMEN',  hue: 150, label: '腹' },
-    HIP:      { id: 'HIP',      hue: 260, label: '臀' },
-    THIGH:    { id: 'THIGH',    hue: 280, label: '大腿' },
-    LEG:      { id: 'LEG',      hue: 300, label: '小腿' },
-    FOOT:     { id: 'FOOT',     hue: 320, label: '足' },
-    JOINT:    { id: 'JOINT',    hue: 0,   label: '關節/通用' }
+    HEAD:     { id: 'Head',       hue: 0,   label: '頭部' },
+    NECK:     { id: 'Neck',       hue: 15,  label: '頸部' },
+    SHOULDER: { id: 'Shoulder',   hue: 35,  label: '肩部' },
+    ELBOW:    { id: 'Elbow',      hue: 55,  label: '肘部' },
+    WRIST:    { id: 'Wrist',      hue: 75,  label: '腕部' },
+    HAND:     { id: 'Hand',       hue: 90,  label: '手部' },
+    CHEST:    { id: 'Chest',      hue: 170, label: '胸部' },
+    BACK:     { id: 'Back',       hue: 200, label: '背部' },
+    WAIST:    { id: 'Waist',      hue: 220, label: '腰部' },
+    HIP:      { id: 'Hip',        hue: 260, label: '臀髖' },
+    THIGH:    { id: 'Thigh',      hue: 280, label: '大腿' },
+    KNEE:     { id: 'Knee',       hue: 300, label: '膝部' },
+    LEG:      { id: 'Leg',        hue: 320, label: '小腿' },
+    FOOT:     { id: 'Foot',       hue: 340, label: '足部' }
 });
 
 // 3. 組織視覺樣式 (Tissue Styles)
 // 設計重點：避免使用純灰 (Grey)，改用大地色或高亮色
 export const TissueStyles = Object.freeze({
-    // --- 肌肉 ---
-    // 動作肌：鮮明、輕快
-    MUSCLE_PHASIC: { s: 90,  l: 65, label: '肌肉 (動作/淺層)' },
-    // 穩定肌：深沉、穩重 (高飽和低亮度)
-    MUSCLE_TONIC:  { s: 100, l: 35, label: '肌肉 (穩定/深層)' },
-
-    // --- 筋膜 (Fascia) ---
-    // 避開灰階，使用極淡的青藍色 (Ice Blue)，代表包覆與流動
-    FASCIA:        { s: 60,  l: 88, label: '筋膜' }, 
-
-    // --- 韌帶 (Ligament) ---
-    // 避開灰階，使用卡其/駝色 (Taupe/Beige)，代表纖維與連結
-    LIGAMENT:      { s: 40,  l: 60, label: '韌帶' },
-
-    // --- 神經 (Nerve) ---
-    // 螢光黃/萊姆色，代表電訊號
-    NERVE:         { s: 90, l: 50, label: '神經' }
+    MUSCLE:    { s: 80, l: 60, label: '肌肉' },
+    BONE:      { s: 10, l: 40, label: '骨骼' },
+    NERVE:     { s: 95, l: 50, label: '神經' },
+    LIGAMENT:  { s: 30, l: 75, label: '韌帶' },
+    FASCIA:    { s: 60, l: 85, label: '筋膜' },
+    JOINT:     { s: 50, l: 50, label: '關節囊' }
 });
 
 // 4. 通用標籤色票 (Tag Palettes)
@@ -269,15 +257,36 @@ export const AnatomicalWeights = Object.freeze({
  */
 export const AssessmentDatabase = Object.freeze({
     'Shoulder': [
-        { id: 'Neer', name: 'Neer Impingement Test', positive: '夾擠症候群' },
-        { id: 'Hawkins', name: 'Hawkins-Kennedy Test', positive: '夾擠症候群' },
-        { id: 'DropArm', name: 'Drop Arm Test', positive: '旋轉肌袖撕裂' }
+        { id: 'Neer', name: 'Neer Test', positive: '夾擠症候群 (Impingement)' },
+        { id: 'Hawkins', name: 'Hawkins-Kennedy', positive: '副峰下撞擊' },
+        { id: 'EmptyCan', name: 'Empty Can Test', positive: '棘上肌損傷 (Supraspinatus)' },
+        { id: 'Speed', name: 'Speed\'s Test', positive: '二頭肌長頭肌腱炎' }
+    ],
+    'Neck': [
+        { id: 'Spurling', name: 'Spurling\'s Test', positive: '神經根壓迫 (Radiculopathy)' },
+        { id: 'Distraction', name: 'Cervical Distraction', positive: '椎間孔狹窄減緩' },
+        { id: 'UpperTrap', name: 'Upper Trap Length', positive: '上斜方肌緊繃' }
+    ],
+    'Waist': [
+        { id: 'SLR', name: 'Straight Leg Raise', positive: '坐骨神經張力/椎間盤突出' },
+        { id: 'Slump', name: 'Slump Test', positive: '神經硬膜張力增加' },
+        { id: 'Kemp', name: 'Kemp Test', positive: '小面關節症候群' }
     ],
     'Knee': [
-        { id: 'Lachman', name: 'Lachman Test', positive: 'ACL 損傷' },
-        { id: 'McMurray', name: 'McMurray Test', positive: '半月板損傷' }
+        { id: 'Lachman', name: 'Lachman Test', positive: '前十字韌帶 (ACL) 斷裂' },
+        { id: 'Drawer-A', name: 'Anterior Drawer', positive: '前十字韌帶鬆弛' },
+        { id: 'McMurray', name: 'McMurray Test', positive: '半月板撕裂 (Meniscus)' },
+        { id: 'PatellarApp', name: 'Patellar Apprehension', positive: '髕骨不穩定' }
     ],
-    // ... 其他部位可持續擴充
+    'Hip': [
+        { id: 'FADIR', name: 'FADIR Test', positive: '股骨髖臼撞擊 (FAI)' },
+        { id: 'FABERE', name: 'Patrick (FABERE)', positive: '薦髂關節或髖關節病變' },
+        { id: 'Thomas', name: 'Thomas Test', positive: '髂腰肌緊繃 (Iliopsoas)' }
+    ],
+    'Ankle': [
+        { id: 'Drawer-Ankle', name: 'Anterior Drawer', positive: '距腓前韌帶 (ATFL) 損傷' },
+        { id: 'Thompson', name: 'Thompson Test', positive: '阿基里斯腱斷裂' }
+    ]
 });
 
 /**

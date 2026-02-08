@@ -37,109 +37,97 @@ export class CustomerListView extends BaseView {
     }
 
     async render() {
-        // [Fix] 0. Header with Sync Status
         const header = this._renderHeader();
 
-        // 1. Search Bar
+        // 1. 頂部快速數據統計 (Quick Stats)
+        this.statsContainer = el('div', { className: 'stats-grid-row' });
+        
+        // 2. 搜尋列與過濾分頁
         const searchBar = el('input', {
-            type: 'text',
-            className: 'search-bar',
-            placeholder: 'Search customers... (Name, Phone, Tag)',
+            type: 'text', className: 'search-bar',
+            placeholder: '搜尋姓名、電話或標籤...',
             oninput: (e) => this._handleSearch(e.target.value)
         });
 
-        // 2. List Container (Virtual Scroll Window)
+        this.filterTab = 'all'; // 預設分頁
+        const tabContainer = el('div', { className: 'segmented-control list-filters' },
+            el('button', { className: 'segment-btn active', onclick: (e) => this._switchTab('all', e.target) }, '全部'),
+            el('button', { className: 'segment-btn', onclick: (e) => this._switchTab('draft', e.target) }, '草稿'),
+            el('button', { className: 'segment-btn', onclick: (e) => this._switchTab('active', e.target) }, '追蹤中')
+        );
+
+        // 3. 虛擬列表容器
         this.listContainer = el('div', { 
             className: 'virtual-list-container',
             onscroll: () => this._renderVisibleRows()
         });
-        
-        this.listSpacer = el('div', { className: 'virtual-list-spacer' }); // Holds the total height
-        this.listContent = el('ul', { className: 'virtual-list-content' }); // Holds visible items
-
+        this.listSpacer = el('div', { className: 'virtual-list-spacer' });
+        this.listContent = el('ul', { className: 'virtual-list-content' });
         this.listContainer.append(this.listSpacer, this.listContent);
 
-        // 3. FAB (Add Button)
-        // [Fix] 絕對唯讀：無痕模式下隱藏新增入口
-        if (!storageManager.isEphemeral) {
-            const fab = el('button', {
-                className: 'fab',
-                onclick: () => this._showCreateModal()
-            }, '+');
-            this.root.append(header, searchBar, this.listContainer, fab);
-        } else {
-            this.root.append(header, searchBar, this.listContainer);
-        }
+        // 4. FAB
+        const fab = !storageManager.isEphemeral ? el('button', {
+            className: 'fab', onclick: () => this._showCreateModal()
+        }, '+') : null;
 
-        // Initial Load
+        this.root.append(header, this.statsContainer, el('div', { style: 'padding:0 16px' }, searchBar, tabContainer), this.listContainer);
+        if (fab) this.root.append(fab);
+
         await this._loadData();
-        
-        // Observe resize for virtual scroll
         new ResizeObserver(() => {
             this.viewportHeight = this.listContainer.clientHeight;
             this._renderVisibleRows();
         }).observe(this.listContainer);
     }
 
-    _renderHeader() {
-        // Simple Sync Status Indicator
-        // In a real app, this should react to SYNC:CONNECTED events
-        import('../core/sync.js').then(({ syncGateway }) => {
-            if (!this.statusEl) return;
-            const peerId = syncGateway.peerManager ? syncGateway.peerManager.myId.slice(0, 4) : 'OFF';
-            const conflictCount = syncGateway.getInbox().length;
-            
-            let statusText = `ID: ${peerId}`;
-            if (conflictCount > 0) statusText += ` | ⚠️ ${conflictCount} Conflicts`;
-            
-            this.statusEl.textContent = statusText;
-            this.statusEl.style.color = conflictCount > 0 ? 'var(--danger)' : 'var(--text-muted)';
-            
-            // Add Settings Button
-            this.settingsBtn.onclick = () => this.router.navigate('settings');
-        });
-
-        this.statusEl = el('span', { style: { fontSize: '12px', marginRight: '10px' } }, 'Connecting...');
-        this.settingsBtn = el('button', { className: 'btn-secondary', style: { padding: '4px 8px', fontSize: '12px' } }, '⚙️');
-
-        return el('div', { 
-            style: { 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                alignItems: 'center', 
-                padding: '8px 16px',
-                background: 'var(--surface)',
-                borderBottom: '1px solid var(--border)'
-            } 
-        }, 
-            el('b', {}, 'LocalFirst EMR'),
-            el('div', {}, this.statusEl, this.settingsBtn)
-        );
-    }
-
     async _loadData() {
-        // [Fix] Load Drafts in parallel to identify icons
-        const [allDrafts, _] = await Promise.all([
+        const [allDrafts, allItems] = await Promise.all([
             draftManager.getAll(),
-            Promise.resolve() // Placeholder if needed
+            searchEngine.search('', { limit: 10000, sort: 'updated' })
         ]);
         
         this.draftSet = new Set(allDrafts.map(d => d.relatedId));
+        this.rawItems = allItems;
+        this._updateStats(allDrafts.length);
+        this._applyFilter();
+    }
 
-        // 預設載入所有 (透過 SearchEngine 空字串)
-        this.items = searchEngine.search('', { limit: 10000, sort: 'updated' });
+    _updateStats(draftCount) {
+        const todayStr = new Date().toISOString().split('T')[0];
+        const todayVisits = this.rawItems.filter(i => i.lv && i.lv.startsWith(todayStr)).length;
+
+        this.statsContainer.innerHTML = '';
+        this.statsContainer.append(
+            el('div', { className: 'stat-card' }, el('small', {}, '今日就診'), el('div', { className: 'val' }, todayVisits)),
+            el('div', { className: 'stat-card' }, el('small', {}, '待定稿'), el('div', { className: 'val', style: 'color:var(--warning)' }, draftCount)),
+            el('div', { className: 'stat-card' }, el('small', {}, '總病患'), el('div', { className: 'val' }, this.rawItems.length))
+        );
+    }
+
+    _switchTab(tab, btn) {
+        this.filterTab = tab;
+        btn.parentElement.querySelectorAll('.segment-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this._applyFilter();
+    }
+
+    _applyFilter() {
+        const query = this.root.querySelector('.search-bar').value;
+        let base = searchEngine.search(query, { limit: 10000, sort: 'relevance' });
+
+        if (this.filterTab === 'draft') {
+            base = base.filter(i => this.draftSet.has(i.id));
+        } else if (this.filterTab === 'active') {
+            base = base.filter(i => i.t && (i.t.includes('追蹤中') || i.t.includes('重要')));
+        }
+
+        this.items = base;
         this._updateListHeight();
         this._renderVisibleRows();
     }
 
     _handleSearch(query) {
-        // [Fix] 搜尋結果擴充：允許更多結果以便滾動載入，Virtual Scroll 會處理 DOM 效能
-        // 若資料量真的極大(>10萬)，searchEngine.search 內部應支援 cursor 分頁
-        this.items = searchEngine.search(query, { limit: 500, sort: 'relevance' }); 
-        
-        this.listContainer.scrollTop = 0;
-        this._updateListHeight();
-        this._renderVisibleRows();
+        this._applyFilter();
     }
 
     _updateListHeight() {
@@ -318,92 +306,58 @@ export class CustomerDetailView extends BaseView {
 
     async render() {
         const customer = await customerManager.get(this.customerId);
-        if (!customer) {
-            this.root.innerHTML = 'Customer not found';
-            return;
-        }
+        if (!customer) return this.root.innerHTML = 'Customer not found';
 
-        // 1. 導航標頭 (Navigation Header)
-        const header = el('div', { 
-            className: 'nav-header',
-            style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '15px', background: '#fff', borderBottom: '1px solid #eee' }
-        },
-            el('div', { className: 'nav-left' }, 
-                el('button', { 
-                    style: { fontSize: '20px', padding: '5px 10px', cursor: 'pointer' },
-                    onclick: () => this.router.back() 
-                }, '← Back')
-            ),
-            el('div', { className: 'nav-title', style: { fontWeight: 'bold', fontSize: '18px' } }, customer.name),
-            el('div', { className: 'nav-right' },
-                el('button', { 
-                    style: { fontSize: '20px', padding: '5px' },
-                    onclick: () => this._editCustomer(customer)
-                }, '✎')
-            )
-        );
-
-        // 2. 顧客資訊卡片
-        const infoCard = el('div', { style: { padding: '15px', background: '#f8fafc', borderBottom: '1px solid #eee' } },
-            el('p', { style: { margin: '0 0 5px 0', color: '#64748b' } }, `Phone: ${customer.phone || 'N/A'}`),
-            el('div', { style: { display: 'flex', gap: '5px', flexWrap: 'wrap' } }, 
-                ...(customer.tags || []).map(t => el('span', { 
-                    style: { background: '#e2e8f0', padding: '2px 8px', borderRadius: '12px', fontSize: '12px' } 
-                }, t))
-            ),
-            el('button', { 
-                className: 'btn-primary', 
-                style: { width: '100%', marginTop: '15px', padding: '10px', background: '#3b82f6', color: 'white', borderRadius: '8px' },
-                onclick: () => this.router.navigate(`record/new?customerId=${this.customerId}`) 
-            }, '＋ New Record')
-        );
-
-        // 3. 歷史紀錄容器
-        const historyContainer = el('div', { className: 'history-list', style: { flex: 1, overflowY: 'auto', padding: '15px' } });
         const records = await recordManager.getByCustomer(this.customerId);
+        
+        // 1. 計算統計指標
+        const totalVisits = records.length;
+        const avgPain = records.length ? (records.reduce((sum, r) => sum + (r.painScale || 0), 0) / records.length).toFixed(1) : 'N/A';
+        const lastDate = records.length ? new Date(records[0].updatedAt).toLocaleDateString() : '無記錄';
 
-        // 4. 上次就診摘要 (如果有紀錄)
-        if (records.length > 0) {
-            const lastRecord = records[0]; 
-            const summary = el('div', { 
-                className: 'summary-card',
-                style: { marginBottom: '20px', padding: '15px', background: '#e0f2fe', borderRadius: '8px', border: '1px solid #bae6fd' } 
-            },
-                el('h3', { style: { margin: '0 0 10px 0', fontSize: '16px', color: '#0369a1' } }, 'Last Visit Summary'),
-                el('p', { style: { margin: '5px 0', fontSize: '14px' } }, `Date: ${new Date(lastRecord.updatedAt).toLocaleDateString()}`),
-                el('p', { style: { margin: '5px 0', fontSize: '14px' } }, `S/O: ${lastRecord.soap?.s || ''} ${lastRecord.soap?.o || ''}`),
-                el('button', {
-                    className: 'btn-primary',
-                    style: { marginTop: '8px', fontSize: '12px', padding: '5px 10px', background: '#0284c7', color: 'white', borderRadius: '4px' },
-                    onclick: () => this._cloneRecord(lastRecord)
-                }, '⚡ Clone & Continue')
-            );
-            historyContainer.appendChild(summary);
-        }
+        // 2. 佈局組裝
+        this.root.innerHTML = '';
+        this.root.className = 'view-container bg-soft';
 
-        // 5. 渲染列表項目
+        const header = el('div', { className: 'nav-header sticky-top' },
+            el('button', { className: 'icon-btn', onclick: () => this.router.back() }, '←'),
+            el('div', { className: 'nav-title' }, customer.name),
+            el('button', { className: 'icon-btn', onclick: () => this._editCustomer(customer) }, '✎')
+        );
+
+        const statsSection = el('div', { className: 'detail-stats-card' },
+            el('div', { className: 'stat-item' }, el('label', {}, '總診次'), el('b', {}, totalVisits)),
+            el('div', { className: 'stat-item' }, el('label', {}, '平均疼痛'), el('b', {}, avgPain)),
+            el('div', { className: 'stat-item' }, el('label', {}, '上次就診'), el('b', {}, lastDate))
+        );
+
+        const actionArea = el('div', { style: 'padding:0 16px 16px' },
+            el('button', { 
+                className: 'btn-primary w-100 shadow-sm',
+                onclick: () => this.router.navigate(`record/new?customerId=${this.customerId}`) 
+            }, '＋ 新增診療病歷')
+        );
+
+        const historyList = el('div', { className: 'history-timeline' });
         records.forEach(rec => {
-            const item = el('div', { 
-                style: { padding: '15px', background: 'white', marginBottom: '10px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', cursor: 'pointer' },
+            const isFinal = rec.status === RecordStatus.FINALIZED;
+            const card = el('div', { 
+                className: `timeline-card ${isFinal ? 'border-success' : 'border-warning'}`,
                 onclick: () => this.router.navigate(`record/${rec.id}`)
             },
-                el('div', { style: { display: 'flex', justifyContent: 'space-between', marginBottom: '5px' } },
-                    el('span', { style: { fontWeight: 'bold' } }, new Date(rec.updatedAt).toLocaleDateString()),
-                    el('span', { style: { fontSize: '12px', padding: '2px 6px', borderRadius: '4px', background: '#f1f5f9' } }, rec.status)
+                el('div', { className: 'card-header' },
+                    el('span', { className: 'date' }, new Date(rec.updatedAt).toLocaleDateString()),
+                    el('span', { className: `badge ${isFinal ? 'bg-success' : 'bg-warning'}` }, rec.status)
                 ),
-                el('div', { style: { fontSize: '14px', color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, 
-                    rec.soap?.a || rec.soap?.s || '(No content)'
+                el('div', { className: 'card-body' }, 
+                    el('p', {}, rec.soap?.a || '無評估摘要'),
+                    el('div', { className: 'card-tags' }, ...(rec.tags || []).slice(0, 3).map(t => el('small', {}, `#${t}`)))
                 )
             );
-            historyContainer.appendChild(item);
+            historyList.appendChild(card);
         });
 
-        // 6. 組合頁面 (清除舊內容並重新掛載)
-        this.root.style.display = 'flex';
-        this.root.style.flexDirection = 'column';
-        this.root.style.height = '100vh';
-        this.root.innerHTML = ''; 
-        this.root.append(header, infoCard, historyContainer);
+        this.root.append(header, statsSection, actionArea, historyList);
     }
 
     _editCustomer(customer) {
@@ -455,44 +409,38 @@ export class RecordEditorView extends BaseView {
         this.render();
     }
 
-    /**
-     * 根據選取部位顯示評估建議
-     */
+    // 智慧建議強化：根據 Anatomy 標籤推薦測試
     _updateAssessmentSuggestions(selectedParts) {
         if (!this.assessmentContainer) return;
-        
-        // 這裡可以考慮做成快取，避免每次都 import
-        import('../config.js').then(({ AssessmentDatabase }) => {
+        import('../config.js').then(({ AssessmentDatabase, BodyRegions }) => {
             const suggestions = new Set();
             
-            // 1. 遍歷選取部位，查找對應測試
+            // 除了 BodyMap，也檢查已選取的 Tags
+            const currentTags = this.data.tags || [];
+            
             selectedParts.forEach(partId => {
-                // 簡單的關鍵字匹配：若 partId 包含 "Shoulder"，則撈取 Shoulder 的測試
-                Object.keys(AssessmentDatabase).forEach(regionKey => {
-                    if (partId.includes(regionKey)) {
-                        AssessmentDatabase[regionKey].forEach(test => suggestions.add(test));
-                    }
-                });
+                // 模糊比對部位 (例如 'Shoulder-R' 匹配 'Shoulder')
+                const regionKey = Object.keys(AssessmentDatabase).find(k => partId.includes(k));
+                if (regionKey) AssessmentDatabase[regionKey].forEach(t => suggestions.add(t));
             });
 
-            // 2. 渲染建議列表
+            // 針對 Anatomy 標籤進行額外推薦
+            currentTags.forEach(tag => {
+                const match = Object.keys(AssessmentDatabase).find(k => tag.includes(k));
+                if (match) AssessmentDatabase[match].forEach(t => suggestions.add(t));
+            });
+
             this.assessmentContainer.innerHTML = '';
             if (suggestions.size > 0) {
                 this.assessmentContainer.style.display = 'block';
-                this.assessmentContainer.appendChild(el('h5', { style: 'margin:0 0 5px 0; color:#0369a1;' }, '💡 建議評估項目 (點擊加入)'));
-                
-                const list = el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '8px' } });
+                const list = el('div', { className: 'suggestion-chips' });
                 suggestions.forEach(test => {
-                    const chip = el('button', { 
-                        className: 'btn-secondary',
-                        style: { fontSize: '12px', padding: '4px 8px', background: 'white' },
+                    list.appendChild(el('button', { 
+                        className: 'chip-btn',
                         onclick: () => this._addAssessmentResult(test)
-                    }, test.name);
-                    list.appendChild(chip);
+                    }, test.name));
                 });
-                this.assessmentContainer.appendChild(list);
-            } else {
-                this.assessmentContainer.style.display = 'none';
+                this.assessmentContainer.append(el('h5', {}, '💡 建議評估項目'), list);
             }
         });
     }
@@ -658,35 +606,42 @@ export class RecordEditorView extends BaseView {
 
     // [Fix] ROM 輸入介面產生器
     _renderROMInputs() {
-        const container = el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' } });
-        
-        // 常用關節定義 (未來可移至 Config)
-        const joints = [
-            { id: 'shoulder_flex_r', label: 'R-Shoulder Flex' },
-            { id: 'shoulder_abd_r',  label: 'R-Shoulder Abd' },
-            { id: 'neck_rot_r',      label: 'R-Neck Rot' },
-            { id: 'neck_rot_l',      label: 'L-Neck Rot' }
-        ];
+        const container = el('div', { className: 'rom-dynamic-list' });
+        import('../config.js').then(({ StandardROM }) => {
+            const selectedParts = this.data.bodyParts || [];
+            if (selectedParts.length === 0) {
+                container.innerHTML = '<p class="text-muted">請先在 Body Map 標記部位以顯示 ROM 項目</p>';
+                return;
+            }
 
-        joints.forEach(j => {
-            const val = this.data.rom[j.id] || 0;
-            const labelEl = el('div', { style: 'font-size: 12px; display: flex; justify-content: space-between;' }, 
-                el('span', {}, j.label),
-                el('span', { className: 'rom-val', style: 'font-weight: bold; color: #2563eb;' }, `${val}°`)
+            // 找出與選取部位相關的 ROM 項目
+            const relevantROMs = StandardROM.filter(rom => 
+                selectedParts.some(part => rom.id.includes(part.split('-')[0].toLowerCase()))
             );
-            
-            const slider = el('input', { 
-                type: 'range', min: 0, max: 180, value: val,
-                style: { width: '100%', margin: '5px 0' },
-                oninput: (e) => {
-                    labelEl.querySelector('.rom-val').textContent = `${e.target.value}°`;
-                    this.data.rom[j.id] = parseInt(e.target.value);
-                    this._markDirty();
-                }
-            });
 
-            const wrapper = el('div', { style: { background: '#fff', padding: '8px', borderRadius: '6px', border: '1px solid #eee' } }, labelEl, slider);
-            container.appendChild(wrapper);
+            relevantROMs.forEach(romDef => {
+                const sides = romDef.sideType === 'lr' ? ['L', 'R'] : (romDef.sideType === 'rot' ? ['Left', 'Right'] : ['']);
+                
+                sides.forEach(side => {
+                    const fullId = side ? `${romDef.id}_${side.toLowerCase()}` : romDef.id;
+                    const label = side ? `(${side}) ${romDef.label}` : romDef.label;
+                    
+                    const slider = new ROMSlider({
+                        id: fullId,
+                        label: label,
+                        min: romDef.min,
+                        max: romDef.max,
+                        norm: romDef.norm,
+                        value: this.data.rom?.[fullId] || 0,
+                        onChange: (val) => {
+                            if (!this.data.rom) this.data.rom = {};
+                            this.data.rom[fullId] = val;
+                            this._markDirty();
+                        }
+                    });
+                    container.appendChild(slider.element);
+                });
+            });
         });
         return container;
     }
@@ -768,38 +723,23 @@ export class RecordEditorView extends BaseView {
     }
 
     _handleFinalize() {
-        const content = el('div', {}, 
-            el('p', { style: { marginBottom: '15px' } }, '選擇版本更新策略：'),
-            el('div', { style: { display: 'flex', gap: '10px', marginBottom: '15px' } },
-                this._createRadio('NONE', '不變更', true),
-                this._createRadio('MINOR', '小版本 (錯字)', false),
-                this._createRadio('MAJOR', '大版本 (評估改變)', false)
+        const content = el('div', { className: 'finalize-modal' }, 
+            el('p', {}, '此動作將鎖定病歷，請選擇變更類型：'),
+            el('div', { className: 'version-strategy-group' },
+                this._createRadio('NONE', '例行紀錄 (不更動版本)', true),
+                this._createRadio('MINOR', '微幅調整 (修正錯字/補充內容)', false),
+                this._createRadio('MAJOR', '重大變更 (治療計畫或診斷異動)', false)
             ),
-            el('div', { id: 'reason-container', style: { display: 'none' } },
-                el('textarea', { 
-                    id: 'change-reason',
-                    placeholder: '請輸入版本變更原因 (例如：重新評估後調整診斷)',
-                    style: { width: '100%', height: '60px', padding: '8px' }
-                })
-            )
+            el('textarea', { 
+                id: 'change-reason',
+                placeholder: '備註變更原因 (選填)...',
+                className: 'soap-textarea mt-2'
+            })
         );
 
-        content.querySelectorAll('input[name="v-strategy"]').forEach(radio => {
-            radio.addEventListener('change', (e) => {
-                const reasonBox = content.querySelector('#reason-container');
-                if (e.target.value === 'MAJOR') {
-                    reasonBox.style.display = 'block';
-                    setTimeout(() => content.querySelector('#change-reason').focus(), 100);
-                } else {
-                    reasonBox.style.display = 'none';
-                }
-            });
-        });
-
-        new Modal('Finalize Record', content, () => {
+        new Modal('確認定稿', content, () => {
             const strategy = content.querySelector('input[name="v-strategy"]:checked').value;
             const reason = content.querySelector('#change-reason').value;
-            
             this._save(RecordStatus.FINALIZED, {
                 versionStrategy: strategy,
                 changeReason: reason
@@ -1027,129 +967,101 @@ export class SettingsView extends BaseView {
         }, label, el('span', { style: { color: '#ccc' } }, '›'));
     }
 
-    // --- Feature: Tag Manager CRUD ---
+    // 標籤管理：支援解剖類別與合併功能
     async _openTagManager() {
         const tags = await tagManager.getAll();
-        const list = el('div', { style: { maxHeight: '300px', overflowY: 'auto', marginBottom: '10px' } });
+        const list = el('div', { className: 'manager-list' });
         
         const renderList = () => {
             list.innerHTML = '';
             tags.forEach(tag => {
-                list.appendChild(el('div', { style: { padding: '8px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between' } },
-                    el('span', { style: { color: tag.color, fontWeight: 'bold' } }, tag.name),
-                    el('button', { 
-                        style: { color: 'red', fontSize: '12px' },
-                        onclick: async () => {
-                            if(confirm(`Delete tag "${tag.name}"?`)) {
-                                await tagManager.delete(tag.id);
-                                tags.splice(tags.indexOf(tag), 1);
-                                renderList();
-                            }
-                        }
-                    }, 'Del')
+                list.appendChild(el('div', { className: 'manager-item' },
+                    el('span', { style: `color:${tag.color}; font-weight:bold` }, `[${tag.type || 'P'}] ${tag.name}`),
+                    el('div', {},
+                        el('button', { className: 'text-primary mr-2', onclick: () => this._handleTagMerge(tag, tags) }, '合併'),
+                        el('button', { className: 'text-danger', onclick: () => this._handleTagDelete(tag) }, '刪除')
+                    )
                 ));
             });
         };
-        renderList();
 
-        const input = el('input', { type: 'text', placeholder: 'New Tag Name', style: 'width: 100%; padding: 8px; margin-bottom: 5px;' });
-        const typeSelect = el('select', { style: 'width: 100%; padding: 8px; margin-bottom: 10px;' },
-            el('option', { value: 'PERSONAL' }, 'Personal (General)'),
-            el('option', { value: 'HISTORY' }, 'History (Medical)'),
-            el('option', { value: 'MOVEMENT' }, 'Movement (Observation)')
+        const form = el('div', {},
+            list,
+            el('h4', { className: 'mt-3' }, '新增標籤'),
+            el('input', { id: 'new-tag-name', placeholder: '名稱', className: 'w-100 p-2' }),
+            el('select', { id: 'new-tag-type', className: 'w-100 p-2 mt-1' },
+                el('option', { value: 'PERSONAL' }, '一般標籤'),
+                el('option', { value: 'ANATOMY' }, '解剖標籤 (自動配色)')
+            )
         );
 
-        new Modal('Tag Manager', el('div', {}, list, input, typeSelect), async () => {
-            if (input.value) {
-                await tagManager.saveTagDefinition({
-                    name: input.value,
-                    type: typeSelect.value,
-                    paletteColor: '#3b82f6' 
-                });
-                Toast.show('Tag created');
+        new Modal('標籤管理中心', form, async () => {
+            const name = form.querySelector('#new-tag-name').value;
+            const type = form.querySelector('#new-tag-type').value;
+            if (name) {
+                await tagManager.saveTagDefinition({ name, type });
+                Toast.show('標籤已建立');
             }
         }).open();
+        renderList();
     }
 
     // --- Feature: Assessment Editor CRUD ---
+    // 動作評估編輯器：從 BodyRegions 動態讀取
     async _openAssessmentEditor() {
-        const { StorageKeys } = await import('../config.js');
-        const { storageManager } = await import('../core/db.js');
-
-        // 讀取自訂評估 (從 META store)
+        const { BodyRegions, StorageKeys } = await import('../config.js');
         const meta = await storageManager.get(StorageKeys.META, 'custom_assessments');
-        const customAssessments = meta ? meta.data : [];
+        const assessments = meta ? meta.data : [];
 
-        const list = el('div', { style: { maxHeight: '250px', overflowY: 'auto', marginBottom: '15px', border: '1px solid #eee', borderRadius: '4px' } });
-        
-        const renderList = () => {
-            list.innerHTML = '';
-            if (customAssessments.length === 0) {
-                list.innerHTML = '<div style="padding:10px; color:#999; text-align:center;">No custom assessments yet.</div>';
-            }
-            customAssessments.forEach((item, index) => {
-                list.appendChild(el('div', { style: { padding: '8px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
-                    el('div', {}, 
-                        el('div', { style: { fontWeight: 'bold' } }, item.name),
-                        el('div', { style: { fontSize: '12px', color: '#666' } }, `${item.region} | +: ${item.positive}`)
-                    ),
-                    el('button', { 
-                        style: { color: 'red', fontSize: '12px' },
-                        onclick: async () => {
-                            if(confirm(`Delete "${item.name}"?`)) {
-                                customAssessments.splice(index, 1);
-                                await storageManager.put(StorageKeys.META, { id: 'custom_assessments', data: customAssessments });
-                                renderList();
-                            }
-                        }
-                    }, 'Del')
-                ));
-            });
-        };
-        renderList();
-
-        const regionSelect = el('select', { style: 'width: 100%; padding: 8px; margin-bottom: 5px;' },
-            el('option', { value: 'Shoulder' }, 'Shoulder'),
-            el('option', { value: 'Knee' }, 'Knee'),
-            el('option', { value: 'Spine' }, 'Spine'),
-            el('option', { value: 'Hip' }, 'Hip')
+        const form = el('div', {},
+            el('select', { id: 'ast-region', className: 'w-100 p-2' },
+                ...Object.values(BodyRegions).map(r => el('option', { value: r.label }, r.label))
+            ),
+            el('input', { id: 'ast-name', placeholder: '測試名稱 (如: Lachman Test)', className: 'w-100 p-2 mt-1' }),
+            el('input', { id: 'ast-pos', placeholder: '陽性意義 (如: ACL 斷裂)', className: 'w-100 p-2 mt-1' })
         );
-        const nameInput = el('input', { type: 'text', placeholder: 'Test Name (e.g. Empty Can)', style: 'width: 100%; padding: 8px; margin-bottom: 5px;' });
-        const positiveInput = el('input', { type: 'text', placeholder: 'Positive Sign (e.g. Supraspinatus tear)', style: 'width: 100%; padding: 8px; margin-bottom: 5px;' });
 
-        new Modal('Assessment Editor', el('div', {}, list, el('hr'), el('h4', {style:'margin:5px 0'}, 'Add New'), regionSelect, nameInput, positiveInput), async () => {
-            if (nameInput.value && positiveInput.value) {
-                customAssessments.push({
-                    id: 'cust_' + Date.now(),
-                    region: regionSelect.value,
-                    name: nameInput.value,
-                    positive: positiveInput.value
+        new Modal('新增自訂評估', form, async () => {
+            const name = form.querySelector('#ast-name').value;
+            if (name) {
+                assessments.push({
+                    region: form.querySelector('#ast-region').value,
+                    name: name,
+                    positive: form.querySelector('#ast-pos').value
                 });
-                await storageManager.put(StorageKeys.META, { id: 'custom_assessments', data: customAssessments });
-                Toast.show('Assessment saved');
+                await storageManager.put(StorageKeys.META, { id: 'custom_assessments', data: assessments });
+                Toast.show('評估項目已儲存');
             }
         }).open();
     }
 
-    // --- Feature: Template Builder CRUD ---
+    // 模板建構器：支援完整 SOAP 與 ROM
     async _openTemplateBuilder() {
-        const titleInput = el('input', { type: 'text', placeholder: 'Template Title', style: 'width: 100%; margin-bottom: 10px; padding: 8px;' });
-        const sInput = el('textarea', { placeholder: 'Subjective (S)', style: 'width: 100%; height: 60px; margin-bottom: 5px;' });
-        const oInput = el('textarea', { placeholder: 'Objective (O)', style: 'width: 100%; height: 60px; margin-bottom: 5px;' });
-        
-        new Modal('New Template', el('div', {}, titleInput, sInput, oInput), async () => {
-            if (!titleInput.value) return;
-            const { storageManager } = await import('../core/db.js');
-            const { StorageKeys } = await import('../config.js');
-            
-            await storageManager.put(StorageKeys.TEMPLATES, {
+        const form = el('div', { className: 'template-builder-form' },
+            el('input', { id: 'tpl-title', placeholder: '模板名稱 (如: 五十肩初診)', className: 'w-100 p-2' }),
+            el('textarea', { id: 'tpl-s', placeholder: 'S (主訴預設)', className: 'w-100 mt-1' }),
+            el('textarea', { id: 'tpl-o', placeholder: 'O (客觀預設)', className: 'w-100 mt-1' }),
+            el('textarea', { id: 'tpl-a', placeholder: 'A (評估預設)', className: 'w-100 mt-1' }),
+            el('p', { className: 'mt-2 mb-0' }, '預設標籤 (逗號隔開):'),
+            el('input', { id: 'tpl-tags', placeholder: 'FrozenShoulder, ROM受限', className: 'w-100 p-2' })
+        );
+
+        new Modal('進階模板編輯器', form, async () => {
+            const title = form.querySelector('#tpl-title').value;
+            if (!title) return;
+            const payload = {
                 id: 'tpl_' + Date.now(),
-                title: titleInput.value,
-                soap: { s: sInput.value, o: oInput.value, a: '', p: '' },
-                tags: [],
-                bodyParts: []
-            });
-            Toast.show('Template saved');
+                title,
+                soap: {
+                    s: form.querySelector('#tpl-s').value,
+                    o: form.querySelector('#tpl-o').value,
+                    a: form.querySelector('#tpl-a').value,
+                    p: ''
+                },
+                tags: form.querySelector('#tpl-tags').value.split(',').map(t => t.trim()).filter(Boolean)
+            };
+            await storageManager.put(StorageKeys.TEMPLATES, payload);
+            Toast.show('模板建置完成');
         }).open();
     }
 
