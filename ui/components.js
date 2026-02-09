@@ -7,6 +7,7 @@
  */
 
 import { EventTypes, AnatomicalWeights, TagType } from '../config.js';
+import { BodyRegions, TissueStyles } from '../config.js';
 import { EventBus } from '../core/utils.js';
 
 // --- DOM Helper ---
@@ -90,7 +91,6 @@ export class Modal {
 }
 
 // --- Tag Selector ---
-import { TagType, BodyRegions, TissueStyles, AnatomicalWeights } from '../config.js';
 
 export class TagSelector {
     constructor(selectedTags = [], availableTags = [], onChange) {
