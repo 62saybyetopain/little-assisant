@@ -378,32 +378,98 @@ export class CustomerDetailView extends BaseView {
     }
 
     _editCustomer(customer) {
-        const nameInput = el('input', { type: 'text', value: customer.name, style: 'width: 100%; margin-bottom: 10px; padding: 8px;' });
-        const phoneInput = el('input', { type: 'tel', value: customer.phone, style: 'width: 100%; margin-bottom: 10px; padding: 8px;' });
-        
-        new Modal('Edit Customer', el('div', {}, nameInput, phoneInput), async () => {
-            await customerManager.update(customer.id, {
-                name: nameInput.value,
-                phone: phoneInput.value
+        // 1. 構建多層次的表單結構
+        const form = el('div', { className: 'rich-form' },
+            // A. 基本身份與聯絡
+            el('section', { className: 'form-section' },
+                el('h4', { className: 'section-title' }, '基本身份'),
+                el('div', { className: 'form-grid' },
+                    this._createInputField('姓名 *', 'text', 'edit-name', customer.name),
+                    this._createInputField('電話', 'tel', 'edit-phone', customer.phone)
+                ),
+                el('div', { className: 'form-grid mt-2' },
+                    this._createInputField('LINE ID', 'text', 'edit-line', customer.info?.lineId || ''),
+                    this._createInputField('電子郵件', 'email', 'edit-email', customer.info?.email || '')
+                )
+            ),
+
+            // B. 生活脈絡 (職業與興趣)
+            el('section', { className: 'form-section mt-4' },
+                el('h4', { className: 'section-title' }, '生活脈絡'),
+                el('div', { className: 'form-grid' },
+                    this._createInputField('職業 (如: 工程師, 廚師)', 'text', 'edit-job', customer.info?.occupation || ''),
+                    this._createInputField('運動/興趣 (如: 馬拉松, 鋼琴)', 'text', 'edit-hobby', customer.info?.interests || '')
+                )
+            ),
+
+            // C. 臨床背景 (標籤化病史)
+            el('section', { className: 'form-section mt-4' },
+                el('h4', { className: 'section-title' }, '臨床背景 (病史與標籤)'),
+                el('div', { id: 'edit-tag-selector-container', className: 'mt-2' })
+            ),
+
+            // D. 備註
+            el('section', { className: 'form-section mt-4' },
+                el('h4', { className: 'section-title' }, '備註事項'),
+                el('textarea', { 
+                    id: 'edit-note', 
+                    className: 'soap-textarea', 
+                    placeholder: '其他需要注意的細節...',
+                    style: 'height: 80px;'
+                }, customer.note || '')
+            )
+        );
+
+        // 2. 初始化標籤選擇器 (特別處理病史標籤)
+        let selectedTags = [...(customer.tags || [])];
+        import('./components.js').then(async ({ TagSelector, tagManager }) => {
+            const allTags = await tagManager.getAll();
+            const tagSelector = new TagSelector(selectedTags, allTags, (newTags) => {
+                selectedTags = newTags;
             });
-            this.render(); // Re-render to show changes
-            Toast.show('Customer updated');
+            form.querySelector('#edit-tag-selector-container').appendChild(tagSelector.element);
+        });
+
+        // 3. 彈出 Modal
+        new Modal('編輯顧客檔案', form, async () => {
+            const updatedData = {
+                name: form.querySelector('#edit-name').value,
+                phone: form.querySelector('#edit-phone').value,
+                tags: selectedTags,
+                note: form.querySelector('#edit-note').value,
+                info: {
+                    lineId: form.querySelector('#edit-line').value,
+                    email: form.querySelector('#edit-email').value,
+                    occupation: form.querySelector('#edit-job').value,
+                    interests: form.querySelector('#edit-hobby').value
+                }
+            };
+
+            if (!updatedData.name) return Toast.show('姓名為必填', 'error');
+
+            try {
+                await customerManager.update(customer.id, updatedData);
+                Toast.show('檔案已更新');
+                this.render(); // 重新渲染頁面
+            } catch (e) {
+                Toast.show('更新失敗: ' + e.message, 'error');
+            }
         }).open();
     }
 
-    async _cloneRecord(sourceRecord) {
-        try {
-            const newRecord = await recordManager.create(this.customerId, {
-                content: { ...sourceRecord.content },
-                tags: [...(sourceRecord.tags || [])]
-            });
-            Toast.show('Record cloned from previous visit');
-            this.router.navigate(`record/${newRecord.id}`);
-        } catch (e) {
-            Toast.show('Clone failed: ' + e.message, 'error');
-        }
+    // 輔助函式：建立美觀的輸入框組
+    _createInputField(label, type, id, value) {
+        return el('div', { className: 'input-group' },
+            el('label', { for: id, className: 'input-label' }, label),
+            el('input', { 
+                type: type, 
+                id: id, 
+                value: value, 
+                className: 'search-bar', // 複用 search-bar 的樣式
+                style: 'margin-top: 4px;'
+            })
+        );
     }
-}
 
 // --- Record Editor View ---
 export class RecordEditorView extends BaseView {
