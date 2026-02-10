@@ -94,7 +94,7 @@ export class Modal {
 
 export class TagSelector {
     constructor(selectedTags = [], availableTags = [], onChange) {
-        this.selected = new Set(selectedTags);
+        this.items = selectedTags.map(t => typeof t === 'string' ? { tagId: t, remark: '' } : t);
         this.available = availableTags;
         this.onChange = onChange;
         this.element = el('div', { className: 'tag-selector' });
@@ -103,116 +103,35 @@ export class TagSelector {
 
     render() {
         this.element.innerHTML = '';
-        
-        // 1. 頂部已選取區域
-        const selectedContainer = el('div', { className: 'selected-tags-grid' });
-        this.selected.forEach(tagName => {
-            const tagData = this.available.find(t => t.name === tagName) || { color: '#64748b' };
-            const chip = el('span', { 
-                className: 'tag-chip',
-                style: { backgroundColor: tagData.color }
-            }, 
-                tagName,
-                el('span', { className: 'tag-remove', onclick: () => this._removeTag(tagName) }, ' ×')
-            );
-            selectedContainer.appendChild(chip);
+        const list = el('div', { className: 'history-list-rows' });
+        this.items.forEach((item, index) => {
+            list.appendChild(el('div', { className: 'history-edit-row', style: 'display:flex; gap:8px; margin-bottom:12px; align-items:center' },
+                el('input', { type: 'text', value: item.tagId, className: 'search-bar', style: 'flex:1', onchange: (e) => { this.items[index].tagId = e.target.value; this._notify(); } }),
+                el('span', {}, '【'),
+                el('input', { type: 'text', value: item.remark, className: 'search-bar', style: 'flex:1.2', onchange: (e) => { this.items[index].remark = e.target.value; this._notify(); } }),
+                el('span', {}, '】'),
+                el('button', { className: 'icon-btn text-danger', onclick: () => { this.items.splice(index, 1); this.render(); this._notify(); } }, '×')
+            ));
         });
 
-        // 2. 模式切換與輸入區域
-        const inputArea = el('div', { className: 'tag-input-group' });
-        const nameInput = el('input', { 
-    type: 'text', 
-    placeholder: '輸入自訂標籤後按 Enter...',
-    className: 'tag-main-input',
-    style: { width: '100%', padding: '8px', marginTop: '12px' },
-    onkeydown: (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            if (e.target.value.trim()) {
-                this._addTag(e.target.value.trim());
-                e.target.value = ''; // 清空輸入框
-            }
-        }
-    }
-});
-
-        // 3. [核心] 解剖智慧建立區 (Anatomy Quick-Builder)
-        const anatomyBuilder = el('div', { className: 'anatomy-builder' });
-        
-        const regionSelect = el('select', { className: 'mini-select' },
-            el('option', { value: '' }, '--部位--'),
-            ...Object.values(BodyRegions).map(r => el('option', { value: r.id }, r.label))
-        );
-
-        const tissueSelect = el('select', { className: 'mini-select' },
-            el('option', { value: '' }, '--組織--'),
-            ...Object.entries(TissueStyles).map(([key, t]) => el('option', { value: key }, t.label))
-        );
-
-        const btnAddAnatomy = el('button', {
-            className: 'btn-add-anatomy',
-            onclick: () => this._handleAnatomyAdd(regionSelect.value, tissueSelect.value)
-        }, '+');
-
-        anatomyBuilder.append(regionSelect, tissueSelect, btnAddAnatomy);
-
-        // 4. 推薦列表
-        const suggestionsArea = this._renderSuggestions();
-
-        this.element.append(selectedContainer, anatomyBuilder, nameInput, suggestionsArea);
-    }
-
-    _handleAnatomyAdd(regionId, tissueKey) {
-        if (!regionId || !tissueKey) return;
-        
-        const region = Object.values(BodyRegions).find(r => r.id === regionId);
-        const tissue = TissueStyles[tissueKey];
-        const tagName = `${region.label}-${tissue.label}`;
-        
-        // HSL 演算：Hue 來自部位，Saturation/Lightness 來自組織類型
-        const color = `hsl(${region.hue}, ${tissue.s}%, ${tissue.l}%)`;
-        
-        this._addTag(tagName, { type: TagType.ANATOMY, color: color });
-    }
-
-    _renderSuggestions() {
-        const container = el('div', { className: 'tag-suggestions' });
-        const sorted = [...this.available].sort((a, b) => (b.count || 0) - (a.count || 0));
-        
-        sorted.slice(0, 15).forEach(tag => {
-            if (this.selected.has(tag.name)) return;
-            const chip = el('span', { 
+        const suggestions = el('div', { className: 'tag-suggestions mt-3' },
+            ...this.available.sort((a,b) => (b.count||0) - (a.count||0)).slice(0, 10).map(tag => el('span', {
                 className: 'tag-chip suggestion',
-                style: { backgroundColor: tag.color || '#cbd5e1' },
-                onclick: () => this._addTag(tag.name, tag)
-            }, tag.name);
-            container.appendChild(chip);
-        });
-        return container;
+                style: { backgroundColor: tag.color || '#94a3b8', cursor: 'pointer', margin: '0 4px 4px 0' },
+                onclick: () => this._addTag(tag.name) // 點擊建議直接加入新行
+            }, tag.name))
+        );
+        this.element.append(list, el('button', { className: 'btn-secondary w-100', onclick: () => { this.items.push({ tagId: '', remark: '' }); this.render(); } }, '+ 新增病史'), suggestions);
     }
 
-    _addTag(name, metadata = {}) {
-        const cleanName = name.trim();
-        if (cleanName && !this.selected.has(cleanName)) {
-            this.selected.add(cleanName);
-            // 若為新建立的標籤且未提供顏色，給予預設
-            if (!this.available.find(t => t.name === cleanName)) {
-                this.available.push({ 
-                    name: cleanName, 
-                    color: metadata.color || '#94a3b8', 
-                    type: metadata.type || TagType.PERSONAL 
-                });
-            }
+    _addTag(name) { // 關鍵補完：供 BodyMap 呼叫 [cite: 9]
+        if (!this.items.some(i => i.tagId === name)) {
+            this.items.push({ tagId: name, remark: '' });
             this.render();
-            this.onChange(Array.from(this.selected));
+            this._notify();
         }
     }
-
-    _removeTag(name) {
-        this.selected.delete(name);
-        this.render();
-        this.onChange(Array.from(this.selected));
-    }
+    _notify() { this.onChange(this.items.filter(i => i.tagId.trim())); }
 }
 
 // --- Body Map (SVG) with Anatomical Segmentation ---

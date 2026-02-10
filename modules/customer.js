@@ -15,169 +15,137 @@ import { EventBus, UUID } from '../core/utils.js';
  * 標籤管理器 (Internal Helper)
  */
 class TagManager {
-    /**
-     * 更新標籤使用計數
-     * @param {string[]} newTags 
-     * @param {string[]} oldTags 
-     * @param {Object} [tx] - Optional transaction context
-     */
     async syncTags(newTags = [], oldTags = [], tx = null) {
-        const added = newTags.filter(t => !oldTags.includes(t));
-        const removed = oldTags.filter(t => !newTags.includes(t));
-
-        // Helper: Use provided TX or start a new one
+        const toIds = (tags) => tags.map(t => typeof t === 'object' ? t.tagId : t).filter(Boolean);
+        const newIds = toIds(newTags);
+        const oldIds = toIds(oldTags);
+        const added = newIds.filter(t => !oldIds.includes(t));
+        const removed = oldIds.filter(t => !newIds.includes(t));
         const execute = (op) => tx ? op(tx) : storageManager.runTransaction([StorageKeys.TAGS], 'readwrite', op);
-
-        for (const tagName of added) {
-            await this._updateTagCount(tagName, 1, execute);
-        }
-
-        for (const tagName of removed) {
-            await this._updateTagCount(tagName, -1, execute);
-        }
+        for (const tagName of added) await this._updateTagCount(tagName, 1, execute);
+        for (const tagName of removed) await this._updateTagCount(tagName, -1, execute);
     }
 
     async _updateTagCount(tagName, delta, execute) {
         await execute(async (ctx) => {
-            // 假設 ID 就是 tagName
-            const id = tagName;
-            const existing = await ctx.get(StorageKeys.TAGS, id);
-
+            const existing = await ctx.get(StorageKeys.TAGS, tagName);
             if (existing) {
-                const newCount = (existing.count || 0) + delta;
                 await ctx.put(StorageKeys.TAGS, { 
                     ...existing, 
-                    count: Math.max(0, newCount) 
+                    count: Math.max(0, (existing.count || 0) + delta),
+                    updatedAt: new Date().toISOString()
                 });
             } else if (delta > 0) {
-                // 自動建立標籤 (Implicit Creation via SyncTags)
-                // 當從病歷介面直接輸入新標籤時觸發。
-                // 由於缺乏詳細定義，此時只能給予預設類型與顏色。
-                const defaultData = { name: tagName, type: TagType.PERSONAL };
-                const color = this._resolveColor(defaultData);
-                
+                const color = this._resolveColor({ type: TagType.PERSONAL });
                 await ctx.put(StorageKeys.TAGS, {
-                    id: id,
-                    name: tagName,
-                    type: TagType.PERSONAL, // 預設歸類
-                    count: 1,
-                    color: color,
-                    updatedAt: new Date().toISOString()
+                    id: tagName, name: tagName, type: TagType.PERSONAL,
+                    count: 1, color: color, updatedAt: new Date().toISOString()
                 });
             }
         });
     }
 
-    /**
-     * 建立或更新標籤定義 (Explicit Creation)
-     * 這是使用者在 UI 透過詳細表單建立標籤時呼叫的方法
-     * @param {Object} tagData
-     *  - name (string): 標籤名稱
-     *  - type (string): TagType Enum
-     *  - regionId (string, optional): 用於 ANATOMY
-     *  - tissueId (string, optional): 用於 ANATOMY
-     *  - paletteColor (string, optional): 用於 非解剖類，直接傳入 Hex Code
-     */
-    async saveTagDefinition(tagData) {
-        // 1. 計算/決定最終顏色
-        const color = this._resolveColor(tagData);
-
-        // 2. 建構物件
-        const tagRecord = {
-            id: tagData.name, 
-            name: tagData.name,
-            type: tagData.type,
-            
-            // 解剖屬性
-            region: tagData.regionId || null,
-            tissue: tagData.tissueId || null,
-            
-            // 非解剖屬性 (直接存 Hex，因為是用戶選的)
-            color: color, 
-            
-            // 系統屬性
-            count: 0, // 初始計數，由 syncTags 維護
-            updatedAt: new Date().toISOString()
-        };
-
-        // 3. 檢查是否存在以保留計數，否則視為新標籤
-        const existing = await storageManager.get(StorageKeys.TAGS, tagRecord.id);
-        if (existing) {
-            tagRecord.count = existing.count || 0;
-            tagRecord.createdAt = existing.createdAt || tagRecord.updatedAt;
-        } else {
-            tagRecord.createdAt = tagRecord.updatedAt;
-        }
-
-        // 4. 寫入
-        await storageManager.put(StorageKeys.TAGS, tagRecord);
-        return tagRecord;
-    }
-
-    /**
-     * 顏色解析器 (Color Resolver)
-     * 負責將標籤資料轉換為 CSS 顏色字串
-     */
     _resolveColor(data) {
-        // A. 解剖標籤：系統即時演算 (HSL)
-        if (data.type === TagType.ANATOMY) {
-            const region = BodyRegions[data.regionId] || BodyRegions.JOINT;
+        if (data.type === TagType.ANATOMY && data.regionId) {
+            const region = BodyRegions[data.regionId] || { hue: 200 };
             const style = TissueStyles[data.tissueId] || { s: 80, l: 50 };
-            
             return `hsl(${region.hue}, ${style.s}%, ${style.l}%)`;
         }
-        
-        // B. 其他標籤：直接使用前端傳來的選定色 (Hex)
-        // 前端 UI 會根據 TagType 顯示對應的 TagPalettes 供用戶選擇
-        if (data.paletteColor) {
-            return data.paletteColor;
-        }
-
-        // C. 兜底邏輯 (Fallback)
-        // 用於舊資料遷移或快速新增時的預設值
-        return '#cbd5e1'; // 預設淺灰 (Slate-300)
+        return data.paletteColor || '#94a3b8';
     }
 
-    async getAll() {
-        return await storageManager.getAll(StorageKeys.TAGS);
+    async getAll() { return await storageManager.getAll(StorageKeys.TAGS); }
+}
+export const tagManager = new TagManager();
+
+/**
+ * 顧客管理器 (Singleton)
+ *  整合生活脈絡、動態聯絡聚合與關鍵字，保留統計更新功能
+ */
+class CustomerManager {
+    async create(data) {
+        if (!data.name) throw new Error('VAL_001'); // 遵循 ErrorCodes 
+        const customer = this._prepareCustomerObject(UUID(), data);
+        await storageManager.put(StorageKeys.CUSTOMERS, customer);
+        if (customer.tags.length > 0) await tagManager.syncTags(customer.tags, []);
+        return customer;
     }
 
-    /**
-     * [Fix] 標籤刪除策略
-     * @param {string} tagId 
-     * @param {string} strategy 'SOFT' | 'HARD'
-     * @returns {Promise<Object>} result
-     */
-    async delete(tagId, strategy = 'SOFT') {
-        return await storageManager.runTransaction([StorageKeys.TAGS, StorageKeys.RECORDS], 'readwrite', async (tx) => {
-            const tag = await tx.get(StorageKeys.TAGS, tagId);
-            if (!tag) throw new Error('Tag not found');
+    async update(id, data) {
+        return await storageManager.runTransaction([StorageKeys.CUSTOMERS, StorageKeys.TAGS], 'readwrite', async (tx) => {
+            const current = await tx.get(StorageKeys.CUSTOMERS, id);
+            if (!current) throw new Error('STR_004');
+            
+            if (data.tags) await tagManager.syncTags(data.tags, current.tags, tx);
+            const updated = this._prepareCustomerObject(id, data, current);
+            await tx.put(StorageKeys.CUSTOMERS, updated);
+            return updated;
+        });
+    }
 
-            // 1. 引用檢查 (Reference Check)
-            // 由於 IDB 沒有 JOIN，需掃描 Records (這在大量資料下可能慢，但刪除操作頻率低)
-            // 優化：若 Tag 物件本身維護 count，可直接信賴 count (前提是 syncTags 邏輯嚴謹)
-            const refCount = tag.count || 0;
+    // 核心重構：資料正規化處理
+    _prepareCustomerObject(id, data, current = {}) {
+        const cArray = (data.c || '').split(' ').filter(v => v.trim());
+        return {
+            ...current, id,
+            name: data.name || current.name,
+            phone: cArray[0] || current.phone || '', // 維護舊索引相容性
+            c: data.c || current.c || '', 
+            kw: data.kw || current.kw || '', // 手動關鍵字 (不含住處)
+            tags: data.tags || current.tags || [], // 物件化結構 {tagId, remark}
+            note: data.note || current.note || '',
+            info: {
+                ...(current.info || {}),
+                address: data.address || current.info?.address || '',
+                occupation: data.occupation || current.info?.occupation || '',
+                interests: data.interests || current.info?.interests || ''
+            },
+            updatedAt: new Date().toISOString()
+        };
+    }
 
-            if (refCount > 0) {
-                if (strategy === 'HARD') {
-                    throw new Error(`Cannot hard delete tag "${tag.name}" because it is used by ${refCount} records. Please use Soft Delete (Archive).`);
-                }
-                
-                // Soft Delete: 標記為 inactive，保留資料但隱藏於選單
-                const updated = { ...tag, status: 'inactive', updatedAt: new Date().toISOString() };
-                await tx.put(StorageKeys.TAGS, updated);
-                return { status: 'soft_deleted', msg: 'Tag archived' };
-            } else {
-                // Hard Delete: 無人引用，物理刪除
-                await tx.delete(StorageKeys.TAGS, tagId);
-                return { status: 'hard_deleted', msg: 'Tag removed permanently' };
+    // 就診統計更新方法 
+    async updateVisitStats(id, visitDate, tx = null) {
+        const op = async (ctx) => {
+            const customer = await ctx.get(StorageKeys.CUSTOMERS, id);
+            if (!customer) return;
+            await ctx.put(StorageKeys.CUSTOMERS, {
+                ...customer,
+                lastVisit: visitDate,
+                visitCount: (customer.visitCount || 0) + 1
+            });
+        };
+        tx ? await op(tx) : await storageManager.runTransaction([StorageKeys.CUSTOMERS], 'readwrite', op);
+    }
+
+    // 自癒功能 
+    async recalculateStats(customerId) {
+        await storageManager.runTransaction([StorageKeys.CUSTOMERS, StorageKeys.RECORDS], 'readwrite', async (tx) => {
+            const request = tx.objectStore(StorageKeys.RECORDS).index('customerId').getAll(customerId);
+            const records = await new Promise((res) => request.onsuccess = () => res(request.result));
+            const valid = records.filter(r => !r._deleted && r.status === 'Finalized');
+            const customer = await tx.objectStore(StorageKeys.CUSTOMERS).get(customerId);
+            if (customer) {
+                await tx.objectStore(StorageKeys.CUSTOMERS).put({
+                    ...customer,
+                    visitCount: valid.length,
+                    lastVisit: valid.length > 0 ? valid.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0].updatedAt : null
+                });
             }
+        });
+    }
+
+    async get(id) { return await storageManager.get(StorageKeys.CUSTOMERS, id); }
+    async delete(id) {
+        return await storageManager.runTransaction([StorageKeys.CUSTOMERS, StorageKeys.TAGS], 'readwrite', async (tx) => {
+            const current = await tx.get(StorageKeys.CUSTOMERS, id);
+            if (current?.tags) await tagManager.syncTags([], current.tags, tx);
+            await tx.delete(StorageKeys.CUSTOMERS, id);
         });
     }
 }
 
-export const tagManager = new TagManager();
-
+export const customerManager = new CustomerManager();
 /**
  * 顧客管理器 (Singleton)
  */

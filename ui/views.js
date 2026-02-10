@@ -377,7 +377,14 @@ export class CustomerDetailView extends BaseView {
                 ),
                 el('div', { className: 'card-body' }, 
                     el('p', {}, rec.soap?.a || '無評估摘要'),
-                    el('div', { className: 'card-tags' }, ...(rec.tags || []).slice(0, 3).map(t => el('small', {}, `#${t}`)))
+                    el('div', { className: 'card-tags' }, 
+                        // 支援物件化標籤顯示：#名稱【備註】
+                        ...(rec.tags || []).slice(0, 5).map(t => {
+                            const name = typeof t === 'object' ? t.tagId : t;
+                            const remark = (typeof t === 'object' && t.remark) ? `【${t.remark}】` : '';
+                            return el('small', { style: 'margin-right:8px; color:var(--primary)' }, `#${name}${remark}`);
+                        })
+                    )
                 )
             );
             historyList.appendChild(card);
@@ -386,70 +393,115 @@ export class CustomerDetailView extends BaseView {
         this.root.append(header, statsSection, actionArea, historyList);
     }
 
-    _editCustomer(customer) {
-    const containerId = 'edit-tag-selector-container';
-    
-    // 1. 構建多層次的表單結構 (優化間距與結構)
+    我完全理解您的困擾。在之前的對話中，我們針對不同的需求（如間距優化、解決標籤載入報錯、動態聯絡人、單行病史備註等）分階段進行了多次修改，導致您手上的版本變得混亂 。
+
+根據您最後確認的實作方案以及系統核心架構（功能彙編摘要），目前您最完整且正確的版本是整合了「結構化病史」與「動態聚合聯絡人」的生產級版本。
+
+這個版本的核心邏輯如下：
+
+
+資料結構轉型：病史標籤不再只是字串陣列，而是轉為 {tagId, remark} 的物件陣列 。
+
+
+動態聯絡人區塊：移除原本固定的 LINE/Email 欄位，改用「+」按鈕動態增加，並在存檔前自動聚合成 c 字串 。
+
+
+生活脈絡整合：將姓名、關鍵字、住處、職業與興趣整合在同一個 Section 中 。
+
+
+非同步安全加載：保留了 import().then() 邏輯，並配合 edit-tag-selector-container 的 min-height 防止佈局坍塌 。
+
+為了避免混淆，以下是根據您上傳的最新檔案（views.js, customer.js, components.js）所彙整出的最終確定的 _editCustomer 實作程式碼：
+
+JavaScript
+/**
+ * 最終確定的 _editCustomer 實作程式碼
+ * 整合：生活脈絡、動態聯絡人聚合、結構化病史標籤、非同步安全加載
+ */
+_editCustomer(customer) {
+    // 1. 初始化動態聯絡人數據：將 c 字串拆分為欄位陣列 
+    let contactList = (customer.c || '').split(' ').filter(v => v.trim()).map(v => ({ value: v }));
+    if (contactList.length === 0) contactList.push({ value: '' });
+
+    const contactContainer = el('div', { className: 'mt-2' });
+    const renderContacts = () => {
+        contactContainer.innerHTML = '';
+        contactList.forEach((c, idx) => {
+            const row = el('div', { style: 'display:flex; gap:8px; margin-bottom:8px' },
+                el('input', { 
+                    type: 'text', value: c.value, placeholder: '電話、LINE 或 Email',
+                    className: 'search-bar', style: 'flex:1',
+                    oninput: (e) => contactList[idx].value = e.target.value
+                }),
+                el('button', { 
+                    className: 'icon-btn text-danger',
+                    onclick: () => { contactList.splice(idx, 1); renderContacts(); }
+                }, '×')
+            );
+            contactContainer.appendChild(row);
+        });
+    };
+    renderContacts();
+
+    // 2. 構建表單結構 (優化 Section 間距與呼吸感) [cite: 2, 6]
     const form = el('div', { className: 'rich-form' },
-        // A. 基本身份與聯絡
+        // A. 基本與生活脈絡區 
         el('section', { className: 'form-section' },
-            el('h4', { className: 'section-title' }, '基本身份'),
+            el('h4', { className: 'section-title' }, '基本資料與生活脈絡'),
             el('div', { className: 'form-grid' },
                 this._createInputField('姓名 *', 'text', 'edit-name', customer.name),
-                this._createInputField('電話', 'tel', 'edit-phone', customer.phone)
+                this._createInputField('關鍵字(快速搜尋用)', 'text', 'edit-kw', customer.kw || '')
+            ),
+            el('div', { className: 'mt-2' },
+                this._createInputField('住處地址', 'text', 'edit-address', customer.info?.address || '')
             ),
             el('div', { className: 'form-grid mt-2' },
-                this._createInputField('LINE ID', 'text', 'edit-line', customer.info?.lineId || ''),
-                this._createInputField('電子郵件', 'email', 'edit-email', customer.info?.email || '')
+                this._createInputField('職業', 'text', 'edit-job', customer.info?.occupation || ''),
+                this._createInputField('運動/興趣', 'text', 'edit-hobby', customer.info?.interests || '')
             )
         ),
 
-        // B. 生活脈絡 (職業與興趣)
+        // B. 聯絡資訊動態區 
         el('section', { className: 'form-section mt-4' },
-            el('h4', { className: 'section-title' }, '生活脈絡'),
-            el('div', { className: 'form-grid' },
-                this._createInputField('職業 (如: 工程師, 廚師)', 'text', 'edit-job', customer.info?.occupation || ''),
-                this._createInputField('運動/興趣 (如: 馬拉松, 鋼琴)', 'text', 'edit-hobby', customer.info?.interests || '')
-            )
+            el('div', { style: 'display:flex; justify-content:space-between; align-items:center' },
+                el('h4', { className: 'section-title' }, '聯絡方式'),
+                el('button', { 
+                    className: 'btn-secondary', style: 'font-size:11px; padding:4px 10px',
+                    onclick: () => { contactList.push({ value: '' }); renderContacts(); }
+                }, '+ 增加欄位')
+            ),
+            contactContainer
         ),
 
-        // C. 臨床背景 (優化載入區塊)
+        // C. 臨床背景 (標籤病史區) [cite: 2, 3]
         el('section', { className: 'form-section mt-4' },
-            el('h4', { className: 'section-title' }, '臨床背景 (病史與標籤)'),
-            // 加入 ID 導向的容器，並提供 loading 狀態
+            el('h4', { className: 'section-title' }, '病史'),
             el('div', { 
-                id: containerId, 
-                className: 'mt-2',
+                id: 'edit-tag-selector-container', 
                 style: 'min-height: 80px; display: flex; align-items: center; justify-content: center; color: var(--text-muted);' 
             }, '⏳ 正在載入標籤系統...')
         ),
 
-        // D. 備註
+        // D. 備註區
         el('section', { className: 'form-section mt-4' },
             el('h4', { className: 'section-title' }, '備註事項'),
-            el('textarea', { 
-                id: 'edit-note', 
-                className: 'soap-textarea', 
-                placeholder: '其他需要注意的細節...',
-                style: 'height: 80px;'
-            }, customer.note || '')
+            el('textarea', { id: 'edit-note', className: 'soap-textarea', style: 'height: 80px;' }, customer.note || '')
         )
     );
 
-    // 2. 彈出 Modal (先開啟彈窗，提升反應速度)
+    // 3. 處理 Modal 提交邏輯 [cite: 1]
     let selectedTags = [...(customer.tags || [])];
     const modal = new Modal('編輯顧客檔案', form, async () => {
         const updatedData = {
             name: form.querySelector('#edit-name').value,
-            phone: form.querySelector('#edit-phone').value,
+            // 聚合聯絡方式為單一字串 [cite: 5, 14]
+            c: contactList.map(c => c.value.trim()).filter(Boolean).join(' '),
+            kw: form.querySelector('#edit-kw').value,
+            address: form.querySelector('#edit-address').value,
+            occupation: form.querySelector('#edit-job').value,
+            interests: form.querySelector('#edit-hobby').value,
             tags: selectedTags,
-            note: form.querySelector('#edit-note').value,
-            info: {
-                lineId: form.querySelector('#edit-line').value,
-                email: form.querySelector('#edit-email').value,
-                occupation: form.querySelector('#edit-job').value,
-                interests: form.querySelector('#edit-hobby').value
-            }
+            note: form.querySelector('#edit-note').value
         };
 
         if (!updatedData.name) return Toast.show('姓名為必填', 'error');
@@ -462,33 +514,25 @@ export class CustomerDetailView extends BaseView {
             Toast.show('更新失敗: ' + e.message, 'error');
         }
     });
-
     modal.open();
 
-    // 3. 非同步初始化標籤選擇器 (優化錯誤處理與引用)
-    // 注意：這裡只從 components.js 拿 TagSelector，數據則使用頂部 import 的 tagManager
+    // 4. 非同步初始化標籤選擇器 (確保正確顯示標籤顏色與推薦) [cite: 2, 3]
     import('./components.js').then(async ({ TagSelector }) => {
         try {
-            // 使用 views.js 頂部 import 的 tagManager 單例
             const allTags = await tagManager.getAll(); 
-            const container = form.querySelector(`#${containerId}`);
+            const container = form.querySelector('#edit-tag-selector-container');
+            if (!container) return; 
+            container.innerHTML = ''; 
+            container.style.display = 'block';
             
-            if (!container) return; // 防止快速關閉彈窗導致的容器遺失
-            
-            container.innerHTML = ''; // 清除 Loading 字樣
-            container.style.display = 'block'; // 恢復正常佈局
-            
-            const tagSelector = new TagSelector(selectedTags, allTags, (newTags) => {
-                selectedTags = newTags;
+            // 使用新版 TagSelector 處理物件化標籤
+            const ts = new TagSelector(selectedTags, allTags, (tags) => {
+                selectedTags = tags;
             });
-            container.appendChild(tagSelector.element);
+            container.appendChild(ts.element);
         } catch (e) {
-            console.error('TagSelector載入失敗:', e);
-            const container = form.querySelector(`#${containerId}`);
-            if (container) container.textContent = '❌ 標籤系統加載失敗';
+            form.querySelector('#edit-tag-selector-container').textContent = '❌ 標籤系統加載失敗';
         }
-    }).catch(err => {
-        console.error('模組載入失敗:', err);
     });
 }
 
@@ -900,11 +944,23 @@ export class RecordEditorView extends BaseView {
         const backupId = `${this.recordId || this.customerId}_backup`;
         await draftManager.save(backupId, JSON.parse(JSON.stringify(this.data)));
 
+        // 將範本標籤格式標準化為物件結構 {tagId, remark}
+        const tplTags = (template.tags || []).map(t => typeof t === 'string' ? { tagId: t, remark: '' } : t);
+
         const mergedRecord = templateManager.merge(this.data, template, strategy);
         this.data.soap = mergedRecord.soap;
-        this.data.tags = mergedRecord.tags;
         this.data.bodyParts = mergedRecord.bodyParts;
         this.data.rom = mergedRecord.rom;
+
+        // 處理標籤合併與去重邏輯
+        if (strategy === 'Append') {
+            const existingTags = this.data.tags || [];
+            const combined = [...existingTags, ...tplTags];
+            const seen = new Set();
+            this.data.tags = combined.filter(t => seen.has(t.tagId) ? false : seen.add(t.tagId));
+        } else {
+            this.data.tags = tplTags;
+        }
 
         // 更新 UI 內容
         ['s', 'o', 'a', 'p'].forEach(key => {
@@ -913,7 +969,8 @@ export class RecordEditorView extends BaseView {
         });
 
         if (this.tagSelector) {
-            this.tagSelector.selected = new Set(this.data.tags);
+            // 更新 TagSelector 內部的 items 結構而非 selected Set
+            this.tagSelector.items = [...this.data.tags];
             this.tagSelector.render();
         }
 
