@@ -479,7 +479,7 @@ export class CustomerDetailView extends BaseView {
             })
         );
     }
-
+}
 // --- Record Editor View ---
 export class RecordEditorView extends BaseView {
     constructor(router, params) {
