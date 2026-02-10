@@ -121,9 +121,20 @@ export class TagSelector {
         // 2. 模式切換與輸入區域
         const inputArea = el('div', { className: 'tag-input-group' });
         const nameInput = el('input', { 
-            type: 'text', placeholder: '搜尋或自訂...',
-            className: 'tag-main-input'
-        });
+    type: 'text', 
+    placeholder: '輸入自訂標籤後按 Enter...',
+    className: 'tag-main-input',
+    style: { width: '100%', padding: '8px', marginTop: '12px' },
+    onkeydown: (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (e.target.value.trim()) {
+                this._addTag(e.target.value.trim());
+                e.target.value = ''; // 清空輸入框
+            }
+        }
+    }
+});
 
         // 3. [核心] 解剖智慧建立區 (Anatomy Quick-Builder)
         const anatomyBuilder = el('div', { className: 'anatomy-builder' });
