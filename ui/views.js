@@ -393,31 +393,6 @@ export class CustomerDetailView extends BaseView {
         this.root.append(header, statsSection, actionArea, historyList);
     }
 
-    我完全理解您的困擾。在之前的對話中，我們針對不同的需求（如間距優化、解決標籤載入報錯、動態聯絡人、單行病史備註等）分階段進行了多次修改，導致您手上的版本變得混亂 。
-
-根據您最後確認的實作方案以及系統核心架構（功能彙編摘要），目前您最完整且正確的版本是整合了「結構化病史」與「動態聚合聯絡人」的生產級版本。
-
-這個版本的核心邏輯如下：
-
-
-資料結構轉型：病史標籤不再只是字串陣列，而是轉為 {tagId, remark} 的物件陣列 。
-
-
-動態聯絡人區塊：移除原本固定的 LINE/Email 欄位，改用「+」按鈕動態增加，並在存檔前自動聚合成 c 字串 。
-
-
-生活脈絡整合：將姓名、關鍵字、住處、職業與興趣整合在同一個 Section 中 。
-
-
-非同步安全加載：保留了 import().then() 邏輯，並配合 edit-tag-selector-container 的 min-height 防止佈局坍塌 。
-
-為了避免混淆，以下是根據您上傳的最新檔案（views.js, customer.js, components.js）所彙整出的最終確定的 _editCustomer 實作程式碼：
-
-JavaScript
-/**
- * 最終確定的 _editCustomer 實作程式碼
- * 整合：生活脈絡、動態聯絡人聚合、結構化病史標籤、非同步安全加載
- */
 _editCustomer(customer) {
     // 1. 初始化動態聯絡人數據：將 c 字串拆分為欄位陣列 
     let contactList = (customer.c || '').split(' ').filter(v => v.trim()).map(v => ({ value: v }));
