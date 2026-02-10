@@ -124,8 +124,7 @@ export class TagSelector {
 
         this.element.append(list, el('button', { className: 'btn-secondary w-100', style: 'margin-top:8px; border:2px dashed var(--border)', onclick: () => { this.items.push({ tagId: '', remark: '' }); this.render(); } }, '+ 新增病史標籤'), suggestions);
     }
-       _notify() { this.onChange(this.items.filter(i => i.tagId.trim())); }
-}
+
     _addTag(name) { // 關鍵補完：供 BodyMap 呼叫 [cite: 9]
         if (!this.items.some(i => i.tagId === name)) {
             this.items.push({ tagId: name, remark: '' });
