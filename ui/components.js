@@ -106,24 +106,26 @@ export class TagSelector {
         const list = el('div', { className: 'history-list-rows' });
         this.items.forEach((item, index) => {
             list.appendChild(el('div', { className: 'history-edit-row', style: 'display:flex; gap:8px; margin-bottom:12px; align-items:center' },
-                el('input', { type: 'text', value: item.tagId, className: 'search-bar', style: 'flex:1', onchange: (e) => { this.items[index].tagId = e.target.value; this._notify(); } }),
-                el('span', {}, '【'),
-                el('input', { type: 'text', value: item.remark, className: 'search-bar', style: 'flex:1.2', onchange: (e) => { this.items[index].remark = e.target.value; this._notify(); } }),
-                el('span', {}, '】'),
+                el('input', { type: 'text', value: item.tagId, className: 'search-bar', style: 'flex:1; font-weight:bold', onchange: (e) => { this.items[index].tagId = e.target.value; this._notify(); } }),
+                el('span', { style: 'color:var(--text-muted)' }, '【'),
+                el('input', { type: 'text', value: item.remark, className: 'search-bar', style: 'flex:1.2; border-bottom:1px dashed var(--border)', onchange: (e) => { this.items[index].remark = e.target.value; this._notify(); } }),
+                el('span', { style: 'color:var(--text-muted)' }, '】'),
                 el('button', { className: 'icon-btn text-danger', onclick: () => { this.items.splice(index, 1); this.render(); this._notify(); } }, '×')
             ));
         });
 
         const suggestions = el('div', { className: 'tag-suggestions mt-3' },
-            ...this.available.sort((a,b) => (b.count||0) - (a.count||0)).slice(0, 10).map(tag => el('span', {
+            ...this.available.filter(t => t.name !== '好聊').sort((a,b) => (b.count||0)-(a.count||0)).slice(0, 10).map(tag => el('span', {
                 className: 'tag-chip suggestion',
                 style: { backgroundColor: tag.color || '#94a3b8', cursor: 'pointer', margin: '0 4px 4px 0' },
-                onclick: () => this._addTag(tag.name) // 點擊建議直接加入新行
+                onclick: () => this._addTag(tag.name)
             }, tag.name))
         );
-        this.element.append(list, el('button', { className: 'btn-secondary w-100', onclick: () => { this.items.push({ tagId: '', remark: '' }); this.render(); } }, '+ 新增病史'), suggestions);
-    }
 
+        this.element.append(list, el('button', { className: 'btn-secondary w-100', style: 'margin-top:8px; border:2px dashed var(--border)', onclick: () => { this.items.push({ tagId: '', remark: '' }); this.render(); } }, '+ 新增病史標籤'), suggestions);
+    }
+       _notify() { this.onChange(this.items.filter(i => i.tagId.trim())); }
+}
     _addTag(name) { // 關鍵補完：供 BodyMap 呼叫 [cite: 9]
         if (!this.items.some(i => i.tagId === name)) {
             this.items.push({ tagId: name, remark: '' });

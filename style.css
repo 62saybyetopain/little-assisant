@@ -467,18 +467,51 @@ button:active,
 
 .modal-container {
     background-color: var(--surface);
-    width: 92%;
-    max-width: 400px;
+    width: 95%;
+    max-width: 550px;[cite_start] /* 增加寬度以容納多欄佈局並消除擠壓感 */
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
     display: flex;
     flex-direction: column;
-    max-height: 80dvh; /* 縮小高度，留出更多邊距感 */
+    max-height: 90dvh; /* 提高高度限制，留出更多呼吸空間 */
     margin: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.1); /* 微妙的邊框白邊 */
+    border: 1px solid rgba(255, 255, 255, 0.1);
     animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    overflow: hidden; /* [修正] 確保內部不產生橫向捲軸 */
 }
-
+/* ---X 關閉按鈕移至右上角並加大點擊熱區 --- */
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 24px; /* 增加頭部內距 */
+    border-bottom: 1px solid var(--border);
+    position: relative;
+}
+.modal-header .close-btn {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    font-size: 28px; /* 加大 X 字體 */
+    background: none;
+    color: var(--text-muted);
+    width: 44px; /* 加大點擊熱區 */
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background-color 0.2s;
+}
+.modal-header .close-btn:hover {
+    background-color: var(--primary-soft);
+}
+.modal-footer {
+    padding: 16px 24px 24px; /* 增加底部與邊緣間距，解決太貼邊的問題 */
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
 /* =========================================
    Animations
    ========================================= */
@@ -574,13 +607,28 @@ button:active,
 
 /* --- 新增：臨床背景標籤區域專用樣式 --- */
 #edit-tag-selector-container {
-    min-height: 80px; 
-    background: #f8fafc; /* 底色暗示可填寫 */
-    border: 1px dashed var(--border);
+    min-height: 110px; /* 稍微加大容器 */
+    background: #f8fafc; /* 背景淡色區隔 */
+    border: 2px dashed var(--border); /* 強化虛線感 */
     border-radius: var(--radius-md);
-    padding: 12px;
+    padding: 16px;
     margin-top: 8px;
+    position: relative;
     transition: all 0.2s ease-in-out;
+}
+/* 當容器為空時的背景說明文字效果 */
+#edit-tag-selector-container:empty::before {
+    content: "記錄病史（如：過敏、手術史...）+發生時間\A按 + 號或輸入後按 Enter 建立";
+    white-space: pre-wrap;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: var(--text-muted);
+    font-size: 13px;
+    text-align: center;
+    line-height: 1.6;
+    pointer-events: none;
 }
 
 /* 當內部的輸入框被選取時，外框發亮 */
@@ -592,8 +640,16 @@ button:active,
 
 .form-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr; /* 兩欄式佈局 */
-    gap: 12px;
+    grid-template-columns: repeat(2, 1fr); /* 強制維持兩欄 */
+    gap: 16px 20px;[cite_start] /* 增加上下與左右間距，徹底解決重疊 */
+    align-items: start;
+}
+
+.form-grid-three {
+    display: grid;
+    grid-template-columns: 0.8fr 1fr 2.2fr; /* 根據欄位屬性分配權重 */
+    gap: 16px;
+    margin-top: 16px;
 }
 
 .input-group {

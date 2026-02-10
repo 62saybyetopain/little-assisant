@@ -30,11 +30,7 @@ class TagManager {
         await execute(async (ctx) => {
             const existing = await ctx.get(StorageKeys.TAGS, tagName);
             if (existing) {
-                await ctx.put(StorageKeys.TAGS, { 
-                    ...existing, 
-                    count: Math.max(0, (existing.count || 0) + delta),
-                    updatedAt: new Date().toISOString()
-                });
+                await ctx.put(StorageKeys.TAGS, { ...existing, count: Math.max(0, (existing.count || 0) + delta) });
             } else if (delta > 0) {
                 const color = this._resolveColor({ type: TagType.PERSONAL });
                 await ctx.put(StorageKeys.TAGS, {
@@ -44,7 +40,18 @@ class TagManager {
             }
         });
     }
-
+    async saveTagDefinition(tagData) {
+        const color = this._resolveColor(tagData);
+        const tagRecord = {
+            id: tagData.name, name: tagData.name, type: tagData.type,
+            region: tagData.regionId || null, tissue: tagData.tissueId || null,
+            color: color, count: 0, updatedAt: new Date().toISOString()
+        };
+        const existing = await storageManager.get(StorageKeys.TAGS, tagRecord.id);
+        if (existing) { tagRecord.count = existing.count || 0; }
+        await storageManager.put(StorageKeys.TAGS, tagRecord);
+        return tagRecord;
+    }
     _resolveColor(data) {
         if (data.type === TagType.ANATOMY && data.regionId) {
             const region = BodyRegions[data.regionId] || { hue: 200 };
@@ -55,6 +62,14 @@ class TagManager {
     }
 
     async getAll() { return await storageManager.getAll(StorageKeys.TAGS); }
+    async delete(tagId, strategy = 'SOFT') {
+        return await storageManager.runTransaction([StorageKeys.TAGS], 'readwrite', async (tx) => {
+            const tag = await tx.get(StorageKeys.TAGS, tagId);
+            if (!tag) throw new Error('Tag not found');
+            if (tag.count > 0 && strategy === 'HARD') throw new Error(`In use by ${tag.count} records`);
+            strategy === 'SOFT' ? await tx.put(StorageKeys.TAGS, { ...tag, status: 'inactive' }) : await tx.delete(StorageKeys.TAGS, tagId);
+        });
+    }
 }
 export const tagManager = new TagManager();
 
@@ -86,19 +101,23 @@ class CustomerManager {
     // 核心重構：資料正規化處理
     _prepareCustomerObject(id, data, current = {}) {
         const cArray = (data.c || '').split(' ').filter(v => v.trim());
+        const tagKeywords = (data.tags || []).map(t => t.tagId).join(' ');
         return {
             ...current, id,
             name: data.name || current.name,
-            phone: cArray[0] || current.phone || '', // 維護舊索引相容性
+            phone: cArray[0] || current.phone || '', // 保持 phone 欄位作為熱索引相容
             c: data.c || current.c || '', 
-            kw: data.kw || current.kw || '', // 手動關鍵字 (不含住處)
-            tags: data.tags || current.tags || [], // 物件化結構 {tagId, remark}
+            kw: `${data.kw || ''} ${tagKeywords}`.trim(), //自動聚合標籤名至關鍵字
+            tags: data.tags || current.tags || [],
             note: data.note || current.note || '',
             info: {
                 ...(current.info || {}),
+                gender: data.gender || current.info?.gender || '男',
+                age: data.age || current.info?.age || '',
                 address: data.address || current.info?.address || '',
                 occupation: data.occupation || current.info?.occupation || '',
-                interests: data.interests || current.info?.interests || ''
+                interests: data.interests || current.info?.interests || '',
+                personality: data.personality || current.info?.personality || []
             },
             updatedAt: new Date().toISOString()
         };
@@ -136,6 +155,10 @@ class CustomerManager {
     }
 
     async get(id) { return await storageManager.get(StorageKeys.CUSTOMERS, id); }
+    async findByPhone(phone) {
+        const all = await storageManager.getAll(StorageKeys.CUSTOMERS);
+        return all.filter(c => (c.phone && c.phone.includes(phone)) || (c.c && c.c.includes(phone)));
+    }
     async delete(id) {
         return await storageManager.runTransaction([StorageKeys.CUSTOMERS, StorageKeys.TAGS], 'readwrite', async (tx) => {
             const current = await tx.get(StorageKeys.CUSTOMERS, id);

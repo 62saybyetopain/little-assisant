@@ -394,9 +394,13 @@ export class CustomerDetailView extends BaseView {
     }
 
 _editCustomer(customer) {
-    // 1. 初始化動態聯絡人數據：將 c 字串拆分為欄位陣列 
+    // 1. [保留] 初始化動態聯絡人數據
     let contactList = (customer.c || '').split(' ').filter(v => v.trim()).map(v => ({ value: v }));
     if (contactList.length === 0) contactList.push({ value: '' });
+
+    // [新增] 初始化個性標籤與基礎資訊
+    let personality = customer.info?.personality || [];
+    const genderOptions = ['男', '女', '多元'];
 
     const contactContainer = el('div', { className: 'mt-2' });
     const renderContacts = () => {
@@ -418,65 +422,87 @@ _editCustomer(customer) {
     };
     renderContacts();
 
-    // 2. 構建表單結構 (優化 Section 間距與呼吸感) [cite: 2, 6]
+    // 2. [修正] 構建表單結構 (引入三欄佈局、解決重疊問題)
     const form = el('div', { className: 'rich-form' },
-        // A. 基本與生活脈絡區 
+        // A. 基本資料與快速搜尋
         el('section', { className: 'form-section' },
-            el('h4', { className: 'section-title' }, '基本資料與生活脈絡'),
+            el('h4', { className: 'section-title' }, '基本資料與快速搜尋'),
             el('div', { className: 'form-grid' },
                 this._createInputField('姓名 *', 'text', 'edit-name', customer.name),
                 this._createInputField('關鍵字(快速搜尋用)', 'text', 'edit-kw', customer.kw || '')
             ),
-            el('div', { className: 'mt-2' },
+            // [修正] 性別、年齡、住處三欄並列 (使用 CSS form-grid-three)
+            el('div', { className: 'form-grid-three mt-3' },
+                el('div', { className: 'input-group' },
+                    el('label', { className: 'input-label' }, '性別'),
+                    el('select', { id: 'edit-gender', className: 'search-bar', style: 'margin-top:4px' },
+                        ...genderOptions.map(g => el('option', { value: g, selected: customer.info?.gender === g }, g))
+                    )
+                ),
+                this._createInputField('年齡', 'number', 'edit-age', customer.info?.age || ''),
                 this._createInputField('住處地址', 'text', 'edit-address', customer.info?.address || '')
-            ),
-            el('div', { className: 'form-grid mt-2' },
-                this._createInputField('職業', 'text', 'edit-job', customer.info?.occupation || ''),
-                this._createInputField('運動/興趣', 'text', 'edit-hobby', customer.info?.interests || '')
             )
         ),
 
-        // B. 聯絡資訊動態區 
+        // B. 生活脈絡與個性標籤
+        el('section', { className: 'form-section mt-4' },
+            el('h4', { className: 'section-title' }, '生活脈絡與個性'),
+            el('div', { className: 'form-grid' },
+                this._createInputField('職業', 'text', 'edit-job', customer.info?.occupation || ''),
+                this._createInputField('運動/興趣', 'text', 'edit-hobby', customer.info?.interests || '')
+            ),
+            // [新增] 個性標籤 (空格分隔輸入)
+            el('div', { className: 'mt-3' }, 
+                this._createInputField('個性標籤 (空格隔開，如：好聊 謹慎)', 'text', 'edit-personality', personality.join(' '))
+            )
+        ),
+
+        // C. [保留] 聯絡資訊動態區
         el('section', { className: 'form-section mt-4' },
             el('div', { style: 'display:flex; justify-content:space-between; align-items:center' },
                 el('h4', { className: 'section-title' }, '聯絡方式'),
                 el('button', { 
                     className: 'btn-secondary', style: 'font-size:11px; padding:4px 10px',
-                    onclick: () => { contactList.push({ value: '' }); renderContacts(); }
+                    onclick: (e) => { e.preventDefault(); contactList.push({ value: '' }); renderContacts(); }
                 }, '+ 增加欄位')
             ),
             contactContainer
         ),
 
-        // C. 臨床背景 (標籤病史區) [cite: 2, 3]
+        // D. [修正] 臨床背景 (加入背景使用說明)
         el('section', { className: 'form-section mt-4' },
             el('h4', { className: 'section-title' }, '病史'),
             el('div', { 
                 id: 'edit-tag-selector-container', 
-                style: 'min-height: 80px; display: flex; align-items: center; justify-content: center; color: var(--text-muted);' 
+                style: 'min-height: 100px; display: flex; align-items: center; justify-content: center; color: var(--text-muted);' 
             }, '⏳ 正在載入標籤系統...')
         ),
 
-        // D. 備註區
+        // E. [保留] 備註區
         el('section', { className: 'form-section mt-4' },
             el('h4', { className: 'section-title' }, '備註事項'),
             el('textarea', { id: 'edit-note', className: 'soap-textarea', style: 'height: 80px;' }, customer.note || '')
         )
     );
 
-    // 3. 處理 Modal 提交邏輯 [cite: 1]
+    // 3. [保留] 處理 Modal 提交邏輯
     let selectedTags = [...(customer.tags || [])];
     const modal = new Modal('編輯顧客檔案', form, async () => {
         const updatedData = {
             name: form.querySelector('#edit-name').value,
-            // 聚合聯絡方式為單一字串 [cite: 5, 14]
+            // [關鍵保留] 聚合聯絡方式為單一字串 
             c: contactList.map(c => c.value.trim()).filter(Boolean).join(' '),
             kw: form.querySelector('#edit-kw').value,
-            address: form.querySelector('#edit-address').value,
-            occupation: form.querySelector('#edit-job').value,
-            interests: form.querySelector('#edit-hobby').value,
             tags: selectedTags,
-            note: form.querySelector('#edit-note').value
+            note: form.querySelector('#edit-note').value,
+            info: {
+                gender: form.querySelector('#edit-gender').value,
+                age: form.querySelector('#edit-age').value,
+                address: form.querySelector('#edit-address').value,
+                occupation: form.querySelector('#edit-job').value,
+                interests: form.querySelector('#edit-hobby').value,
+                personality: form.querySelector('#edit-personality').value.split(' ').filter(v => v.trim())
+            }
         };
 
         if (!updatedData.name) return Toast.show('姓名為必填', 'error');
@@ -491,7 +517,7 @@ _editCustomer(customer) {
     });
     modal.open();
 
-    // 4. 非同步初始化標籤選擇器 (確保正確顯示標籤顏色與推薦) [cite: 2, 3]
+    // 4. [保留] 非同步初始化標籤選擇器 (保留原始 TagSelector 邏輯與配色)
     import('./components.js').then(async ({ TagSelector }) => {
         try {
             const allTags = await tagManager.getAll(); 
@@ -500,7 +526,6 @@ _editCustomer(customer) {
             container.innerHTML = ''; 
             container.style.display = 'block';
             
-            // 使用新版 TagSelector 處理物件化標籤
             const ts = new TagSelector(selectedTags, allTags, (tags) => {
                 selectedTags = tags;
             });
@@ -510,20 +535,22 @@ _editCustomer(customer) {
         }
     });
 }
-
     // 輔助函式：建立美觀的輸入框組
     _createInputField(label, type, id, value) {
-        return el('div', { className: 'input-group' },
-            el('label', { for: id, className: 'input-label' }, label),
-            el('input', { 
-                type: type, 
-                id: id, 
-                value: value, 
-                className: 'search-bar', // 複用 search-bar 的樣式
-                style: 'margin-top: 4px;'
-            })
-        );
-    }
+    return el('div', { className: 'input-group' },
+        el('label', { 
+            for: id, 
+            className: 'input-label',
+            style: 'display: block; margin-bottom: 6px; font-weight: 500;' // 強化標籤判讀性
+        }, label),
+        el('input', { 
+            type: type, 
+            id: id, 
+            value: value || '', 
+            className: 'search-bar', // 複用核心設計系統的輸入框樣式
+            style: 'width: 100%; box-sizing: border-box;' // 確保寬度填充且不溢出容器
+        })
+    );
 }
 // --- Record Editor View ---
 export class RecordEditorView extends BaseView {
