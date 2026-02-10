@@ -12,7 +12,7 @@ import { recordManager, draftManager } from '../modules/record.js';
 import { searchEngine } from '../core/search.js';
 import { storageManager } from '../core/db.js'; 
 import { EventBus } from '../core/utils.js';
-import { EventTypes, RecordStatus } from '../config.js';
+import { EventTypes, RecordStatus, BodyRegions, StandardROM } from '../config.js';
 
 // --- Base View ---
 class BaseView {
@@ -30,7 +30,7 @@ export class CustomerListView extends BaseView {
         super();
         this.router = router;
         this.items = [];
-        this.draftSet = new Set(); // [Fix] Cache for draft existence
+        this.draftSet = new Set(); //  Cache for draft existence
         this.rowHeight = 60; // px
         this.viewportHeight = 0;
         this.render();
@@ -125,6 +125,23 @@ export class CustomerListView extends BaseView {
         this._updateListHeight();
         this._renderVisibleRows();
     }
+    _renderHeader() {
+        this.statusEl = el('span', { style: { fontSize: '12px', marginRight: '10px' } }, '正在連線...');
+        this.settingsBtn = el('button', { className: 'icon-btn', style: { fontSize: '18px' } }, '⚙️');
+        
+        // 延遲載入同步狀態，避免阻塞 UI
+        import('../core/sync.js').then(({ syncGateway }) => {
+            if (!this.statusEl) return;
+            const peerId = syncGateway.peerManager ? syncGateway.peerManager.myId.slice(0, 4) : 'OFF';
+            this.statusEl.textContent = `ID: ${peerId}`;
+            this.settingsBtn.onclick = () => this.router.navigate('settings');
+        });
+
+        return el('div', { className: 'nav-header sticky-top' }, 
+            el('b', { className: 'nav-title' }, 'LocalFirst EMR'),
+            el('div', { style: 'display:flex; align-items:center' }, this.statusEl, this.settingsBtn)
+        );
+    }
 
     _handleSearch(query) {
         this._applyFilter();
@@ -149,7 +166,7 @@ export class CustomerListView extends BaseView {
             const item = this.items[i];
             const hasDraft = this.draftSet.has(item.id);
 
-            // [Fix] 長按偵測變數 (Closure scope)
+            //  長按偵測變數 (Closure scope)
             let pressTimer = null;
             let isLongPress = false;
 
@@ -268,7 +285,7 @@ export class CustomerListView extends BaseView {
             type: 'tel', placeholder: 'Phone',
             onblur: (e) => {
                 const val = e.target.value;
-                if (val && !/^\d{3,10}$/.test(val)) { // [Fix] Phone Regex
+                if (val && !/^\d{3,10}$/.test(val)) { //  Phone Regex
                     feedback.textContent = '❌ Invalid Phone Format';
                     return;
                 }
@@ -401,7 +418,7 @@ export class RecordEditorView extends BaseView {
         this.autoSaveTimer = null;
         this.currentTab = 'tab-visual'; // Default to Visual for quick entry
         
-        // [Fix] 初始化實例屬性，避免 undefined
+        //  初始化實例屬性，避免 undefined
         this.bodyMap = null;
         this.tagSelector = null;
         this.assessmentContainer = null;
@@ -466,14 +483,14 @@ export class RecordEditorView extends BaseView {
     }
 
     async render() {
-        // 1. Load Data
+        // 1. 資料載入與初始化邏輯
         if (this.recordId) {
             this.data = await recordManager.get(this.recordId);
         } else if (this.customerId) {
             const draft = await draftManager.get(this.customerId);
             if (draft) {
                 this.data = { ...draft.data, customerId: this.customerId };
-                Toast.show('Draft restored');
+                Toast.show('已恢復草稿內容');
             } else {
                 this.data = await recordManager.create(this.customerId);
             }
@@ -481,29 +498,32 @@ export class RecordEditorView extends BaseView {
         }
 
         if (!this.data) {
-            this.root.innerHTML = 'Record load failed';
+            this.root.innerHTML = '<div class="p-4">載入病歷失敗</div>';
             return;
         }
 
-        // Initialize Data
-        this.data.soap = this.data.soap || {};
+        // 確保核心數據結構完整
+        this.data.soap = this.data.soap || { s: '', o: '', a: '', p: '' };
         this.data.tags = this.data.tags || [];
         this.data.bodyParts = this.data.bodyParts || [];
-        this.data.rom = this.data.rom || {}; // [Fix] 初始化 ROM 資料
+        this.data.rom = this.data.rom || {};
+        
         const allTags = await tagManager.getAll();
 
-        // --- UI Construction ---
+        // --- UI 建構階段 ---
 
-        // 1. Navigation Header (Back Button)
-        const header = el('div', { 
-            style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 15px', background: '#fff', borderBottom: '1px solid #eee' }
-        },
-            el('button', { onclick: () => this.router.back(), style: 'font-size: 18px;' }, '←'),
-            el('div', { style: { fontWeight: 'bold' } }, this.recordId ? 'Edit Record' : 'New Record'),
-            el('span', { className: 'status-badge' }, this.data.status || 'Draft')
+        // 必須在初始化 BodyMap 之前，先建立此容器實體
+        // 這樣 BodyMap 觸發 _updateAssessmentSuggestions 時，this.assessmentContainer 才不是 null
+        this.assessmentContainer = el('div', { className: 'assessment-suggestions-box', style: 'margin-bottom: 15px;' });
+
+        // 1. 導航標頭
+        const header = el('div', { className: 'nav-header' },
+            el('button', { className: 'icon-btn', onclick: () => this.router.back() }, '←'),
+            el('div', { className: 'nav-title' }, this.recordId ? '編輯病歷' : '新增病歷'),
+            el('span', { className: `badge ${this.data.status === 'Finalized' ? 'bg-success' : 'bg-warning'}` }, this.data.status || 'Draft')
         );
 
-        // 2. Components Initialization
+        // 初始化互動組件
         this.tagSelector = new TagSelector(this.data.tags, allTags, (newTags) => {
             this.data.tags = newTags;
             this._markDirty();
@@ -511,13 +531,15 @@ export class RecordEditorView extends BaseView {
 
         this.bodyMap = new BodyMap(this.data.bodyParts, (parts) => {
             this.data.bodyParts = parts;
-            parts.forEach(p => this.tagSelector._addTag(p));
+            // 每次 BodyMap 變更，同步更新標籤選取器並觸發評估建議
+            if (this.tagSelector) {
+                parts.forEach(p => this.tagSelector._addTag(p));
+            }
             this._markDirty();
             this._updateAssessmentSuggestions(parts); 
-        }, this.data.status === RecordStatus.FINALIZED);
+        }, this.data.status === 'Finalized');
 
-        // 3. Tab Navigation (S, O, A, P)
-        // [Fix] 移除獨立 Visual Tab，整合至 O
+        // 2. 頁籤導航
         const tabs = [
             { id: 'tab-s', label: 'S (主訴)' },
             { id: 'tab-o', label: 'O (客觀)' },
@@ -526,6 +548,39 @@ export class RecordEditorView extends BaseView {
         ];
 
         const navBar = el('div', { className: 'tab-nav' });
+        const contentContainer = el('div', { className: 'tab-content-wrapper' });
+
+        // 3. 建立各分頁面板
+        // Tab S
+        const tabS = this._createTabPane('tab-s', 'Subjective (主訴)', 's', '請輸入病患主訴...');
+        tabS.appendChild(el('div', { className: 'mt-3' }, el('h5', {}, '症狀標籤'), this.tagSelector.element));
+
+        // Tab O (包含 BodyMap 與 ROM)
+        const tabO = el('div', { id: 'tab-o', className: 'tab-pane', style: 'display:none' });
+        tabO.append(
+            el('h5', {}, '患處標記 (Body Map)'),
+            this.bodyMap.element,
+            el('h5', { className: 'mt-3' }, '活動度量測 (ROM)'),
+            this._renderROMInputs(),
+            el('h5', { className: 'mt-3' }, '檢查筆記'),
+            el('textarea', {
+                className: 'soap-textarea',
+                value: this.data.soap.o,
+                oninput: (e) => { this.data.soap.o = e.target.value; this._markDirty(); },
+                disabled: this.data.status === 'Finalized'
+            })
+        );
+
+        // Tab A (包含建議評估區塊)
+        const tabA = this._createTabPane('tab-a', 'Assessment (評估)', 'a', '請輸入評估結果...');
+        tabA.prepend(this.assessmentContainer); // 將預先建立好的容器插入 A 欄位頂部
+
+        // Tab P
+        const tabP = this._createTabPane('tab-p', 'Plan (計畫)', 'p', '請輸入後續計畫...');
+
+        contentContainer.append(tabS, tabO, tabA, tabP);
+
+        // 綁定頁籤切換事件
         tabs.forEach(t => {
             const btn = el('button', { 
                 className: `tab-btn ${this.currentTab === t.id ? 'active' : ''}`,
@@ -534,77 +589,26 @@ export class RecordEditorView extends BaseView {
             navBar.appendChild(btn);
         });
 
-        // 4. Tab Content
-        const contentContainer = el('div', { className: 'tab-content-wrapper' });
-
-        // -- Tab S: Subjective + Tags --
-        const tabS = this._createTabPane('tab-s', 'Subjective (主訴)', 's', '病患描述、疼痛性質...');
-        tabS.appendChild(el('div', { style: { marginTop: '15px' } }, 
-            el('h5', { style: 'margin: 0 0 5px 0; color: #666;' }, '症狀標籤'),
-            this.tagSelector.element
-        ));
-
-        // -- Tab O: Objective + BodyMap + ROM --
-        const tabO = el('div', { id: 'tab-o', className: 'tab-pane', style: { display: 'none' } });
-        
-        // O-1: Body Map
-        tabO.appendChild(el('h5', { style: 'margin: 0 0 5px 0; color: #666;' }, '患處標記 (Body Map)'));
-        tabO.appendChild(this.bodyMap.element);
-
-        // O-2: ROM Inputs (Range of Motion)
-        tabO.appendChild(el('h5', { style: 'margin: 15px 0 5px 0; color: #666;' }, '活動度量測 (ROM)'));
-        tabO.appendChild(this._renderROMInputs());
-
-        // O-3: Text Notes
-        tabO.appendChild(el('h5', { style: 'margin: 15px 0 5px 0; color: #666;' }, '觸診與觀察筆記'));
-        const textO = el('textarea', {
-            className: 'record-content soap-textarea',
-            value: this.data.soap?.o || '',
-            oninput: (e) => { 
-                this.data.soap.o = e.target.value; 
-                this._markDirty(); 
-            },
-            disabled: this.data.status === RecordStatus.FINALIZED
-        });
-        tabO.appendChild(textO);
-
-        // -- Tab A: Assessment --
-        const tabA = this._createTabPane('tab-a', 'Assessment (評估)', 'a', '診斷結果、測試反應...');
-        tabA.prepend(this.assessmentContainer); // 建議列表放最上面
-
-        // -- Tab P: Plan --
-        const tabP = this._createTabPane('tab-p', 'Plan (計畫)', 'p', '治療項目、回家運動...');
-
-        contentContainer.append(tabS, tabO, tabA, tabP);
-
-        // 5. Actions Footer
+        // 4. 底部操作列
         const actions = el('div', { className: 'editor-actions' });
-        if (this.data.status !== RecordStatus.FINALIZED) {
-            actions.appendChild(el('button', {
-                className: 'btn-secondary',
-                onclick: () => this._showTemplateModal(this.tagSelector)
-            }, '📋 Template'));
-
-            actions.appendChild(el('button', {
-                className: 'btn-primary',
-                onclick: () => this._handleFinalize() 
-            }, 'Finalize'));
-            
-            actions.appendChild(el('button', {
-                className: 'btn-secondary',
-                onclick: () => this._save(RecordStatus.DRAFT)
-            }, 'Save Draft'));
+        if (this.data.status !== 'Finalized') {
+            actions.append(
+                el('button', { className: 'btn-secondary', onclick: () => this._showTemplateModal() }, '📋 範本'),
+                el('button', { className: 'btn-secondary', onclick: () => this._save('Draft') }, '儲存草稿'),
+                el('button', { className: 'btn-primary', onclick: () => this._handleFinalize() }, '完成定稿')
+            );
         }
 
-        // 初始化 Tab 狀態
-        this._switchTab(this.currentTab, contentContainer, navBar);
-        this._updateAssessmentSuggestions(this.data.bodyParts);
-
+        // 初始狀態設定
         this.root.innerHTML = '';
         this.root.append(header, navBar, contentContainer, actions);
+        this._switchTab(this.currentTab, contentContainer, navBar);
+        
+        // 手動觸發一次初始建議更新，確保進入頁面時若已有標記則顯示建議
+        this._updateAssessmentSuggestions(this.data.bodyParts);
     }
 
-    // [Fix] ROM 輸入介面產生器
+    //  ROM 輸入介面產生器
     _renderROMInputs() {
         const container = el('div', { className: 'rom-dynamic-list' });
         import('../config.js').then(({ StandardROM }) => {
@@ -778,7 +782,7 @@ export class RecordEditorView extends BaseView {
                 list.appendChild(btn);
             });
 
-            // [Fix] 宣告 modal 變數以便 onclick 閉包使用
+            //  宣告 modal 變數以便 onclick 閉包使用
             const modal = new Modal('Select Template', list);
             modal.open();
         });
@@ -1102,7 +1106,7 @@ export class SettingsView extends BaseView {
 
         await storageManager.runTransaction(stores, 'readonly', async (tx) => {
             for (const storeName of stores) {
-                // [Fix] 使用 _rawTx 存取底層 IDB 以獲取包含 _deleted 的資料
+                //  使用 _rawTx 存取底層 IDB 以獲取包含 _deleted 的資料
                 if (tx._rawTx) {
                     const rawReq = tx._rawTx.objectStore(storeName).getAll();
                     const rawItems = await new Promise((resolve, reject) => {
@@ -1215,7 +1219,7 @@ export class SettingsView extends BaseView {
                     const req = indexedDB.deleteDatabase('LocalFirstDB');
                     
                     req.onsuccess = () => {
-                        // [Fix] Clear LocalStorage to remove Ghost Index
+                        //  Clear LocalStorage to remove Ghost Index
                         localStorage.clear();
                         
                         alert('System Reset Complete. Reloading...');
@@ -1283,7 +1287,7 @@ export class DraftListView extends BaseView {
                         )
                     );
                     
-                    // [Fix] Swipe Left to Delete Logic
+                    //  Swipe Left to Delete Logic
                     let startX = 0;
                     let currentX = 0;
                     const THRESHOLD = -80; // Swipe distance to trigger delete intent

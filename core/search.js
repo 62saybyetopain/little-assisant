@@ -36,15 +36,21 @@ class SearchEngine {
         this.worker.onmessage = (e) => {
             const { type, payload } = e.data;
             if (type === 'INDEX_BUILT') {
-                //  Phase 2: Background Fill & Cache Update
                 this._updateIndex(payload.hot, payload.cold);
-            } else if (type === 'PROGRESS') {
-                // Optional: Emit progress event for UI
-                // EventBus.emit('UI:LOADING_PROGRESS', payload);
+                this._finishInit(); // 封裝 resolve 邏輯
             } else if (type === 'ERROR') {
                 console.error('[SearchEngine] Worker Error:', payload);
+                this._finishInit(); // 失敗也要解除阻塞
             }
         };
+
+    // 新增輔助方法
+    _finishInit() {
+        if (this._resolveInit) {
+            this._resolveInit();
+            this._resolveInit = null;
+        }
+    }
 
         //  Incremental Update (增量更新)
         // 監聽變更事件，只更新記憶體與快取，不觸發 Worker 重建
