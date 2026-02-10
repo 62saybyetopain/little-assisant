@@ -24,10 +24,10 @@ class SearchEngine {
         this._saveTimeout = null;
     }
 
-    init() {
-        if (this.worker) return;
+    async init() {
+        if (this.worker) return this.initPromise;
 
-        //  Phase 1: Fast Boot from LocalStorage
+        // Phase 1: 從快取載入 (極速啟動)
         this._loadFromCache();
 
         // Worker Setup
@@ -37,29 +37,30 @@ class SearchEngine {
             const { type, payload } = e.data;
             if (type === 'INDEX_BUILT') {
                 this._updateIndex(payload.hot, payload.cold);
-                this._finishInit(); // 封裝 resolve 邏輯
+                this._finishInit(); 
             } else if (type === 'ERROR') {
                 console.error('[SearchEngine] Worker Error:', payload);
-                this._finishInit(); // 失敗也要解除阻塞
+                this._finishInit(); 
             }
         };
 
-    // 新增輔助方法
-    _finishInit() {
-        if (this._resolveInit) {
-            this._resolveInit();
-            this._resolveInit = null;
-        }
-    }
-
-        //  Incremental Update (增量更新)
-        // 監聽變更事件，只更新記憶體與快取，不觸發 Worker 重建
+        // Incremental Update (增量更新)
         EventBus.on(EventTypes.DATA.CREATED, (e) => this._handleDataChange(e));
         EventBus.on(EventTypes.DATA.UPDATED, (e) => this._handleDataChange(e));
         EventBus.on(EventTypes.DATA.DELETED, (e) => this._handleDataDelete(e));
 
         // Trigger full build on start to ensure consistency
         this.rebuildIndex();
+        
+        return this.initPromise;
+    }
+
+    // 輔助方法：統一處理 Promise resolve
+    _finishInit() {
+        if (this._resolveInit) {
+            this._resolveInit();
+            this._resolveInit = null;
+        }
     }
 
     rebuildIndex() {
