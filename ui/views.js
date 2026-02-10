@@ -25,9 +25,12 @@ class BaseView {
     unmount() { 
         this.root.remove(); 
     }
-    onLeave() { 
-        return true; 
-    } 
+    onLeave() {
+        if (this.isDirty) {
+            return confirm('You have unsaved changes. Leave anyway?');
+        }
+        return true;
+    }
 }
 
 // --- Customer List View (Virtual Scroll) ---
@@ -867,6 +870,7 @@ export class RecordEditorView extends BaseView {
             }
         }
 
+        // [備份機制] 套用前先存快照
         const backupId = `${this.recordId || this.customerId}_backup`;
         await draftManager.save(backupId, JSON.parse(JSON.stringify(this.data)));
 
@@ -876,6 +880,7 @@ export class RecordEditorView extends BaseView {
         this.data.bodyParts = mergedRecord.bodyParts;
         this.data.rom = mergedRecord.rom;
 
+        // 更新 UI 內容
         ['s', 'o', 'a', 'p'].forEach(key => {
             const textarea = this.root.querySelector(`#tab-${key} textarea`);
             if (textarea) textarea.value = this.data.soap[key] || '';
@@ -893,6 +898,7 @@ export class RecordEditorView extends BaseView {
         this._markDirty();
         this._updateAssessmentSuggestions(this.data.bodyParts); 
         
+        // 顯示通知與撤銷入口
         import('./components.js').then(({ Toast, el }) => {
             Toast.show(`已套用模板: ${template.title}`, 'success');
             const undoBtn = el('button', {
@@ -912,8 +918,40 @@ export class RecordEditorView extends BaseView {
         });
     }
 
+    /**
+     * [輔助方法] 更新評估建議清單
+     */
+    _updateAssessmentSuggestions(bodyParts) {
+        const suggestionContainer = this.root.querySelector('.assessment-suggestions');
+        if (!suggestionContainer) return;
+
+        suggestionContainer.innerHTML = '';
+        
+        const allSuggestions = (bodyParts || []).flatMap(partId => {
+            const region = Object.keys(BodyRegions).find(r => BodyRegions[r].parts.includes(partId));
+            return region ? (AssessmentDatabase[region] || []) : [];
+        });
+
+        [...new Set(allSuggestions)].forEach(s => {
+            const badge = el('span', { 
+                className: 'suggestion-badge',
+                onclick: () => {
+                    const aText = this.root.querySelector('#tab-a textarea');
+                    if (aText) {
+                        const separator = aText.value ? '\n' : '';
+                        aText.value += `${separator}[建議測試] ${s}: `;
+                        aText.dispatchEvent(new Event('input'));
+                    }
+                }
+            }, s);
+            suggestionContainer.appendChild(badge);
+        });
+    }
+
     onLeave() {
-        if (this.isDirty) return confirm('You have unsaved changes. Leave anyway?');
+        if (this.isDirty) {
+            return confirm('您有未儲存的變動，確定要離開嗎？');
+        }
         return true;
     }
 }
