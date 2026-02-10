@@ -12,16 +12,22 @@ import { recordManager, draftManager } from '../modules/record.js';
 import { searchEngine } from '../core/search.js';
 import { storageManager } from '../core/db.js'; 
 import { EventBus } from '../core/utils.js';
-import { EventTypes, RecordStatus, BodyRegions, StandardROM } from '../config.js';
+import { EventTypes, RecordStatus } from '../config.js';
 
 // --- Base View ---
 class BaseView {
     constructor() {
         this.root = el('div', { className: 'view-container' });
     }
-    mount(parent) { parent.appendChild(this.root); }
-    unmount() { this.root.remove(); }
-    onLeave() { return true; } // Return false to prevent navigation
+    mount(parent) { 
+        parent.appendChild(this.root); 
+    }
+    unmount() { 
+        this.root.remove(); 
+    }
+    onLeave() { 
+        return true; 
+    } 
 }
 
 // --- Customer List View (Virtual Scroll) ---
