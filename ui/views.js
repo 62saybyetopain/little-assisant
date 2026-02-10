@@ -736,7 +736,7 @@ export class RecordEditorView extends BaseView {
             onfocus: (e) => {
                 setTimeout(() => {
                     e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }, 300); // 延遲等待鍵盤動畫完成
+                }, 300);
             },
             disabled: this.data.status === RecordStatus.FINALIZED
         });
@@ -752,13 +752,9 @@ export class RecordEditorView extends BaseView {
 
     _switchTab(tabId, container, navBar) {
         this.currentTab = tabId;
-        
-        // Update Buttons
         Array.from(navBar.children).forEach(btn => {
             btn.classList.toggle('active', btn.textContent.includes(this._getTabLabel(tabId)));
         });
-
-        // Update Panes
         Array.from(container.children).forEach(pane => {
             pane.style.display = pane.id === tabId ? 'block' : 'none';
         });
@@ -780,16 +776,14 @@ export class RecordEditorView extends BaseView {
     async _save(status, options = {}) {
         try {
             const payload = {
-                content: this.data.content, // 保留舊內容相容
+                content: this.data.content,
                 tags: this.data.tags,
                 soap: this.data.soap,
                 bodyParts: this.data.bodyParts,
                 painScale: this.data.painScale,
                 ...options 
             };
-
             await recordManager.save(this.data.id, payload, status);
-            
             this.isDirty = false;
             Toast.show(status === RecordStatus.FINALIZED ? 'Record Finalized' : 'Saved');
             this.router.back();
@@ -799,53 +793,55 @@ export class RecordEditorView extends BaseView {
     }
 
     _handleFinalize() {
-        const content = el('div', { className: 'finalize-modal' }, 
-            el('p', {}, '此動作將鎖定病歷，請選擇變更類型：'),
-            el('div', { className: 'version-strategy-group' },
-                this._createRadio('NONE', '例行紀錄 (不更動版本)', true),
-                this._createRadio('MINOR', '微幅調整 (修正錯字/補充內容)', false),
-                this._createRadio('MAJOR', '重大變更 (治療計畫或診斷異動)', false)
+        const content = el('div', {}, 
+            el('p', { style: { marginBottom: '15px' } }, '選擇版本更新策略：'),
+            el('div', { style: { display: 'flex', gap: '10px', marginBottom: '15px' } },
+                this._createRadio('NONE', '不變更', true),
+                this._createRadio('MINOR', '小版本 (錯字)', false),
+                this._createRadio('MAJOR', '大版本 (評估改變)', false)
             ),
-            el('textarea', { 
-                id: 'change-reason',
-                placeholder: '備註變更原因 (選填)...',
-                className: 'soap-textarea mt-2'
-            })
+            el('div', { id: 'reason-container', style: { display: 'none' } },
+                el('textarea', { 
+                    id: 'change-reason',
+                    placeholder: '請輸入版本變更原因',
+                    style: { width: '100%', height: '60px', padding: '8px' }
+                })
+            )
         );
-
-        new Modal('確認定稿', content, () => {
+        content.querySelectorAll('input[name="v-strategy"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                const reasonBox = content.querySelector('#reason-container');
+                if (e.target.value === 'MAJOR') {
+                    reasonBox.style.display = 'block';
+                } else {
+                    reasonBox.style.display = 'none';
+                }
+            });
+        });
+        new Modal('Finalize Record', content, () => {
             const strategy = content.querySelector('input[name="v-strategy"]:checked').value;
             const reason = content.querySelector('#change-reason').value;
-            this._save(RecordStatus.FINALIZED, {
-                versionStrategy: strategy,
-                changeReason: reason
-            });
+            this._save(RecordStatus.FINALIZED, { versionStrategy: strategy, changeReason: reason });
         }).open();
     }
 
     _createRadio(value, label, checked) {
         const wrapper = el('label', { style: { display: 'flex', alignItems: 'center', cursor: 'pointer' } });
-        const input = el('input', { 
-            type: 'radio', 
-            name: 'v-strategy', 
-            value: value,
-            checked: checked
-        });
+        const input = el('input', { type: 'radio', name: 'v-strategy', value: value, checked: checked });
         wrapper.append(input, el('span', { style: { marginLeft: '4px' } }, label));
         return wrapper;
     }
-    
+
     _showTemplateModal(tagSelector) {
         import('../config.js').then(({ DefaultTemplates }) => {
             const list = el('div', { className: 'template-list', style: { display: 'flex', flexDirection: 'column', gap: '8px' } });
-            
             DefaultTemplates.forEach(tpl => {
                 const btn = el('button', {
                     className: 'btn-secondary',
                     style: { textAlign: 'left' },
                     onclick: () => {
                         this._applyTemplate(tpl, tagSelector);
-                        modal.close(); // 注意：這裡的 modal 是閉包變數，需確保範疇正確，或改用實例
+                        modal.close();
                     }
                 }, 
                     el('div', { style: { fontWeight: 'bold' } }, tpl.title),
@@ -853,8 +849,6 @@ export class RecordEditorView extends BaseView {
                 );
                 list.appendChild(btn);
             });
-
-            //  宣告 modal 變數以便 onclick 閉包使用
             const modal = new Modal('Select Template', list);
             modal.open();
         });
@@ -866,25 +860,22 @@ export class RecordEditorView extends BaseView {
         let strategy = 'Append';
 
         if (hasContent) {
-            if (!confirm("目前紀錄已有內容。\n點擊「確定」進行疊加 (Append)。\n點擊「取消」進行覆蓋 (Override)。")) {
+            if (confirm(`目前紀錄已有內容。\n點擊「確定」進行疊加 (Append)。\n點擊「取消」進行覆蓋 (Override)。`)) {
+                strategy = 'Append';
+            } else {
                 strategy = 'Override';
             }
         }
 
-        // [方案 A] 執行模板前先建立快照備份 [cite: 1284]
         const backupId = `${this.recordId || this.customerId}_backup`;
         await draftManager.save(backupId, JSON.parse(JSON.stringify(this.data)));
 
-        // 執行合併邏輯 [cite: 1271]
         const mergedRecord = templateManager.merge(this.data, template, strategy);
-
-        // 更新本地數據模型 [cite: 919, 1300]
         this.data.soap = mergedRecord.soap;
         this.data.tags = mergedRecord.tags;
         this.data.bodyParts = mergedRecord.bodyParts;
-        this.data.rom = mergedRecord.rom || {};
+        this.data.rom = mergedRecord.rom;
 
-        // 同步刷新 UI 顯示 [cite: 912, 951]
         ['s', 'o', 'a', 'p'].forEach(key => {
             const textarea = this.root.querySelector(`#tab-${key} textarea`);
             if (textarea) textarea.value = this.data.soap[key] || '';
@@ -902,10 +893,8 @@ export class RecordEditorView extends BaseView {
         this._markDirty();
         this._updateAssessmentSuggestions(this.data.bodyParts); 
         
-        // 顯示通知並動態掛載撤銷按鈕 [cite: 755, 1164]
         import('./components.js').then(({ Toast, el }) => {
             Toast.show(`已套用模板: ${template.title}`, 'success');
-            
             const undoBtn = el('button', {
                 style: { marginLeft: '12px', color: '#fff', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px' },
                 onclick: async (e) => {
@@ -918,18 +907,13 @@ export class RecordEditorView extends BaseView {
                     }
                 }
             }, '撤銷');
-            
-            // 確保按鈕掛載在最新的 Toast 上 [cite: 759, 1162]
-            const toastElements = document.querySelectorAll('.toast');
-            const lastToast = toastElements[toastElements.length - 1];
+            const lastToast = document.querySelector('.toast-container .toast:last-child');
             if (lastToast) lastToast.appendChild(undoBtn);
         });
     }
 
     onLeave() {
-        if (this.isDirty) {
-            return confirm('You have unsaved changes. Leave anyway?');
-        }
+        if (this.isDirty) return confirm('You have unsaved changes. Leave anyway?');
         return true;
     }
 }
