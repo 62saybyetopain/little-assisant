@@ -438,7 +438,7 @@ export class CustomerDetailView extends BaseView {
                         )
                     ),
                     this._createInputField('年齡', 'number', 'edit-age', customer.info?.age || ''),
-                    this._createInputField('住處地址', 'text', 'edit-address', customer.info?.address || '')
+                    this._createInputField('住處', 'text', 'edit-address', customer.info?.address || '')
                 )
             ),
 

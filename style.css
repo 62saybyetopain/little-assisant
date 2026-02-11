@@ -669,3 +669,51 @@ button:active,
         grid-template-columns: 1fr;
     }
 }
+
+/* 1. 修正整體視圖內距，對齊彈窗呼吸感 */
+.view-container.bg-soft {
+    padding: 0 0 calc(24px + env(safe-area-inset-bottom, 0px));
+    background-color: var(--background);
+    overflow-y: auto;
+}
+
+/* 2. 統計資訊方塊化 (兩欄並排) */
+.detail-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr); 
+    gap: 12px;
+    padding: 16px 20px;
+}
+
+/* 3. 生活脈絡與個性專區樣式 */
+.context-section {
+    padding: 20px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 12px;
+}
+
+.info-row {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: baseline;
+}
+
+.personality-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+/* 4. 長期病史概覽區塊 */
+.history-summary-box {
+    margin: 0 20px 20px;
+    padding: 18px;
+    background: #f8fafc;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-md);
+}
