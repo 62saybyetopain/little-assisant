@@ -1191,7 +1191,7 @@ export class RecordEditorView extends BaseView {
     
     // 7. [恢復原本功能] 顯示通知與撤銷入口
     Toast.show(`已套用模板: ${template.title}`, 'success');
-    
+
     const undoBtn = el('button', {
         style: { 
             marginLeft: '12px', color: '#fff', textDecoration: 'underline', 
@@ -1211,7 +1211,8 @@ export class RecordEditorView extends BaseView {
 
     const lastToast = document.querySelector('.toast-container .toast:last-child');
     if (lastToast) lastToast.appendChild(undoBtn);
-}
+    }
+  }//結束 RecordEditorView 類別
 // --- Settings View ---
 export class SettingsView extends BaseView {
     constructor(router) {
@@ -1617,7 +1618,7 @@ export class DraftListView extends BaseView {
         const { draftManager } = await import('../modules/record.js');
         const { customerManager } = await import('../modules/customer.js');
         
-        // Header
+        // 1. Header 建立
         const header = el('div', { className: 'detail-header' },
             el('h2', {}, 'Unsaved Drafts'),
             el('button', { className: 'btn-secondary', onclick: () => this.router.back() }, '← Back')
@@ -1625,24 +1626,27 @@ export class DraftListView extends BaseView {
 
         const listContainer = el('div', { className: 'history-list' });
         
-        // Fetch Data
         try {
             const drafts = await draftManager.getAll();
             
-            if (drafts.length === 0) {
+            if (!drafts || drafts.length === 0) {
                 listContainer.innerHTML = '<div style="padding:20px; color:#888; text-align:center;">No unsaved drafts found.</div>';
             } else {
-                // Render List
                 for (const draft of drafts) {
-                    // Enrich with Customer Name
+                    // [修正 2]：生產級資料完整性檢查，確保 data 物件存在
+                    if (!draft || !draft.data) continue;
+
+                    // 2. 獲取顧客資料與時間
                     const customerId = draft.data.customerId || draft.relatedId;
                     const customer = await customerManager.get(customerId);
                     const customerName = customer ? customer.name : 'Unknown Customer';
                     const savedTime = new Date(draft.updatedAt).toLocaleString();
-                    // 改從 soap 結構抓取任何有文字的欄位作為預覽
+                    
+                    // 3. 內容預覽 (SOAP 結構檢查)
                     const soap = draft.data.soap || {};
                     const snippet = (soap.s || soap.a || soap.o || soap.p || '').substring(0, 50) || '(No content)'; 
 
+                    // 4. 建立卡片元件
                     const card = el('div', { 
                         className: `record-card status-${RecordStatus.DRAFT.toLowerCase()}`,
                         style: { cursor: 'pointer', borderLeftColor: 'var(--warning)', position: 'relative', transition: 'transform 0.2s' },
@@ -1654,47 +1658,45 @@ export class DraftListView extends BaseView {
                         ),
                         el('div', { style: { marginTop: '8px', color: '#444' } }, snippet),
                         el('div', { style: { marginTop: '4px', fontSize: '12px', color: '#888' } }, 
-                            // 處理標籤可能是物件 {tagId, remark} 的情況
                             'Tags: ' + (draft.data.tags || []).map(t => typeof t === 'object' ? t.tagId : t).join(', ')
                         )
                     );
                     
-                    //  Swipe Left to Delete Logic
+                    // 5. [完整還原] Swipe Left to Delete Logic
                     let startX = 0;
                     let currentX = 0;
-                    const THRESHOLD = -80; // Swipe distance to trigger delete intent
+                    const THRESHOLD = -80; 
 
                     card.addEventListener('touchstart', (e) => {
                         startX = e.touches[0].clientX;
-                        currentX = startX;                        card.style.transition = 'none'; 
+                        currentX = startX;
+                        card.style.transition = 'none'; 
                     }, { passive: true });
 
                     card.addEventListener('touchmove', (e) => {
                         currentX = e.touches[0].clientX;
-                        const deltaX = Math.min(0, currentX - startX); // Only allow left swipe
+                        const deltaX = Math.min(0, currentX - startX); 
                         card.style.transform = `translateX(${deltaX}px)`;
                     }, { passive: true });
 
                     card.addEventListener('touchend', () => {
                         const deltaX = currentX - startX;
-                        card.style.transition = 'transform 0.2s'; // Re-enable transition
+                        card.style.transition = 'transform 0.2s'; 
                         
                         if (deltaX < THRESHOLD) {
-                            // Swipe Success -> Delete
-                            card.style.transform = 'translateX(-100%)'; // Animate out
+                            card.style.transform = 'translateX(-100%)'; 
                             setTimeout(() => this._discardDraft(draft.relatedId), 200);
                         } else {
-                            // Revert
                             card.style.transform = 'translateX(0)';
                         }
                     });
 
-                    // Add Discard Button (Desktop fallback)
+                    // 6. [完整還原] Add Discard Button (Desktop fallback)
                     const discardBtn = el('button', {
                         className: 'btn-secondary',
                         style: { marginTop: '10px', fontSize: '12px', color: 'var(--danger)', borderColor: 'var(--danger)' },
                         onclick: (e) => {
-                            e.stopPropagation(); // Prevent card click
+                            e.stopPropagation(); 
                             this._discardDraft(draft.relatedId);
                         }
                     }, '🗑️ Discard');
@@ -1704,21 +1706,20 @@ export class DraftListView extends BaseView {
                 }
             }
         } catch (e) {
-            listContainer.innerHTML = `Error loading drafts: ${e.message}`;
+            listContainer.innerHTML = `<div class="error-state">Error loading drafts: ${e.message}</div>`;
         }
 
         this.root.append(header, listContainer);
     }
 
     _restoreDraft(draft) {
-
+        // [修正 3]：資料存在檢查
+        if (!draft || !draft.data) return;
         const customerId = draft.data.customerId;
         
         if (draft.relatedId === customerId) {
-            // Draft for NEW record
             this.router.navigate(`record/new?customerId=${customerId}`);
         } else {
-            // Draft for EXISTING record
             this.router.navigate(`record/${draft.relatedId}`);
         }
     }
@@ -1727,7 +1728,6 @@ export class DraftListView extends BaseView {
         if (confirm('Discard this draft? This cannot be undone.')) {
             const { draftManager } = await import('../modules/record.js');
             await draftManager.discard(id);
-            // Reload view
             this.root.innerHTML = '';
             this.render();
         }
