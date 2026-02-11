@@ -341,7 +341,7 @@ export class CustomerListView extends BaseView {
         }
     }).open();
 }
-
+}//CustomerListView 類別
 // --- Customer Detail View ---
 export class CustomerDetailView extends BaseView {
     constructor(router, params) {
@@ -1580,12 +1580,12 @@ export class DraftListView extends BaseView {
                     const customer = await customerManager.get(customerId);
                     const customerName = customer ? customer.name : 'Unknown Customer';
                     const savedTime = new Date(draft.updatedAt).toLocaleString();
-                    const snippet = draft.data.content && draft.data.content.notes 
-                        ? draft.data.content.notes.substring(0, 50) + '...' 
-                        : '(No content)';
+                    // 改從 soap 結構抓取任何有文字的欄位作為預覽
+                    const soap = draft.data.soap || {};
+                    const snippet = (soap.s || soap.a || soap.o || soap.p || '').substring(0, 50) || '(No content)'; 
 
                     const card = el('div', { 
-                        className: \record-card status-${RecordStatus.DRAFT.toLowerCase()}``,
+                        className: `record-card status-${RecordStatus.DRAFT.toLowerCase()}`,
                         style: { cursor: 'pointer', borderLeftColor: 'var(--warning)', position: 'relative', transition: 'transform 0.2s' },
                         onclick: () => this._restoreDraft(draft)
                     },
@@ -1595,7 +1595,8 @@ export class DraftListView extends BaseView {
                         ),
                         el('div', { style: { marginTop: '8px', color: '#444' } }, snippet),
                         el('div', { style: { marginTop: '4px', fontSize: '12px', color: '#888' } }, 
-                            'Tags: ' + (draft.data.tags || []).join(', ')
+                            // 處理標籤可能是物件 {tagId, remark} 的情況
+                            'Tags: ' + (draft.data.tags || []).map(t => typeof t === 'object' ? t.tagId : t).join(', ')
                         )
                     );
                     
@@ -1606,7 +1607,7 @@ export class DraftListView extends BaseView {
 
                     card.addEventListener('touchstart', (e) => {
                         startX = e.touches[0].clientX;
-                        card.style.transition = 'none'; // Disable transition for real-time tracking
+                        currentX = startX;                        card.style.transition = 'none'; 
                     }, { passive: true });
 
                     card.addEventListener('touchmove', (e) => {
@@ -1678,4 +1679,3 @@ export class DraftListView extends BaseView {
             this.render();
         }
     }
-}
