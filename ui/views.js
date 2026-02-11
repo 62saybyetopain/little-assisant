@@ -380,9 +380,11 @@ export class CustomerDetailView extends BaseView {
         // 4. 生活脈絡與個性標籤 (套用雜湊配色)
         const contextSection = el('section', { className: 'context-section' },
             el('div', { className: 'info-row' }, el('b', { style: 'min-width:80px' }, '職業：'), customer.info?.occupation || '未填寫'),
-            el('div', { className: 'info-row' }, el('b', { style: 'min-width:80px' }, '運動/興趣：'), customer.info?.interests || '未填寫'),
-            el('div', { className: 'personality-tags', id: 'personality-list' })
-        );
+    el('div', { className: 'info-row' }, el('b', { style: 'min-width:80px' }, '住處：'), customer.info?.address || '未填寫'), // 新增住處
+    el('div', { className: 'info-row' }, el('b', { style: 'min-width:80px' }, '聯絡方式：'), customer.c || '未填寫'), // 新增聯絡方式
+    el('div', { className: 'info-row' }, el('b', { style: 'min-width:80px' }, '運動/興趣：'), customer.info?.interests || '未填寫'),
+    el('div', { className: 'personality-tags', id: 'personality-list' })
+);
 
         // 5. 結構化病史彙整 (長期病史)
         const historySummary = el('section', { className: 'history-summary-box' },
@@ -490,7 +492,7 @@ export class CustomerDetailView extends BaseView {
                             ...genderOptions.map(g => el('option', { value: g, selected: customer.info?.gender === g }, g))
                         )
                     ),
-                    this._createInputField('年齡', 'number', 'edit-age', customer.info?.age || ''),
+                    this._createInputField('年齡', 'text', 'edit-age', customer.info?.age || ''),
                     this._createInputField('住處', 'text', 'edit-address', customer.info?.address || '')
                 )
             ),
@@ -540,14 +542,12 @@ export class CustomerDetailView extends BaseView {
                 kw: form.querySelector('#edit-kw').value,
                 tags: selectedTags,
                 note: form.querySelector('#edit-note').value,
-                info: {
-                    gender: form.querySelector('#edit-gender').value,
-                    age: form.querySelector('#edit-age').value,
-                    address: form.querySelector('#edit-address').value,
-                    occupation: form.querySelector('#edit-job').value,
-                    interests: form.querySelector('#edit-hobby').value,
-                    personality: form.querySelector('#edit-personality').value.split(' ').filter(v => v.trim())
-                }
+                gender: form.querySelector('#edit-gender').value,
+                age: form.querySelector('#edit-age').value,
+                address: form.querySelector('#edit-address').value,
+                occupation: form.querySelector('#edit-job').value,
+                interests: form.querySelector('#edit-hobby').value,
+                personality: form.querySelector('#edit-personality').value.split(' ').filter(v => v.trim())
             };
 
             if (!updatedData.name) return Toast.show('姓名為必填', 'error');

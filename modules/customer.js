@@ -101,13 +101,12 @@ class CustomerManager {
     // 核心重構：資料正規化處理
     _prepareCustomerObject(id, data, current = {}) {
         const cArray = (data.c || '').split(' ').filter(v => v.trim());
-        const tagKeywords = (data.tags || []).map(t => t.tagId).join(' ');
         return {
             ...current, id,
             name: data.name || current.name,
             phone: cArray[0] || current.phone || '', // 保持 phone 欄位作為熱索引相容
             c: data.c || current.c || '', 
-            kw: `${data.kw || ''} ${tagKeywords}`.trim(), //自動聚合標籤名至關鍵字
+            kw: data.kw || '',// 僅存放使用者手動輸入的搜尋關鍵字
             tags: data.tags || current.tags || [],
             note: data.note || current.note || '',
             info: {
