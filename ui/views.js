@@ -6,7 +6,7 @@
  * 實作 Virtual Scroll 與 髒檢查機制。
  */
 
-import { el, Toast, TagSelector, BodyMap, Modal } from './components.js';
+import { el, Toast, TagSelector, BodyMap, Modal, ROMSlider } from './components.js';
 import { customerManager, tagManager } from '../modules/customer.js';
 import { recordManager, draftManager } from '../modules/record.js';
 import { searchEngine } from '../core/search.js';
@@ -61,7 +61,7 @@ export class CustomerListView extends BaseView {
         this.filterTab = 'all'; // 預設分頁
         const tabContainer = el('div', { className: 'segmented-control list-filters' },
             el('button', { className: 'segment-btn active', onclick: (e) => this._switchTab('all', e.target) }, '全部'),
-            el('button', { className: 'segment-btn', onclick: (e) => this._switchTab('draft', e.target) }, '草稿'),
+            el('button', { className: 'segment-btn', onclick: (e) => this._switchTab(RecordStatus.DRAFT.toLowerCase(), e.target) }, '草稿'),
             el('button', { className: 'segment-btn', onclick: (e) => this._switchTab('active', e.target) }, '追蹤中')
         );
 
@@ -90,15 +90,16 @@ export class CustomerListView extends BaseView {
     }
 
     async _loadData() {
+        const query = this.root.querySelector('.search-bar')?.value || '';
         const [allDrafts, allItems] = await Promise.all([
             draftManager.getAll(),
-            searchEngine.search('', { limit: 10000, sort: 'updated' })
+            searchEngine.search(query, { limit: 10000, sort: 'updated' })
         ]);
         
         this.draftSet = new Set(allDrafts.map(d => d.relatedId));
         this.rawItems = allItems;
         this._updateStats(allDrafts.length);
-        this._applyFilter();
+        await this._applyFilter(); // 確保 filter 內部非同步完成
     }
 
     _updateStats(draftCount) {
@@ -120,19 +121,26 @@ export class CustomerListView extends BaseView {
         this._applyFilter();
     }
 
-    _applyFilter() {
-        const query = this.root.querySelector('.search-bar').value;
-        let base = searchEngine.search(query, { limit: 10000, sort: 'relevance' });
+    async _applyFilter() {
+        const query = this.root.querySelector('.search-bar')?.value || '';
+        
+        try {
+            // 確保真正獲取到搜尋結果陣列
+            let base = await searchEngine.search(query, { limit: 10000, sort: 'relevance' });
 
-        if (this.filterTab === 'draft') {
-            base = base.filter(i => this.draftSet.has(i.id));
-        } else if (this.filterTab === 'active') {
-            base = base.filter(i => i.t && (i.t.includes('追蹤中') || i.t.includes('重要')));
+            if (this.filterTab === RecordStatus.DRAFT.toLowerCase()) {
+                base = base.filter(i => this.draftSet.has(i.id));
+            } else if (this.filterTab === 'active') {
+                base = base.filter(i => i.t && (i.t.includes('追蹤中') || i.t.includes('重要')));
+            }
+
+            this.items = base;
+            this._updateListHeight();
+            this._renderVisibleRows();
+        } catch (error) {
+            console.error('Filter Error:', error);
+            import('./components.js').then(({ Toast }) => Toast.show('搜尋過濾發生錯誤', 'error'));
         }
-
-        this.items = base;
-        this._updateListHeight();
-        this._renderVisibleRows();
     }
     _renderHeader() {
         this.statusEl = el('span', { style: { fontSize: '12px', marginRight: '10px' } }, '正在連線...');
@@ -412,6 +420,26 @@ export class CustomerDetailView extends BaseView {
             )
         );
 
+// 5.1 上次服務紀錄摘要 (⚡ 快速延續入口)
+        let lastVisitSummary = null;
+        if (records.length > 0) {
+            const lastRec = records[0];
+            lastVisitSummary = el('section', { className: 'last-visit-summary-card', style: 'margin: 15px 20px; padding: 12px; background: #fff; border-radius: 8px; border: 1px solid #e2e8f0;' },
+                el('div', { style: 'display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;' },
+                    el('h5', { style: 'margin:0; font-size:14px; color:var(--text-secondary);' }, '⚡ 上次就診摘要'),
+                    el('button', { 
+                        className: 'btn-flash',
+                        style: 'background:var(--primary); color:white; border:none; border-radius:15px; padding:4px 12px; font-size:12px; cursor:pointer;',
+                        onclick: () => this._cloneAndContinue(lastRec) 
+                    }, '⚡ 延續此紀錄')
+                ),
+                el('div', { style: 'font-size:13px;' },
+                    el('div', { style: 'color:var(--text-main); margin-bottom:4px;' }, `主訴：${lastRec.soap?.s || '無'}`),
+                    el('div', { style: 'color:var(--primary); font-weight:500;' }, `計畫：${lastRec.soap?.p || '無'}`)
+                )
+            );
+        }
+
         const actionArea = el('div', { style: 'padding:0 20px 16px' },
             el('button', { 
                 className: 'btn-primary w-100 shadow-sm',
@@ -445,7 +473,9 @@ export class CustomerDetailView extends BaseView {
             historyList.appendChild(card);
         });
 
-        this.root.append(header, statsGrid, contextSection, historySummary, actionArea, historyList);
+        this.root.append(header, statsGrid, contextSection, historySummary);
+        if (lastVisitSummary) this.root.append(lastVisitSummary); 
+        this.root.append(actionArea, historyList);
 
         // 非同步渲染個性標籤配色
         if (customer.info?.personality?.length > 0) {
@@ -460,6 +490,7 @@ export class CustomerDetailView extends BaseView {
             });
         }
     }
+
 
     _editCustomer(customer) {
         // 1. 初始化動態聯絡人數據
@@ -612,6 +643,42 @@ export class CustomerDetailView extends BaseView {
             })
         );
     }
+/**
+     * ⚡ 快速延續邏輯 (Clone & Continue)
+     */
+    async _cloneAndContinue(lastRecord) {
+        try {
+            // 1. 建立新紀錄物件並執行欄位處理
+            const newRecord = {
+                id: crypto.randomUUID(), // 重置 ID
+                customerId: this.customerId,
+                date: Date.now(), // 重置日期為今日
+                version: "V1.0", // 重置版本號
+                status: RecordStatus.DRAFT,
+                soap: {
+                    s: "", // 清空主訴文字
+                    o: "", // 清空客觀文字
+                    a: lastRecord.soap?.a || "", // 複製評估
+                    p: lastRecord.soap?.p || ""  // 複製計畫
+                },
+                bodyParts: [...(lastRecord.bodyParts || [])], // 複製患處標記
+                tags: [...(lastRecord.tags || [])], // 複製標籤
+                rom: { ...(lastRecord.rom || {}) }, // 複製活動度數據
+                painScale: lastRecord.painScale || 0, // 複製疼痛指數
+                changeLog: [] // 清空修訂歷程
+            };
+
+            // 2. 寫入草稿儲存庫 (以新產生的 UUID 為 Key)
+            const { draftManager } = await import('../modules/record.js');
+            await draftManager.save(newRecord.id, newRecord);
+
+            // 3. 導航至編輯頁面，並帶入新紀錄 ID
+            Toast.show('已延續上次評估與計畫', 'success');
+            this.router.navigate(`record/${newRecord.id}`);
+        } catch (e) {
+            Toast.show('延續紀錄失敗：' + e.message, 'error');
+        }
+    }
 }
 // --- Record Editor View ---
 export class RecordEditorView extends BaseView {
@@ -691,26 +758,37 @@ export class RecordEditorView extends BaseView {
     }
 
     async render() {
-        // 1. 資料載入與初始化邏輯
+        // 資料載入與初始化邏輯：採用統一 ID 策略
         if (this.recordId) {
-            this.data = await recordManager.get(this.recordId);
+            // 編輯既有紀錄：先檢查有無草稿，若無則抓取正式紀錄
+            const draft = await draftManager.get(this.recordId);
+            if (draft) {
+                this.data = draft.data;
+                Toast.show('已恢復未儲存的編輯內容');
+            } else {
+                this.data = await recordManager.get(this.recordId);
+            }
         } else if (this.customerId) {
+            // 新增紀錄：檢查該病患是否有「新病歷」的草稿
             const draft = await draftManager.get(this.customerId);
             if (draft) {
                 this.data = { ...draft.data, customerId: this.customerId };
-                Toast.show('已恢復草稿內容');
+                // 確保 recordId 指向紀錄本身的 UUID，而非 customerId
+                this.recordId = draft.data.id || draft.id; 
+                Toast.show('已恢復上次未完成的草稿');
             } else {
+                // 建立時即產生帶有新 UUID 的物件，確保 Source of Truth 唯一性
                 this.data = await recordManager.create(this.customerId);
+                this.recordId = this.data.id; 
             }
-            this.recordId = this.data.id;
         }
 
         if (!this.data) {
-            this.root.innerHTML = '<div class="p-4">載入病歷失敗</div>';
+            this.root.innerHTML = '<div class="p-4">載入病歷失敗，請重試</div>';
             return;
         }
 
-        // 確保核心數據結構完整
+        // 確保核心數據結構完整，防止渲染報錯
         this.data.soap = this.data.soap || { s: '', o: '', a: '', p: '' };
         this.data.tags = this.data.tags || [];
         this.data.bodyParts = this.data.bodyParts || [];
@@ -728,7 +806,7 @@ export class RecordEditorView extends BaseView {
         const header = el('div', { className: 'nav-header' },
             el('button', { className: 'icon-btn', onclick: () => this.router.back() }, '←'),
             el('div', { className: 'nav-title' }, this.recordId ? '編輯病歷' : '新增病歷'),
-            el('span', { className: `badge ${this.data.status === 'Finalized' ? 'bg-success' : 'bg-warning'}` }, this.data.status || 'Draft')
+            el('span', { className: `badge ${this.data.status === RecordStatus.FINALIZED ? 'bg-success' : 'bg-warning'}` }, this.data.status || RecordStatus.DRAFT)
         );
 
         // 初始化互動組件
@@ -738,14 +816,26 @@ export class RecordEditorView extends BaseView {
         });
 
         this.bodyMap = new BodyMap(this.data.bodyParts, (parts) => {
-            this.data.bodyParts = parts;
-            // 每次 BodyMap 變更，同步更新標籤選取器並觸發評估建議
-            if (this.tagSelector) {
-                parts.forEach(p => this.tagSelector._addTag(p));
-            }
-            this._markDirty();
-            this._updateAssessmentSuggestions(parts); 
-        }, this.data.status === 'Finalized');
+    const oldParts = this.data.bodyParts || [];
+    this.data.bodyParts = parts;
+
+    if (this.tagSelector) {
+        import('../config.js').then(({ BodyRegions }) => {
+            // 新增時：將 'Shoulder-R' 轉換為 '肩部'
+            parts.filter(p => !oldParts.includes(p)).forEach(p => {
+                const region = Object.values(BodyRegions).find(r => p.startsWith(r.id));
+                this.tagSelector._addTag(region ? region.label : p);
+            });
+            // 移除時：同理轉換後移除
+            oldParts.filter(p => !parts.includes(p)).forEach(p => {
+                const region = Object.values(BodyRegions).find(r => p.startsWith(r.id));
+                this.tagSelector._removeTag(region ? region.label : p);
+            });
+        });
+    }
+    this._markDirty();
+    this._updateAssessmentSuggestions(parts); 
+}, this.data.status !== RecordStatus.FINALIZED);
 
         // 2. 頁籤導航
         const tabs = [
@@ -775,7 +865,7 @@ export class RecordEditorView extends BaseView {
                 className: 'soap-textarea',
                 value: this.data.soap.o,
                 oninput: (e) => { this.data.soap.o = e.target.value; this._markDirty(); },
-                disabled: this.data.status === 'Finalized'
+                disabled: this.data.status === RecordStatus.FINALIZED
             })
         );
 
@@ -799,10 +889,10 @@ export class RecordEditorView extends BaseView {
 
         // 4. 底部操作列
         const actions = el('div', { className: 'editor-actions' });
-        if (this.data.status !== 'Finalized') {
+        if (this.data.status !== RecordStatus.FINALIZED) {
             actions.append(
                 el('button', { className: 'btn-secondary', onclick: () => this._showTemplateModal() }, '📋 範本'),
-                el('button', { className: 'btn-secondary', onclick: () => this._save('Draft') }, '儲存草稿'),
+                el('button', { className: 'btn-secondary', onclick: () => this._save(RecordStatus.DRAFT) }, '儲存草稿'),
                 el('button', { className: 'btn-primary', onclick: () => this._handleFinalize() }, '完成定稿')
             );
         }
@@ -819,18 +909,21 @@ export class RecordEditorView extends BaseView {
     //  ROM 輸入介面產生器
     _renderROMInputs() {
         const container = el('div', { className: 'rom-dynamic-list' });
+        
+        // 同時加載配置與 UI 組件
         import('../config.js').then(({ StandardROM }) => {
             const selectedParts = this.data.bodyParts || [];
             if (selectedParts.length === 0) {
-                container.innerHTML = '<p class="text-muted">請先在 Body Map 標記部位以顯示 ROM 項目</p>';
+                container.innerHTML = '<p class="text-muted" style="padding:10px; font-size:12px">請先在 Body Map 標記部位以顯示對應 ROM 項目</p>';
                 return;
             }
 
-            // 找出與選取部位相關的 ROM 項目
+            // 過濾出與選取部位相關的 ROM 項目
             const relevantROMs = StandardROM.filter(rom => 
                 selectedParts.some(part => rom.id.includes(part.split('-')[0].toLowerCase()))
             );
 
+            container.innerHTML = '';
             relevantROMs.forEach(romDef => {
                 const sides = romDef.sideType === 'lr' ? ['L', 'R'] : (romDef.sideType === 'rot' ? ['Left', 'Right'] : ['']);
                 
@@ -838,13 +931,14 @@ export class RecordEditorView extends BaseView {
                     const fullId = side ? `${romDef.id}_${side.toLowerCase()}` : romDef.id;
                     const label = side ? `(${side}) ${romDef.label}` : romDef.label;
                     
+                    // 確保使用從 components.js 引入的 ROMSlider
                     const slider = new ROMSlider({
                         id: fullId,
                         label: label,
                         min: romDef.min,
                         max: romDef.max,
                         norm: romDef.norm,
-                        value: this.data.rom?.[fullId] || 0,
+                        value: this.data.rom?.[fullId] || romDef.norm, 
                         onChange: (val) => {
                             if (!this.data.rom) this.data.rom = {};
                             this.data.rom[fullId] = val;
@@ -855,6 +949,7 @@ export class RecordEditorView extends BaseView {
                 });
             });
         });
+        
         return container;
     }
 
@@ -905,7 +1000,8 @@ export class RecordEditorView extends BaseView {
         this.isDirty = true;
         clearTimeout(this.autoSaveTimer);
         this.autoSaveTimer = setTimeout(() => {
-            draftManager.save(this.recordId || this.customerId, this.data);
+            // 永遠只用 recordId 作為 Key
+            draftManager.save(this.recordId, this.data);
         }, 2000);
     }
 
@@ -970,14 +1066,18 @@ export class RecordEditorView extends BaseView {
 
     _showTemplateModal(tagSelector) {
         import('../config.js').then(({ DefaultTemplates }) => {
+            // 1. 宣告一個持有變數，確保閉包可以安全捕獲
+            let modalInstance = null;
             const list = el('div', { className: 'template-list', style: { display: 'flex', flexDirection: 'column', gap: '8px' } });
+
             DefaultTemplates.forEach(tpl => {
                 const btn = el('button', {
                     className: 'btn-secondary',
                     style: { textAlign: 'left' },
                     onclick: () => {
                         this._applyTemplate(tpl, tagSelector);
-                        modal.close();
+                        // 2. 檢查實例是否存在後再關閉
+                        if (modalInstance) modalInstance.close();
                     }
                 }, 
                     el('div', { style: { fontWeight: 'bold' } }, tpl.title),
@@ -985,8 +1085,10 @@ export class RecordEditorView extends BaseView {
                 );
                 list.appendChild(btn);
             });
-            const modal = new Modal('Select Template', list);
-            modal.open();
+
+            // 3. 正式賦值並開啟
+            modalInstance = new Modal('Select Template', list);
+            modalInstance.open();
         });
     }
 
@@ -1061,49 +1163,6 @@ export class RecordEditorView extends BaseView {
             }, '撤銷');
             const lastToast = document.querySelector('.toast-container .toast:last-child');
             if (lastToast) lastToast.appendChild(undoBtn);
-        });
-    }
-
-    /**
-     * [輔助方法] 更新評估建議清單
-     */
-    _updateAssessmentSuggestions(bodyParts) {
-        // 1. 同步嘗試抓取 A 分頁內的建議容器
-        const suggestionContainer = this.root.querySelector('.suggestion-chips') || 
-                                    this.root.querySelector('.assessment-suggestions');
-        if (!suggestionContainer) return;
-
-        suggestionContainer.innerHTML = '';
-        
-        // 2. 整合來自 BodyMap 與物件化 Tags 的建議來源
-        const currentTagIds = (this.data.tags || []).map(t => typeof t === 'object' ? t.tagId : t);
-        
-        import('../config.js').then(({ AssessmentDatabase, BodyRegions }) => {
-            const suggestions = new Set();
-            
-            // 處理部位建議
-            (bodyParts || []).forEach(partId => {
-                const regionKey = Object.keys(AssessmentDatabase).find(k => partId.includes(k));
-                if (regionKey) AssessmentDatabase[regionKey].forEach(t => suggestions.add(t));
-            });
-
-            // 處理標籤建議
-            currentTagIds.forEach(tagId => {
-                const match = Object.keys(AssessmentDatabase).find(k => tagId.includes(k));
-                if (match) AssessmentDatabase[match].forEach(t => suggestions.add(t));
-            });
-
-            // 3. 渲染建議按鈕
-            [...suggestions].forEach(s => {
-                const badge = el('button', { 
-                    className: 'chip-btn',
-                    style: { margin: '0 4px 4px 0' },
-                    onclick: () => {
-                        this._addAssessmentResult(s);
-                    }
-                }, s.name || s);
-                suggestionContainer.appendChild(badge);
-            });
         });
     }
 
@@ -1321,7 +1380,7 @@ export class SettingsView extends BaseView {
             Toast.show('模板建置完成');
         }).open();
     }
-
+}
     // --- Feature: P2P Scan Feedback ---
     _handleScan(btn) {
         console.log('[Settings] Scan button clicked');
@@ -1526,7 +1585,7 @@ export class DraftListView extends BaseView {
                         : '(No content)';
 
                     const card = el('div', { 
-                        className: 'record-card status-draft',
+                        className: \record-card status-${RecordStatus.DRAFT.toLowerCase()}``,
                         style: { cursor: 'pointer', borderLeftColor: 'var(--warning)', position: 'relative', transition: 'transform 0.2s' },
                         onclick: () => this._restoreDraft(draft)
                     },

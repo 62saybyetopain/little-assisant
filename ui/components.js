@@ -125,15 +125,29 @@ export class TagSelector {
         this.element.append(list, el('button', { className: 'btn-secondary w-100', style: 'margin-top:8px; border:2px dashed var(--border)', onclick: () => { this.items.push({ tagId: '', remark: '' }); this.render(); } }, '+ 新增病史標籤'), suggestions);
     }
 
-    _addTag(name) { // 關鍵補完：供 BodyMap 呼叫 [cite: 9]
+    _addTag(name) { // 供 BodyMap 或建議按鈕呼叫
         if (!this.items.some(i => i.tagId === name)) {
             this.items.push({ tagId: name, remark: '' });
             this.render();
             this._notify();
         }
     }
+
+    /**
+     * [新增] 供 BodyMap 取消選取時同步移除標籤
+     * @param {string} name - 部位標籤名稱
+     */
+    _removeTag(name) {
+        const index = this.items.findIndex(i => i.tagId === name);
+        if (index !== -1) {
+            // 僅移除該項而不影響其他標籤，隨後重新渲染介面
+            this.items.splice(index, 1);
+            this.render();
+            this._notify();
+        }
+    }
+
     _notify() { this.onChange(this.items.filter(i => i.tagId.trim())); }
-}
 
 // --- Body Map (SVG) with Anatomical Segmentation ---
 export class BodyMap {
