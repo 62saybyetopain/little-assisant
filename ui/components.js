@@ -153,7 +153,7 @@ _renderTagRow({ item, index, def }) {
     if (def?.type === 'ANATOMY') {
         // 從 config.js 的 BodyRegions 匹配 hue 值 (此處需確保 BodyRegions 已載入)
         const hue = def.hue || 200; // 預設藍色系
-        rowStyle += `background: hsla(${hue}, 70%, 95%, 1); border: 1px solid hsla(${hue}, 70%, 80%, 1);`; [cite: 16]
+        rowStyle += `background: hsla(${hue}, 70%, 95%, 1); border: 1px solid hsla(${hue}, 70%, 80%, 1);`;
     } else {
         rowStyle += 'background: var(--surface); border: 1px solid var(--border);';
     }
@@ -164,13 +164,13 @@ _renderTagRow({ item, index, def }) {
         
         // 3. [行動端長按引擎] 實作震動回饋與 Action Sheet 觸發 
         ontouchstart: (e) => {
-            if (isReadOnly) return; [cite: 1]
+            if (isReadOnly) return;
             isLongPress = false;
             pressTimer = setTimeout(() => {
                 isLongPress = true;
                 // [防禦性檢查] 僅在支援的設備執行震動 
-                if (navigator.vibrate) navigator.vibrate(50); [cite: 16]
-                this._showTagActionSheet(item, index); [cite: 16]
+                if (navigator.vibrate) navigator.vibrate(50); 
+                this._showTagActionSheet(item, index); 
             }, 600); // 長按 600ms 觸發規範 
         },
         
@@ -196,7 +196,7 @@ _renderTagRow({ item, index, def }) {
         el('input', { 
             type: 'text', value: item.tagId, className: 'tag-id-input',
             style: 'flex:1; font-weight:bold; border:none; background:transparent;',
-            disabled: isReadOnly, [cite: 1]
+            disabled: isReadOnly,
             onchange: (e) => { this.items[index].tagId = e.target.value; this._notify(); }
         }),
         el('span', { style: 'color:var(--text-muted)' }, '【'),
@@ -204,14 +204,14 @@ _renderTagRow({ item, index, def }) {
             type: 'text', value: item.remark, className: 'tag-remark-input',
             placeholder: '備註...',
             style: 'flex:1.2; border:none; background:transparent; border-bottom:1px dashed var(--border);',
-            disabled: isReadOnly, [cite: 1]
+            disabled: isReadOnly,
             onchange: (e) => { this.items[index].remark = e.target.value; this._notify(); }
         }),
         el('span', { style: 'color:var(--text-muted)' }, '】'),
         // 桌機版保留刪除按鈕，行動端可透過長按選單操作
         el('button', { 
             className: 'icon-btn text-danger', 
-            style: isReadOnly ? 'display:none' : '', [cite: 1]
+            style: isReadOnly ? 'display:none' : '',
             onclick: () => { this.items.splice(index, 1); this.render(); this._notify(); } 
         }, '×')
     );

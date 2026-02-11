@@ -1072,7 +1072,7 @@ _finalizeAssessmentText(test, polarity) {
                     value: (this.data.rom && this.data.rom[fullId]) ? this.data.rom[fullId] : romDef.norm,
                     readOnly: isReadOnly, // [狀態注入] 
                     onChange: (val) => {
-                        if (isReadOnly) return; // [三重防護] [cite: 1]
+                        if (isReadOnly) return; // [三重防護] 
                         if (!this.data.rom) this.data.rom = {};
                         this.data.rom[fullId] = val;
                         this._markDirty();
