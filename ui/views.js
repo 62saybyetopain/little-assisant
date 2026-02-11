@@ -1031,18 +1031,20 @@ _finalizeAssessmentText(test, polarity) {
     const container = el('div', { className: 'rom-dynamic-list' });
     
     // 1. [防禦性檢查] 確定唯讀狀態
-    const isReadOnly = this.data.status === 'Finalized' || storageManager.isEphemeral; [cite: 1, 16]
+    const isReadOnly = this.data.status === RecordStatus.FINALIZED || storageManager.isEphemeral;
     
     import('../config.js').then(({ StandardROM }) => {
-        // 2. 彙整所有解剖來源 (部位圖 + 標籤)
-        const selectedParts = Array.isArray(this.data.bodyParts) ? this.data.bodyParts : []; [cite: 16]
-        const tagParts = (this.data.tags || []).map(t => this._getTagName(t)); [cite: 16]
-        const allClinicalParts = [...new Set([...selectedParts, ...tagParts])]; [cite: 16]
-        
-        if (allClinicalParts.length === 0) {
-            container.innerHTML = '<p class="text-muted" style="padding:10px; font-size:12px">請標記部位或新增標籤以顯示 ROM 項目</p>'; [cite: 16]
-            return;
-        }
+        if (!StandardROM) return;
+
+            // 2. 彙整臨床來源 (解剖部位圖 + 標籤名稱)
+            const selectedParts = Array.isArray(this.data.bodyParts) ? this.data.bodyParts : [];
+            const tagParts = (this.data.tags || []).map(t => this._getTagName(t));
+            const allClinicalParts = [...new Set([...selectedParts, ...tagParts])];
+            
+            if (allClinicalParts.length === 0) {
+                container.innerHTML = '<p class="text-muted" style="padding:10px; font-size:12px">請標記部位或新增標籤以顯示 ROM 項目</p>';
+                return;
+            }
 
         // 3. 執行模糊比對提取相關關節
         const relevantROMs = StandardROM.filter(rom => 
