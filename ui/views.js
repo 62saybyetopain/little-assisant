@@ -268,57 +268,70 @@ export class CustomerListView extends BaseView {
         }
     }
     _showCreateModal() {
-        const feedback = el('div', { style: { color: 'var(--warning)', fontSize: '12px', minHeight: '16px' } });
-        
-        const checkDuplicate = (term) => {
-            if (!term || term.length < 3) return;
-            const results = searchEngine.search(term, { limit: 1 });
-            if (results.length > 0) {
-                const match = results[0];
-                if (match._isCold) {
-                    feedback.textContent = `⚠️ Found in Archive: ${match.n} (Last: ${match.lastSeen || 'N/A'})`;
-                } else {
-                    feedback.textContent = `⚠️ Duplicate: ${match.n} (${match.p || ''})`;
-                }
+    const feedback = el('div', { 
+        style: { color: 'var(--warning)', fontSize: '12px', minHeight: '16px', marginTop: '8px' } 
+    });
+    
+    //  原始查重邏輯：檢查姓名或電話是否已存在於索引中
+    const checkDuplicate = (term) => {
+        if (!term || term.length < 3) return;
+        const results = searchEngine.search(term, { limit: 1 });
+        if (results.length > 0) {
+            const match = results[0];
+            if (match._isCold) {
+                feedback.textContent = `⚠️ Found in Archive: ${match.n} (Last: ${match.lastSeen || 'N/A'})`;
             } else {
-                feedback.textContent = '';
+                feedback.textContent = `⚠️ Duplicate: ${match.n} (${match.p || ''})`;
             }
-        };
+        } else {
+            feedback.textContent = '';
+        }
+    };
 
-        const nameInput = el('input', { 
-            type: 'text', placeholder: 'Name *',
-            onblur: (e) => checkDuplicate(e.target.value)
-        });
-        
-        const phoneInput = el('input', { 
-            type: 'tel', placeholder: 'Phone',
-            onblur: (e) => {
-                const val = e.target.value;
-                if (val && !/^\d{3,10}$/.test(val)) { //  Phone Regex
-                    feedback.textContent = '❌ Invalid Phone Format';
-                    return;
-                }
-                checkDuplicate(val);
+    // 套用 search-bar 樣式以對齊系統視覺，並保留 blur 查重
+    const nameInput = el('input', { 
+        type: 'text', placeholder: 'Name *',
+        className: 'search-bar',
+        onblur: (e) => checkDuplicate(e.target.value)
+    });
+    
+    const phoneInput = el('input', { 
+        type: 'tel', placeholder: 'Phone',
+        className: 'search-bar',
+        style: { marginTop: '12px' },
+        onblur: (e) => {
+            const val = e.target.value;
+            //  原始電話格式驗證邏輯
+            if (val && !/^\d{3,10}$/.test(val)) {
+                feedback.textContent = '❌ Invalid Phone Format';
+                return;
             }
-        });
+            checkDuplicate(val);
+        }
+    });
+    
+    // 增加容器內距解決擠迫感
+    const modalContent = el('div', { style: { padding: '10px 4px' } }, nameInput, phoneInput, feedback);
+    
+    new Modal('New Customer', modalContent, async () => {
+        if (!nameInput.value) return Toast.show('Name is required', 'error');
         
-        new Modal('New Customer', el('div', {}, nameInput, phoneInput, feedback), async () => {
-            if (!nameInput.value) return Toast.show('Name is required', 'error');
-            // Allow creation even with warnings (Soft block), unless format error
-            if (feedback.textContent.includes('Invalid')) return;
+        // [保留] 阻止格式錯誤的資料提交
+        if (feedback.textContent.includes('Invalid')) return;
 
-            try {
-                const newCustomer = await customerManager.create({
-                    name: nameInput.value,
-                    phone: phoneInput.value
-                });
-                Toast.show('Customer created');
-                this.router.navigate(`customer/${newCustomer.id}`);
-            } catch (e) {
-                Toast.show(e.message, 'error');
-            }
-        }).open();
-    }
+        try {
+            //資料同步：phone 必須同時寫入 c 欄位，確保編輯頁面能看到
+            const newCustomer = await customerManager.create({
+                name: nameInput.value,
+                phone: phoneInput.value,
+                c: phoneInput.value // 同步至聚合聯絡資訊
+            });
+            Toast.show('Customer created');
+            this.router.navigate(`customer/${newCustomer.id}`);
+        } catch (e) {
+            Toast.show(e.message, 'error');
+        }
+    }).open();
 }
 
 // --- Customer Detail View ---
@@ -542,12 +555,14 @@ export class CustomerDetailView extends BaseView {
                 kw: form.querySelector('#edit-kw').value,
                 tags: selectedTags,
                 note: form.querySelector('#edit-note').value,
-                gender: form.querySelector('#edit-gender').value,
-                age: form.querySelector('#edit-age').value,
-                address: form.querySelector('#edit-address').value,
-                occupation: form.querySelector('#edit-job').value,
-                interests: form.querySelector('#edit-hobby').value,
-                personality: form.querySelector('#edit-personality').value.split(' ').filter(v => v.trim())
+                info: {
+            gender: form.querySelector('#edit-gender').value,
+            age: form.querySelector('#edit-age').value,
+            address: form.querySelector('#edit-address').value,
+            occupation: form.querySelector('#edit-job').value,
+            interests: form.querySelector('#edit-hobby').value,
+            personality: form.querySelector('#edit-personality').value.split(' ').filter(v => v.trim())
+        }
             };
 
             if (!updatedData.name) return Toast.show('姓名為必填', 'error');
@@ -1053,29 +1068,42 @@ export class RecordEditorView extends BaseView {
      * [輔助方法] 更新評估建議清單
      */
     _updateAssessmentSuggestions(bodyParts) {
-        const suggestionContainer = this.root.querySelector('.assessment-suggestions');
+        // 1. 同步嘗試抓取 A 分頁內的建議容器
+        const suggestionContainer = this.root.querySelector('.suggestion-chips') || 
+                                    this.root.querySelector('.assessment-suggestions');
         if (!suggestionContainer) return;
 
         suggestionContainer.innerHTML = '';
         
-        const allSuggestions = (bodyParts || []).flatMap(partId => {
-            const region = Object.keys(BodyRegions).find(r => BodyRegions[r].parts.includes(partId));
-            return region ? (AssessmentDatabase[region] || []) : [];
-        });
+        // 2. 整合來自 BodyMap 與物件化 Tags 的建議來源
+        const currentTagIds = (this.data.tags || []).map(t => typeof t === 'object' ? t.tagId : t);
+        
+        import('../config.js').then(({ AssessmentDatabase, BodyRegions }) => {
+            const suggestions = new Set();
+            
+            // 處理部位建議
+            (bodyParts || []).forEach(partId => {
+                const regionKey = Object.keys(AssessmentDatabase).find(k => partId.includes(k));
+                if (regionKey) AssessmentDatabase[regionKey].forEach(t => suggestions.add(t));
+            });
 
-        [...new Set(allSuggestions)].forEach(s => {
-            const badge = el('span', { 
-                className: 'suggestion-badge',
-                onclick: () => {
-                    const aText = this.root.querySelector('#tab-a textarea');
-                    if (aText) {
-                        const separator = aText.value ? '\n' : '';
-                        aText.value += `${separator}[建議測試] ${s}: `;
-                        aText.dispatchEvent(new Event('input'));
+            // 處理標籤建議
+            currentTagIds.forEach(tagId => {
+                const match = Object.keys(AssessmentDatabase).find(k => tagId.includes(k));
+                if (match) AssessmentDatabase[match].forEach(t => suggestions.add(t));
+            });
+
+            // 3. 渲染建議按鈕
+            [...suggestions].forEach(s => {
+                const badge = el('button', { 
+                    className: 'chip-btn',
+                    style: { margin: '0 4px 4px 0' },
+                    onclick: () => {
+                        this._addAssessmentResult(s);
                     }
-                }
-            }, s);
-            suggestionContainer.appendChild(badge);
+                }, s.name || s);
+                suggestionContainer.appendChild(badge);
+            });
         });
     }
 
