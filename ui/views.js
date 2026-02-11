@@ -233,7 +233,7 @@ export class CustomerListView extends BaseView {
     }
 
     /**
-     * [New] 呼叫共用元件 ActionSheet
+     * 呼叫共用元件 ActionSheet
      */
     _showActionSheet(item) {
         import('./components.js').then(({ ActionSheet, Toast }) => {
@@ -252,7 +252,7 @@ export class CustomerListView extends BaseView {
     }
 
     /**
-     * [New] 刪除顧客處理邏輯
+     * 刪除顧客處理邏輯
      */
     async _handleDeleteCustomer(id, name) {
         if (confirm(`Delete customer "${name}"? This cannot be undone.`)) {
@@ -338,33 +338,78 @@ export class CustomerDetailView extends BaseView {
         
         // 1. 計算統計指標
         const totalVisits = records.length;
-        const avgPain = records.length ? (records.reduce((sum, r) => sum + (r.painScale || 0), 0) / records.length).toFixed(1) : 'N/A';
         const lastDate = records.length ? new Date(records[0].updatedAt).toLocaleDateString() : '無記錄';
-
-        // 2. 佈局組裝
+        
         this.root.innerHTML = '';
         this.root.className = 'view-container bg-soft';
 
+        // 2. Header: 身分資訊與關鍵字
+        const identityStr = `${customer.info?.gender || '男'} | ${customer.info?.age ? customer.info.age + '歲' : '年齡未填'}`;
         const header = el('div', { className: 'nav-header sticky-top' },
             el('button', { className: 'icon-btn', onclick: () => this.router.back() }, '←'),
-            el('div', { className: 'nav-title' }, customer.name),
+            el('div', { className: 'nav-title-group', style: 'flex:1; margin-left:12px' },
+                el('div', { style: 'display:flex; align-items:baseline; gap:8px' },
+                    el('b', { className: 'nav-title' }, customer.name),
+                    el('small', { style: 'color:var(--text-secondary); font-size:12px' }, identityStr)
+                ),
+                el('div', { className: 'nav-subtitle', style: 'font-size:11px; color:var(--primary); margin-top:2px' }, 
+                    customer.kw ? `#${customer.kw.split(' ').join(' #')}` : '無關鍵字')
+            ),
             el('button', { className: 'icon-btn', onclick: () => this._editCustomer(customer) }, '✎')
         );
 
-        const statsSection = el('div', { className: 'detail-stats-card' },
-            el('div', { className: 'stat-item' }, el('label', {}, '總診次'), el('b', {}, totalVisits)),
-            el('div', { className: 'stat-item' }, el('label', {}, '平均疼痛'), el('b', {}, avgPain)),
-            el('div', { className: 'stat-item' }, el('label', {}, '上次就診'), el('b', {}, lastDate))
+        // 3. 統計資訊方塊化
+        // 計算回訪頻率邏輯 ---
+        const totalVisits = records.length;
+        const lastDate = records.length ? new Date(records[0].updatedAt).toLocaleDateString() : '無記錄';
+
+        // 計算頻率：(總次數) / (第一筆到最後一筆的天數 / 30)
+        let frequency = 'N/A';
+        if (records.length >= 2) {
+            const firstVisit = new Date(records[records.length - 1].updatedAt);
+            const lastVisit = new Date(records[0].updatedAt);
+            const monthDiff = (lastVisit - firstVisit) / (1000 * 60 * 60 * 24 * 30.44);
+            frequency = monthDiff > 0 ? (totalVisits / monthDiff).toFixed(1) + ' 次/月' : '1.0 次/月';
+        } else if (records.length === 1) {
+            frequency = '初次首診';
+        }
+
+        // 佈局組裝：統計資訊方塊化 (三欄位) ---
+        const statsGrid = el('div', { className: 'detail-stats-grid', style: 'grid-template-columns: repeat(3, 1fr);' },
+            el('div', { className: 'stat-card' }, el('small', {}, '總預約次數'), el('div', { className: 'val' }, totalVisits)),
+            el('div', { className: 'stat-card' }, el('small', {}, '上次預約'), el('div', { className: 'val', style: 'font-size:13px' }, lastDate)),
+            el('div', { className: 'stat-card' }, el('small', {}, '回訪頻率'), el('div', { className: 'val', style: 'font-size:13px; color:var(--success)' }, frequency))
         );
 
-        const actionArea = el('div', { style: 'padding:0 16px 16px' },
+        // 4. 生活脈絡與個性標籤 (套用雜湊配色)
+        const contextSection = el('section', { className: 'context-section' },
+            el('div', { className: 'info-row' }, el('b', { style: 'min-width:80px' }, '職業：'), customer.info?.occupation || '未填寫'),
+            el('div', { className: 'info-row' }, el('b', { style: 'min-width:80px' }, '運動/興趣：'), customer.info?.interests || '未填寫'),
+            el('div', { className: 'personality-tags', id: 'personality-list' })
+        );
+
+        // 5. 結構化病史彙整 (長期病史)
+        const historySummary = el('section', { className: 'history-summary-box' },
+            el('h5', {}, '📋 病史概覽'),
+            el('div', { className: 'tag-group-list' },
+                ...(customer.tags || []).map(t => {
+                    const name = typeof t === 'object' ? t.tagId : t;
+                    const remark = (typeof t === 'object' && t.remark) ? `【${t.remark}】` : '';
+                    return el('span', { className: 'tag-chip', style: 'background:var(--primary); color:white; font-size:12px' }, `${name}${remark}`);
+                }),
+                (customer.tags?.length === 0) ? el('small', { style: 'color:var(--text-muted)' }, '目前無病史記錄') : null
+            )
+        );
+
+        const actionArea = el('div', { style: 'padding:0 20px 16px' },
             el('button', { 
                 className: 'btn-primary w-100 shadow-sm',
                 onclick: () => this.router.navigate(`record/new?customerId=${this.customerId}`) 
             }, '＋ 新增診療病歷')
         );
 
-        const historyList = el('div', { className: 'history-timeline' });
+        // 6. 歷史紀錄卡片 (保留物件化標籤邏輯)
+        const historyList = el('div', { className: 'history-timeline', style: 'padding: 0 20px' });
         records.forEach(rec => {
             const isFinal = rec.status === RecordStatus.FINALIZED;
             const card = el('div', { 
@@ -376,13 +421,12 @@ export class CustomerDetailView extends BaseView {
                     el('span', { className: `badge ${isFinal ? 'bg-success' : 'bg-warning'}` }, rec.status)
                 ),
                 el('div', { className: 'card-body' }, 
-                    el('p', {}, rec.soap?.a || '無評估摘要'),
+                    el('p', { style: 'margin: 8px 0' }, rec.soap?.a || '無評估摘要'),
                     el('div', { className: 'card-tags' }, 
-                        // 支援物件化標籤顯示：#名稱【備註】
-                        ...(rec.tags || []).slice(0, 5).map(t => {
+                        ...(rec.tags || []).slice(0, 8).map(t => {
                             const name = typeof t === 'object' ? t.tagId : t;
                             const remark = (typeof t === 'object' && t.remark) ? `【${t.remark}】` : '';
-                            return el('small', { style: 'margin-right:8px; color:var(--primary)' }, `#${name}${remark}`);
+                            return el('small', { style: 'margin-right:8px; color:var(--primary); font-weight:500' }, `#${name}${remark}`);
                         })
                     )
                 )
@@ -390,7 +434,20 @@ export class CustomerDetailView extends BaseView {
             historyList.appendChild(card);
         });
 
-        this.root.append(header, statsSection, actionArea, historyList);
+        this.root.append(header, statsGrid, contextSection, historySummary, actionArea, historyList);
+
+        // 非同步渲染個性標籤配色
+        if (customer.info?.personality?.length > 0) {
+            const pList = this.root.querySelector('#personality-list');
+            const allTags = await tagManager.getAll();
+            customer.info.personality.forEach(pName => {
+                const match = allTags.find(t => t.name === pName);
+                pList.appendChild(el('span', { 
+                    className: 'tag-chip', 
+                    style: `background:${match?.color || '#94a3b8'}; font-size:11px; opacity:0.8` 
+                }, pName));
+            });
+        }
     }
 
     _editCustomer(customer) {
@@ -398,7 +455,7 @@ export class CustomerDetailView extends BaseView {
         let contactList = (customer.c || '').split(' ').filter(v => v.trim()).map(v => ({ value: v }));
         if (contactList.length === 0) contactList.push({ value: '' });
 
-        // [新增] 初始化個性標籤與基礎資訊
+        // 初始化個性標籤與基礎資訊
         let personality = customer.info?.personality || [];
         const genderOptions = ['男', '女', '多元'];
 
@@ -422,7 +479,7 @@ export class CustomerDetailView extends BaseView {
         };
         renderContacts();
 
-        // 2. [修正] 構建表單結構
+        // 構建表單結構
         const form = el('div', { className: 'rich-form' },
             el('section', { className: 'form-section' },
                 el('h4', { className: 'section-title' }, '基本資料與快速搜尋'),
