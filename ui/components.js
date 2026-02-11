@@ -162,44 +162,49 @@ export class BodyMap {
 
     // 擴充全肢體路徑 (精確座標)
     static get PATHS() {
-        return {
-            FRONT: [
-                { id: 'Head', label: '頭', d: 'M75,10 C75,0 125,0 125,10 C125,35 75,35 75,10 Z' },
-                { id: 'Neck', label: '頸', d: 'M85,35 L115,35 L120,50 L80,50 Z' },
-                { id: 'Chest', label: '胸', d: 'M70,50 L130,50 L125,100 L75,100 Z' },
-                { id: 'Abdomen', label: '腹', d: 'M75,100 L125,100 L120,160 L80,160 Z' },
-                // 上肢 (左)
-                { id: 'Shoulder-L', label: '左肩', d: 'M130,50 L155,55 L150,75 L130,70 Z' },
-                { id: 'Elbow-L', label: '左肘', d: 'M150,75 L165,115 L145,115 L135,75 Z' },
-                { id: 'Wrist-L', label: '左腕', d: 'M145,115 L155,145 L135,145 L130,115 Z' },
-                { id: 'Hand-L', label: '左手', d: 'M135,145 L145,175 L125,175 L120,145 Z' },
-                // 上肢 (右)
-                { id: 'Shoulder-R', label: '右肩', d: 'M70,50 L45,55 L50,75 L70,70 Z' },
-                { id: 'Elbow-R', label: '右肘', d: 'M50,75 L35,115 L55,115 L65,75 Z' },
-                { id: 'Wrist-R', label: '右腕', d: 'M55,115 L45,145 L65,145 L70,115 Z' },
-                { id: 'Hand-R', label: '右手', d: 'M65,145 L55,175 L75,175 L80,145 Z' },
-                // 下肢 (左)
-                { id: 'Hip-L', label: '左髖', d: 'M100,160 L125,160 L130,195 L100,195 Z' },
-                { id: 'Thigh-L', label: '左大腿', d: 'M100,195 L130,195 L125,260 L100,260 Z' },
-                { id: 'Knee-L', label: '左膝', d: 'M100,260 L125,260 L120,285 L100,285 Z' },
-                { id: 'Leg-L', label: '左小腿', d: 'M100,285 L120,285 L115,350 L100,350 Z' },
-                { id: 'Foot-L', label: '左足', d: 'M100,350 L120,350 L125,375 L95,375 Z' },
-                // 下肢 (右)
-                { id: 'Hip-R', label: '右髖', d: 'M75,160 L100,160 L100,195 L70,195 Z' },
-                { id: 'Thigh-R', label: '右大腿', d: 'M70,195 L100,195 L100,260 L75,260 Z' },
-                { id: 'Knee-R', label: '右膝', d: 'M75,260 L100,260 L100,285 L80,285 Z' },
-                { id: 'Leg-R', label: '右小腿', d: 'M80,285 L100,285 L100,350 L85,350 Z' },
-                { id: 'Foot-R', label: '右足', d: 'M85,350 L100,350 L105,375 L75,375 Z' }
-            ],
-            BACK: [
-                { id: 'Back-Upper', label: '上背', d: 'M70,50 L130,50 L125,110 L75,110 Z' },
-                { id: 'Back-Lower', label: '下背', d: 'M75,110 L125,110 L120,160 L80,160 Z' },
-                { id: 'Glutes', label: '臀部', d: 'M80,160 L120,160 L130,195 L70,195 Z' },
-                { id: 'Hamstring-L', label: '左後大腿', d: 'M100,195 L130,195 L125,260 L100,260 Z' },
-                { id: 'Hamstring-R', label: '右後大腿', d: 'M70,195 L100,195 L100,260 L75,260 Z' }
-            ]
-        };
-    }
+    return {
+        FRONT: [
+            // 中軸線
+            { id: 'Head', label: '頭部', d: 'M100,5 C85,5 72,18 72,35 C72,52 85,62 100,62 C115,62 128,52 128,35 C128,18 115,5 100,5 Z' },
+            { id: 'Neck', label: '頸部', d: 'M88,62 L112,62 C112,62 115,75 118,80 L82,80 C85,75 88,62 88,62 Z' },
+            { id: 'Chest', label: '胸部', d: 'M70,80 L130,80 C135,110 132,130 128,140 L72,140 C68,130 65,110 70,80 Z' },
+            { id: 'Abdomen', label: '腹部', d: 'M72,140 L128,140 C125,170 122,190 115,205 L85,205 C78,190 75,170 72,140 Z' },
+            
+            // 右上肢 (R)
+            { id: 'Shoulder-R', label: '右肩', d: 'M70,82 C55,80 48,90 45,105 L60,115 C62,105 65,95 70,82 Z' },
+            { id: 'Elbow-R', label: '右肘', d: 'M50,140 L35,140 C32,150 32,165 38,175 L52,175 C58,165 58,150 50,140 Z' },
+            { id: 'Wrist-R', label: '右腕', d: 'M50,210 L38,210 C36,215 36,225 38,230 L50,230 C52,225 52,215 50,210 Z' },
+            { id: 'Hand-R', label: '右手', d: 'M38,235 L50,235 L55,270 L33,270 Z' },
+            
+            // 左上肢 (L)
+            { id: 'Shoulder-L', label: '左肩', d: 'M130,82 C145,80 152,90 155,105 L140,115 C138,105 135,95 130,82 Z' },
+            { id: 'Elbow-L', label: '左肘', d: 'M150,140 L165,140 C168,150 168,165 162,175 L148,175 C142,165 142,150 150,140 Z' },
+            { id: 'Wrist-L', label: '左腕', d: 'M150,210 L162,210 C164,215 164,225 162,230 L150,230 C148,225 148,215 150,210 Z' },
+            { id: 'Hand-L', label: '左手', d: 'M162,235 L150,235 L145,270 L167,270 Z' },
+
+            // 右下肢 (R)
+            { id: 'Hip-R', label: '右髖', d: 'M85,205 L100,205 L100,240 L70,240 C75,220 80,210 85,205 Z' },
+            { id: 'Thigh-R', label: '右大腿', d: 'M70,240 L100,240 L100,310 L75,310 Z' },
+            { id: 'Knee-R', label: '右膝', d: 'M75,310 L100,310 L100,335 L80,335 Z' },
+            { id: 'Leg-R', label: '右小腿', d: 'M80,335 L100,335 L100,385 L85,385 Z' },
+            { id: 'Foot-R', label: '右足', d: 'M85,385 L100,385 L105,400 L75,400 Z' },
+
+            // 左下肢 (L)
+            { id: 'Hip-L', label: '左髖', d: 'M100,205 L115,205 C120,210 125,220 130,240 L100,240 L100,205 Z' },
+            { id: 'Thigh-L', label: '左大腿', d: 'M100,240 L130,240 L125,310 L100,310 Z' },
+            { id: 'Knee-L', label: '左膝', d: 'M100,310 L125,310 L120,335 L100,335 Z' },
+            { id: 'Leg-L', label: '左小腿', d: 'M100,335 L120,335 L115,385 L100,385 Z' },
+            { id: 'Foot-L', label: '左足', d: 'M100,385 L115,385 L125,400 L95,400 Z' }
+        ],
+        BACK: [
+            { id: 'Back-Upper', label: '上背', d: 'M70,80 L130,80 C135,115 132,135 128,145 L72,145 C68,135 65,115 70,80 Z' },
+            { id: 'Back-Lower', label: '下背', d: 'M72,145 L128,145 C125,180 122,200 115,215 L85,215 C78,200 75,180 72,145 Z' },
+            { id: 'Glutes', label: '臀部', d: 'M85,215 L115,215 C130,225 135,260 115,275 L85,275 C65,260 70,225 85,215 Z' },
+            { id: 'Hamstring-R', label: '右後大腿', d: 'M70,275 L100,275 L100,345 L75,345 Z' },
+            { id: 'Hamstring-L', label: '左後大腿', d: 'M100,275 L130,275 L125,345 L100,345 Z' }
+        ]
+    };
+}
 
     _renderContainer() {
         const container = el('div', { className: 'body-map-container' });
@@ -246,25 +251,43 @@ export class BodyMap {
     }
 
     _renderSVG() {
-        this.svgWrapper.innerHTML = '';
-        const svgNS = "http://www.w3.org/2000/svg";
-        const svg = document.createElementNS(svgNS, "svg");
-        svg.setAttribute("viewBox", "0 0 200 400");
-        svg.setAttribute("class", "body-map-svg");
+    this.svgWrapper.innerHTML = '';
+    const svgNS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(svgNS, "svg");
+    
+    // 設定高寬比，確保在移動端不變形
+    svg.setAttribute("viewBox", "0 0 200 410");
+    svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+    svg.setAttribute("class", "body-map-svg");
+
+    // 透過 DocumentFragment 減少 DOM 操縱次數
+    const fragment = document.createDocumentFragment();
+    const currentPaths = BodyMap.PATHS[this.currentView] || [];
+
+    currentPaths.forEach(part => {
+        const path = document.createElementNS(svgNS, "path");
+        path.setAttribute("d", part.d);
         
-        BodyMap.PATHS[this.currentView].forEach(part => {
-            const path = document.createElementNS(svgNS, "path");
-            path.setAttribute("d", part.d);
-            path.setAttribute("class", `body-part ${this.selectedParts.has(part.id) ? 'active' : ''}`);
-            path.setAttribute("data-label", part.label); // 用於 CSS Tooltip
-            
-            if (!this.readOnly) {
-                path.onclick = () => this._togglePart(part.id, path);
-            }
-            svg.appendChild(path);
-        });
-        this.svgWrapper.appendChild(svg);
-    }
+        // 狀態管理：直接從 Set 檢查選取狀態
+        const isActive = this.selectedParts.has(part.id);
+        path.setAttribute("class", `body-part ${isActive ? 'active' : ''}`);
+        
+        // Tooltip 數據
+        path.setAttribute("data-label", part.label);
+
+        if (!this.readOnly) {
+            // 使用綁定的方法確保 Context 正確
+            path.onclick = (e) => {
+                e.preventDefault();
+                this._togglePart(part.id, path);
+            };
+        }
+        fragment.appendChild(path);
+    });
+
+    svg.appendChild(fragment);
+    this.svgWrapper.appendChild(svg);
+}
 
     _togglePart(partId, element) {
         if (this.selectedParts.has(partId)) {

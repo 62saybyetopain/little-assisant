@@ -409,21 +409,26 @@ button:active,
 }
 
 .body-map-svg {
-    height: 320px;
     width: 100%;
-    margin-top: 12px;
+    height: auto;
+    max-height: 380px;
+    touch-action: none; /* 防止移動端捲動干擾點擊 */
+    user-select: none;
+    -webkit-user-drag: none;
 }
 
 .body-part {
-    fill: #e2e8f0;
+    fill: #f1f5f9;
     stroke: #94a3b8;
-    stroke-width: 1;
-    transition: fill 0.3s ease;
+    stroke-width: 1px;
+    transition: fill 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    -webkit-tap-highlight-color: transparent; /* 移除 iOS 預設點擊框 */
 }
 
 .body-part.active {
-    fill: var(--danger);
-    stroke: var(--danger);
+    fill: var(--danger); /* 對應 config.js 中的 RecordStatus 警示色 */
+    stroke: #b91c1c;
+    stroke-width: 1.5px;
 }
 
 /* Tabbed Interface */
