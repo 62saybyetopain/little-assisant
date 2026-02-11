@@ -359,10 +359,6 @@ export class CustomerDetailView extends BaseView {
         );
 
         // 3. 統計資訊方塊化
-        // 計算回訪頻率邏輯 ---
-        const totalVisits = records.length;
-        const lastDate = records.length ? new Date(records[0].updatedAt).toLocaleDateString() : '無記錄';
-
         // 計算頻率：(總次數) / (第一筆到最後一筆的天數 / 30)
         let frequency = 'N/A';
         if (records.length >= 2) {
