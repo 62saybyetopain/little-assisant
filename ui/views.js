@@ -682,6 +682,45 @@ export class CustomerDetailView extends BaseView {
 }
 // --- Record Editor View ---
 export class RecordEditorView extends BaseView {
+/**
+ * 單一狀態同步引擎
+ * 確保 BodyMap, Tags, ROM, Assessments 四者邏輯一致性
+ */
+async _syncClinicalLogic() {
+    if (!this.data) return;
+
+    // 1. 提取所有解剖關鍵字 (含 BodyParts 與 Tags)
+    const bodyPartIds = (this.data.bodyParts || []).map(p => this._getTagName(p));
+    const tagNames = (this.data.tags || []).map(t => this._getTagName(t));
+    const allIdentifiers = [...new Set([...bodyPartIds, ...tagNames])];
+
+    // 2. 同步 BodyMap 選取狀態 (防止 TagSelector 刪除標籤後圖表未更新)
+    if (this.bodyMap) {
+        const bodyMappedIds = new Set();
+        import('../config.js').then(({ BodyRegions }) => {
+            allIdentifiers.forEach(id => {
+                const region = Object.values(BodyRegions).find(r => r.label === id || id.startsWith(r.id));
+                if (region) bodyMappedIds.add(region.id);
+            });
+            // 避免無限循環，僅在異動時更新
+            if (JSON.stringify(Array.from(this.bodyMap.selectedParts)) !== JSON.stringify(Array.from(bodyMappedIds))) {
+                this.bodyMap.updateSelection(Array.from(bodyMappedIds));
+            }
+        });
+    }
+
+    // 3. 更新評估建議 (Assessment Suggestions)
+    this._updateAssessmentSuggestions(allIdentifiers);
+
+    // 4. 重繪 ROM 輸入項 (確保即時反應)
+    const romContainer = this.root.querySelector('.rom-dynamic-list');
+    if (romContainer) {
+        const newROMUI = this._renderROMInputs();
+        romContainer.replaceWith(newROMUI);
+    }
+
+    this._markDirty();
+}
     constructor(router, params) {
         super();
         this.router = router;
@@ -775,26 +814,70 @@ export class RecordEditorView extends BaseView {
 }
 
     _addAssessmentResult(test) {
-        // 自動填入 Assessment 欄位
-        const currentText = this.data.soap?.a || '';
-        const newEntry = `[${test.name}] (+) Positive -> 疑似 ${test.positive}`;
-        
+    // 1. [防禦性檢查] 若已定稿或處於無痕模式，禁止觸發彈窗 
+    const isReadOnly = this.data.status === 'Finalized' || storageManager.isEphemeral;
+    if (!test || isReadOnly) return;
+
+    // 2. 建立雙態互動介面 (Action Sheet 變體) 
+    const content = el('div', { className: 'assessment-toggle-box', style: 'padding: 10px;' },
+        el('p', { style: 'margin-bottom: 15px; font-weight: bold;' }, `評估項目：${test.name}`),
+        el('div', { style: 'display: flex; gap: 12px;' },
+            el('button', { 
+                className: 'btn-primary', 
+                style: 'flex: 1; background: var(--danger);', // 陽性通常用警示色
+                onclick: () => this._finalizeAssessmentText(test, '+') 
+            }, '(+) 陽性'),
+            el('button', { 
+                className: 'btn-secondary', 
+                style: 'flex: 1;',
+                onclick: () => this._finalizeAssessmentText(test, '-') 
+            }, '(-) 陰性')
+        )
+    );
+
+    const modal = new Modal('紀錄評估結果', content);
+    modal.open();
+    this._currentAssessmentModal = modal; 
+}
+
+/**
+ * [結構化生成] 根據選擇之極性自動生成臨床敘述
+ */
+_finalizeAssessmentText(test, polarity) {
+    const currentText = this.data.soap?.a || '';
+    
+    // 根據功能彙編規範生成結構化文字 
+    const sign = polarity === '+' ? '(+)' : '(-)';
+    const resultSuffix = polarity === '+' 
+        ? ` -> 疑似 ${test.positive}` 
+        : ' -> 排除/無顯著反應';
+    const newEntry = `[${test.name}] ${sign}${resultSuffix}`;
+
+    // 避免針對同一項目的重複添加
+    if (!currentText.includes(`[${test.name}]`)) {
         if (!this.data.soap) this.data.soap = {};
+        this.data.soap.a = currentText ? currentText + '\n' + newEntry : newEntry;
         
-        // 避免重複添加
-        if (!currentText.includes(test.name)) {
-            this.data.soap.a = currentText ? currentText + '\n' + newEntry : newEntry;
-            
-            // 更新 UI (若當前不在 A Tab，下次切換會自動顯示，但若在 A Tab 需手動更新 DOM)
-            const textarea = this.root.querySelector('#tab-a textarea');
-            if (textarea) textarea.value = this.data.soap.a;
-            
-            this._markDirty();
-            Toast.show('Assessment added');
-        }
+        // 即時同步 UI
+        const textarea = this.root.querySelector('#tab-a textarea');
+        if (textarea) textarea.value = this.data.soap.a;
+        
+        this._markDirty();
+        import('./components.js').then(({ Toast }) => Toast.show(`已加入${sign}紀錄`));
     }
 
+    if (this._currentAssessmentModal) this._currentAssessmentModal.close();
+}
+
     async render() {
+	// [防禦性檢查] 絕對唯讀攔截：禁止無痕模式進入編輯
+    if (storageManager.isEphemeral) {
+        import('./components.js').then(({ Toast }) => {
+            Toast.show('無痕模式下禁止編輯資料，系統已自動返回列表', 'warning');
+        });
+        this.router.navigate('customer-list'); // 強制重導向
+        return; 
+    }
         // 資料載入與初始化邏輯：採用統一 ID 策略
         if (this.recordId) {
             // 編輯既有紀錄：先檢查有無草稿，若無則抓取正式紀錄
@@ -945,56 +1028,64 @@ export class RecordEditorView extends BaseView {
 
     //  ROM 輸入介面產生器
     _renderROMInputs() {
-        const container = el('div', { className: 'rom-dynamic-list' });
+    const container = el('div', { className: 'rom-dynamic-list' });
+    
+    // 1. [防禦性檢查] 確定唯讀狀態
+    const isReadOnly = this.data.status === 'Finalized' || storageManager.isEphemeral; [cite: 1, 16]
+    
+    import('../config.js').then(({ StandardROM }) => {
+        // 2. 彙整所有解剖來源 (部位圖 + 標籤)
+        const selectedParts = Array.isArray(this.data.bodyParts) ? this.data.bodyParts : []; [cite: 16]
+        const tagParts = (this.data.tags || []).map(t => this._getTagName(t)); [cite: 16]
+        const allClinicalParts = [...new Set([...selectedParts, ...tagParts])]; [cite: 16]
         
-        import('../config.js').then(({ StandardROM }) => {
-            // 確保 bodyParts 存在且為陣列
-            const selectedParts = Array.isArray(this.data.bodyParts) ? this.data.bodyParts : [];
+        if (allClinicalParts.length === 0) {
+            container.innerHTML = '<p class="text-muted" style="padding:10px; font-size:12px">請標記部位或新增標籤以顯示 ROM 項目</p>'; [cite: 16]
+            return;
+        }
+
+        // 3. 執行模糊比對提取相關關節
+        const relevantROMs = StandardROM.filter(rom => 
+            allClinicalParts.some(part => {
+                const partId = this._getTagName(part).split('-')[0].toLowerCase(); [cite: 16]
+                return rom.id.includes(partId);
+            })
+        );
+
+        container.innerHTML = '';
+        relevantROMs.forEach(romDef => {
+            const sides = romDef.sideType === 'lr' ? ['L', 'R'] : (romDef.sideType === 'rot' ? ['Left', 'Right'] : ['']);
             
-            if (selectedParts.length === 0) {
-                container.innerHTML = '<p class="text-muted" style="padding:10px; font-size:12px">請先在 Body Map 標記部位以顯示對應 ROM 項目</p>';
-                return;
-            }
-
-            // 修正比對邏輯：確保取出的 partId 為字串
-            const relevantROMs = StandardROM.filter(rom => 
-                selectedParts.some(part => {
-                    const partId = this._getTagName(part).split('-')[0].toLowerCase();
-                    return rom.id.includes(partId);
-                })
-            );
-
-            container.innerHTML = '';
-            relevantROMs.forEach(romDef => {
-                const sides = romDef.sideType === 'lr' ? ['L', 'R'] : (romDef.sideType === 'rot' ? ['Left', 'Right'] : ['']);
+            sides.forEach(side => {
+                const fullId = side ? `${romDef.id}_${side.toLowerCase()}` : romDef.id;
+                const label = side ? `(${side}) ${romDef.label}` : romDef.label;
                 
-                sides.forEach(side => {
-                    const fullId = side ? `${romDef.id}_${side.toLowerCase()}` : romDef.id;
-                    const label = side ? `(${side}) ${romDef.label}` : romDef.label;
-                    
-                    const slider = new ROMSlider({
-                        id: fullId,
-                        label: label,
-                        min: romDef.min,
-                        max: romDef.max,
-                        norm: romDef.norm,
-                        value: (this.data.rom && this.data.rom[fullId]) ? this.data.rom[fullId] : romDef.norm, 
-                        onChange: (val) => {
-                            if (!this.data.rom) this.data.rom = {};
-                            this.data.rom[fullId] = val;
-                            this._markDirty();
-                        }
-                    });
-                    container.appendChild(slider.element);
+                // 4. [注入防禦屬性] 傳遞 readOnly 狀態至組件
+                const slider = new ROMSlider({
+                    id: fullId,
+                    label: label,
+                    min: romDef.min,
+                    max: romDef.max,
+                    norm: romDef.norm,
+                    value: (this.data.rom && this.data.rom[fullId]) ? this.data.rom[fullId] : romDef.norm,
+                    readOnly: isReadOnly, // [狀態注入] 
+                    onChange: (val) => {
+                        if (isReadOnly) return; // [三重防護] [cite: 1]
+                        if (!this.data.rom) this.data.rom = {};
+                        this.data.rom[fullId] = val;
+                        this._markDirty();
+                    }
                 });
+                container.appendChild(slider.element);
             });
-        }).catch(err => {
-            container.textContent = 'ROM 組件載入失敗';
-            console.error(err);
         });
-        
-        return container;
-    }
+    }).catch(err => {
+        container.textContent = 'ROM 組件載入失敗';
+        console.error(err);
+    });
+    
+    return container;
+}
 
     _createTabPane(id, title, soapKey, placeholder) {
         const textarea = el('textarea', {
@@ -1136,42 +1227,48 @@ export class RecordEditorView extends BaseView {
     }
 
     async _applyTemplate(template) {
-    if (!template) return;
+    if (!template || !this.data) return;
     
+    // 0. [防禦檢查] 若已定稿或無痕模式，攔截任何變更
+    if (this.data.status === 'Finalized' || storageManager.isEphemeral) {
+        return Toast.show('當前狀態禁止修改病歷', 'warning');
+    }
+
     const { templateManager, draftManager } = await import('../modules/record.js');
     const { Toast, el } = await import('./components.js');
-    
-    // 1. 策略確認：檢查是否有既有內容
+
+    // 1. 策略確認：檢查既有內容 (具備強效提示)
     const hasContent = !!(this.data.soap?.s || this.data.soap?.o || this.data.soap?.a || this.data.soap?.p);
     let strategy = 'Append';
 
     if (hasContent) {
-        // 使用原有的 confirm 邏輯確定疊加或覆蓋
-        if (!confirm(`目前紀錄已有內容。\n點擊「確定」進行疊加 (Append)。\n點擊「取消」進行覆蓋 (Override)。`)) {
+        const confirmMsg = `目前紀錄已有內容。\n\n【確定】：疊加 (Append)\n【取消】：覆蓋 (Override)`;
+        if (!confirm(confirmMsg)) {
             strategy = 'Override';
         }
     }
 
-    // 2. [保留重要功能] 套用前先存快照備份，以供撤銷使用
-    const backupId = `${this.recordId || this.customerId}_backup`;
+    // 2. [數據快照] 持久化備份至草稿庫
+    const snapshotTimestamp = Date.now();
+    const backupId = `undo_${this.recordId}_${snapshotTimestamp}`;
     try {
+        // 使用深度複製確保快照完整性
         await draftManager.save(backupId, JSON.parse(JSON.stringify(this.data)));
     } catch (e) {
-        console.warn('Backup failed, proceeding anyway:', e);
+        console.error('Snapshot failed:', e);
     }
 
-    // 3. 標準化標籤格式：確保範本標籤統一為物件結構 {tagId, remark}
+    // 3. 執行數據合併 (防禦性解析)
     const tplTags = (template.tags || []).map(t => 
         typeof t === 'string' ? { tagId: t, remark: '' } : t
     );
 
-    // 4. 執行數據合併
     const mergedRecord = templateManager.merge(this.data, template, strategy);
     this.data.soap = mergedRecord.soap;
     this.data.bodyParts = mergedRecord.bodyParts;
     this.data.rom = mergedRecord.rom;
 
-    // 5. 處理標籤合併與去重：使用 _getTagName 防禦性提取 ID
+    // 4. 處理標籤去重合併 (使用 _getTagName 防禦性提取)
     if (strategy === 'Append') {
         const existingTags = Array.isArray(this.data.tags) ? this.data.tags : [];
         const combined = [...existingTags, ...tplTags];
@@ -1185,33 +1282,43 @@ export class RecordEditorView extends BaseView {
         this.data.tags = tplTags;
     }
 
-    // 6. 更新 UI 與狀態
-    await this.render(); // 觸發完整重繪以確保 TagSelector 與 BodyMap 同步
-    this._markDirty();
-    
-    // 7. [恢復原本功能] 顯示通知與撤銷入口
-    Toast.show(`已套用模板: ${template.title}`, 'success');
+    // 5. 更新 UI 與啟動同步引擎
+    await this.render();
+    if (this._syncClinicalLogic) await this._syncClinicalLogic(); // 確保聯動組件同步
+
+    // 6. [強效撤銷] 顯示通知並動態掛載撤銷功能
+    Toast.show(`已套用模板: ${template.title}`, 'success', 6000);
 
     const undoBtn = el('button', {
+        className: 'btn-undo',
         style: { 
             marginLeft: '12px', color: '#fff', textDecoration: 'underline', 
-            background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px' 
+            background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px' 
         },
         onclick: async (e) => {
             e.preventDefault();
-            const backup = await draftManager.get(backupId);
-            if (backup && backup.data) {
-                this.data = backup.data;
-                await this.render(); 
-                Toast.show('已還原至套用前狀態', 'info');
-                this._markDirty();
+            try {
+                const backup = await draftManager.get(backupId);
+                if (backup && backup.data) {
+                    this.data = backup.data;
+                    await this.render();
+                    if (this._syncClinicalLogic) await this._syncClinicalLogic();
+                    Toast.show('已還原至套用前狀態', 'info');
+                    await draftManager.discard(backupId); // 清除臨時備份
+                }
+            } catch (err) {
+                Toast.show('還原失敗', 'error');
             }
         }
     }, '撤銷');
 
-    const lastToast = document.querySelector('.toast-container .toast:last-child');
-    if (lastToast) lastToast.appendChild(undoBtn);
-    }
+    // 防禦性掛載：確保 Toast 已渲染後再插入按鈕
+    requestAnimationFrame(() => {
+        const toasts = document.querySelectorAll('.toast-container .toast');
+        const lastToast = toasts[toasts.length - 1];
+        if (lastToast) lastToast.appendChild(undoBtn);
+    });
+}
   }//結束 RecordEditorView 類別
 // --- Settings View ---
 export class SettingsView extends BaseView {
@@ -1591,14 +1698,22 @@ _updateDeviceName(syncGateway) {
                     const req = indexedDB.deleteDatabase('LocalFirstDB');
                     
                     req.onsuccess = () => {
-                        //  Clear LocalStorage to remove Ghost Index
-                        localStorage.clear();
-                        
-                        alert('System Reset Complete. Reloading...');
-                        window.location.reload();
-                    };
-                    req.onerror = () => alert('Reset Failed');
-                    req.onblocked = () => alert('Reset Blocked: Please close other tabs.');
+                    // [智慧清除實作] 僅刪除符合系統前綴的資料
+                    const keys = Object.keys(localStorage);
+                    const prefix = "app_v6_3_"; // 引用 config.js 的 APP_NAMESPACE
+                    
+                    let clearedCount = 0;
+                    keys.forEach(key => {
+                        if (key.startsWith(prefix)) {
+                            localStorage.removeItem(key);
+                            clearedCount++;
+                        }
+                    });
+                    
+                    console.log(`[System] Reset complete. ${clearedCount} namespace keys removed.`);
+                    alert('系統重置完成，即將重啟。');
+                    window.location.reload();
+                };
                 } catch (e) {
                     alert('Error: ' + e.message);
                 }
