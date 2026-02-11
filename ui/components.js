@@ -262,9 +262,19 @@ _showTagActionSheet(item, index) {
  */
 export class BodyMap {
     constructor(selectedParts = [], onChange, readOnly = false, options = {}) {
+        // 防禦性編程：參數驗證
+        if (!Array.isArray(selectedParts)) {
+            console.warn('[BodyMap] selectedParts 必須是數組，已自動修正為空數組');
+            selectedParts = [];
+        }
+        if (typeof onChange !== 'function') {
+            console.warn('[BodyMap] onChange 必須是函數，已設置為空函數');
+            onChange = () => {};
+        }
+
         this.selectedParts = new Set(selectedParts);
         this.onChange = onChange;
-        this.readOnly = readOnly;
+        this.readOnly = !!readOnly; // 強制轉為布爾值
         this.currentView = 'FRONT'; 
         
         // 症狀模式與數據初始化
@@ -273,426 +283,572 @@ export class BodyMap {
             ? options.symptomData 
             : new Map(Object.entries(options.symptomData || {}));
 
-        this.element = this._renderContainer();
+        // 性能優化：防抖渲染
+        this._renderDebounced = this._debounce(() => this._renderSVG(), 16);
+
+        try {
+            this.element = this._renderContainer();
+        } catch (error) {
+            console.error('[BodyMap] 初始化失敗:', error);
+            this.element = this._renderFallback();
+        }
+    }
+
+    // 防禦性工具：防抖函數
+    _debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    }
+
+    // 降級方案：渲染失敗時顯示
+    _renderFallback() {
+        return el('div', {
+            className: 'body-map-fallback',
+            style: 'padding:20px; text-align:center; background:#f5f5f5; border-radius:8px;'
+        }, 
+            el('p', {}, '⚠️ 無法載入人體圖'),
+            el('small', {}, '請重新整理頁面或聯繫支援')
+        );
     }
 
     static get SYMPTOM_COLORS() {
         return {
-            pain: '#EF4444',       // 紅色 - 痛點
-            numbness: '#F59E0B',   // 橙色 - 麻
-            weakness: '#8B5CF6',   // 紫色 - 無力
-            radiation: '#10B981',  // 綠色 - 放射痛
-            active: '#4C84FF'      // 預設選取藍
+            pain: '#EF4444',
+            numbness: '#F59E0B',
+            weakness: '#8B5CF6',
+            radiation: '#10B981',
+            active: '#4C84FF'
         };
     }
 
-    // 公開 API：動態設定症狀模式
+    // 公開 API
     setSymptomMode(mode) {
         if (BodyMap.SYMPTOM_COLORS[mode]) {
             this.symptomMode = mode;
-            this._renderSVG();
+            this._renderDebounced();
         }
     }
 
-    // 公開 API：動態更新症狀數據
     setSymptomData(dataMap) {
         this.symptomData = dataMap instanceof Map 
             ? dataMap 
-            : new Map(Object.entries(dataMap));
-        this._renderSVG();
+            : new Map(Object.entries(dataMap || {}));
+        this._renderDebounced();
     }
 
     _renderContainer() {
-        // 響應式容器設計
         const container = el('div', { 
             className: 'body-map-container',
-            style: 'position:relative; width:100%; max-width:500px; margin:auto; background:var(--surface); border-radius:12px; padding:16px;' 
+            style: `
+                position: relative;
+                width: 100%;
+                max-width: 420px;
+                margin: 0 auto;
+                background: var(--surface, #fff);
+                border-radius: 12px;
+                padding: 16px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            `
         });
         
-        const controlBar = el('div', { className: 'body-map-control-bar', style: 'display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;' },
-            el('div', { className: 'segmented-control', style: 'display:flex; gap:4px; background:var(--bg-muted); padding:4px; border-radius:8px;' },
-                el('button', { className: 'segment-btn active', onclick: (e) => this._switchView('FRONT', e.target) }, '正面'),
-                el('button', { className: 'segment-btn', onclick: (e) => this._switchView('BACK', e.target) }, '背面')
+        const controlBar = el('div', { 
+            className: 'body-map-control-bar', 
+            style: 'display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;' 
+        },
+            el('div', { 
+                className: 'segmented-control', 
+                style: 'display:flex; gap:4px; background:var(--bg-muted, #f0f0f0); padding:4px; border-radius:8px;' 
+            },
+                this._createSegmentButton('FRONT', '正面', true),
+                this._createSegmentButton('BACK', '背面', false)
             ),
-            el('button', { className: 'btn-secondary', onclick: () => this._clearSelection() }, '🗑️ 清除選取')
+            !this.readOnly ? el('button', { 
+                className: 'btn-secondary', 
+                style: 'padding:6px 12px; font-size:13px;',
+                onclick: () => this._clearSelection() 
+            }, '🗑️ 清除') : null
         );
 
         this.svgWrapper = el('div', { 
-            className: 'svg-wrapper transition-fade', 
-            style: 'position:relative; width:100%; touch-action:manipulation;' 
+            className: 'svg-wrapper', 
+            style: `
+                position: relative;
+                width: 100%;
+                max-height: 500px;
+                overflow: hidden;
+                touch-action: manipulation;
+                transition: opacity 0.2s ease;
+            `
         });
         
         this.tooltip = el('div', { 
             className: 'body-map-tooltip', 
-            style: 'position:absolute; background:rgba(0,0,0,0.85); color:#fff; padding:8px 12px; border-radius:6px; pointer-events:none; opacity:0; z-index:1000; font-size:13px; transition:opacity 0.15s;' 
+            style: `
+                position: absolute;
+                background: rgba(0,0,0,0.9);
+                color: #fff;
+                padding: 6px 10px;
+                border-radius: 6px;
+                pointer-events: none;
+                opacity: 0;
+                z-index: 1000;
+                font-size: 12px;
+                white-space: nowrap;
+                transition: opacity 0.15s;
+                transform: translateX(-50%);
+            `
         });
 
         this._renderSVG();
-        container.append(controlBar, this.svgWrapper, this.tooltip);
+        
+        // 移除 null 子元素
+        const children = [controlBar, this.svgWrapper, this.tooltip].filter(Boolean);
+        container.append(...children);
         return container;
     }
 
-static get SILHOUETTE() {
-        return {
-            FRONT: 'M100,5 C85,5 72,18 72,35 C72,52 85,62 100,62 L88,62 C85,75 82,80 70,80 C55,80 48,90 45,105 L35,140 C32,150 32,165 38,175 L38,210 C36,215 36,225 38,230 L33,270 L33,270 L70,240 L70,310 L75,335 L85,385 L75,400 L95,400 L100,385 L100,335 L100,310 L100,240 L100,205 L85,205 C78,190 75,170 72,140 C68,130 65,110 70,80 L88,62 L112,62 C115,75 118,80 130,80 C135,110 132,130 128,140 C125,170 122,190 115,205 L100,205 L100,240 L100,310 L100,335 L100,385 L105,400 L125,400 L115,385 L120,335 L125,310 L130,240 L167,270 L162,230 C164,225 164,215 162,210 L162,175 C168,165 168,150 165,140 L155,105 C152,90 145,80 130,80 C132,130 128,140 72,140 L128,140 C128,52 115,5 100,5 Z',
-            BACK: 'M100,5 C85,5 72,18 72,35 C72,52 85,62 100,62 L88,62 C85,75 82,80 70,80 C65,115 68,135 72,145 C75,180 78,200 85,215 C70,225 65,260 85,275 L70,275 L75,345 L85,385 L75,400 L95,400 L100,385 L100,345 L100,275 L85,275 L85,215 L100,205 L115,215 C130,225 135,260 115,275 L100,275 L100,345 L100,385 L105,400 L125,400 L115,385 L125,345 L130,275 L115,275 L115,215 C122,200 125,180 128,145 C132,135 135,115 130,80 C118,80 115,75 112,62 C128,52 128,18 115,5 C100,5 100,5 100,5 Z'
-        };
+    _createSegmentButton(view, label, isActive) {
+        return el('button', { 
+            className: `segment-btn ${isActive ? 'active' : ''}`,
+            style: `
+                padding: 6px 16px;
+                border: none;
+                background: ${isActive ? 'var(--primary, #4C84FF)' : 'transparent'};
+                color: ${isActive ? '#fff' : 'var(--text, #333)'};
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 13px;
+                transition: all 0.2s;
+            `,
+            onclick: (e) => this._switchView(view, e.target) 
+        }, label);
     }
-static get PATHS() {
+
+    _switchView(view, btn) {
+        if (this.currentView === view) return;
+        
+        this.currentView = view;
+        
+        // 更新按鈕狀態
+        const buttons = btn.parentElement.querySelectorAll('.segment-btn');
+        buttons.forEach(b => {
+            b.classList.remove('active');
+            b.style.background = 'transparent';
+            b.style.color = 'var(--text, #333)';
+        });
+        btn.classList.add('active');
+        btn.style.background = 'var(--primary, #4C84FF)';
+        btn.style.color = '#fff';
+        
+        // 淡出動畫
+        this.svgWrapper.style.opacity = '0';
+        setTimeout(() => {
+            this._renderSVG();
+            this.svgWrapper.style.opacity = '1';
+        }, 150);
+    }
+
+    _clearSelection() {
+        if (this.selectedParts.size === 0) return;
+        
+        this.selectedParts.clear();
+        this._renderSVG();
+        this.onChange([]);
+    }
+
+    /**
+     * 重新設計的輪廓路徑 - 優化比例和連續性
+     */
+    static get SILHOUETTE() {
+    return {
+        FRONT: `
+            M100,15 C85,15 75,25 75,40 C75,55 85,65 100,65 C115,65 125,55 125,40 C125,25 115,15 100,15 Z
+            M90,65 L110,65 L115,85 L85,85 Z
+            M85,85 L115,85 L118,145 L82,145 Z
+            M82,145 L118,145 L115,215 L85,215 Z
+        `,
+        BACK: `
+            M100,15 C85,15 75,25 75,40 C75,55 85,65 100,65 C115,65 125,55 125,40 C125,25 115,15 100,15 Z
+            M90,65 L110,65 L115,85 L85,85 Z
+            M85,85 L115,85 L118,145 L82,145 Z
+            M82,145 L118,145 L115,215 L85,215 Z
+        `
+    };
+}
+
+    /**
+     * 重新設計的解剖路徑 - 優化點擊熱區
+     */
+    static get PATHS() {
         return {
             FRONT: [
-                // === 中軸結構 ===
+                // 頭頸部
                 { 
                     id: 'Head', 
                     label: '頭部', 
-                    d: 'M100,10 C82,10 68,24 68,42 C68,60 82,74 100,74 C118,74 132,60 132,42 C132,24 118,10 100,10 Z',
+                    d: 'M100,15 C85,15 75,25 75,40 C75,55 85,65 100,65 C115,65 125,55 125,40 C125,25 115,15 100,15 Z',
                     region: 'central'
                 },
                 { 
                     id: 'Neck', 
                     label: '頸部', 
-                    d: 'M86,74 L114,74 C114,74 117,90 120,96 L80,96 C83,90 86,74 86,74 Z',
+                    d: 'M90,65 L110,65 C112,75 115,80 120,85 L80,85 C85,80 88,75 90,65 Z',
                     region: 'central'
                 },
+                
+                // 軀幹
                 { 
                     id: 'Chest', 
                     label: '胸部', 
-                    d: 'M68,96 L132,96 C137,130 134,154 130,168 L70,168 C66,154 63,130 68,96 Z',
+                    d: 'M75,85 L125,85 C128,110 127,130 125,145 L75,145 C73,130 72,110 75,85 Z',
                     region: 'central'
                 },
                 { 
                     id: 'Abdomen', 
                     label: '腹部', 
-                    d: 'M70,168 L130,168 C127,206 124,232 117,252 L83,252 C76,232 73,206 70,168 Z',
+                    d: 'M75,145 L125,145 C123,175 121,200 118,220 L82,220 C79,200 77,175 75,145 Z',
                     region: 'central'
                 },
                 
-                // === 右上肢 (R) ===
+                // 右上肢
                 { 
                     id: 'Shoulder-R', 
                     label: '右肩', 
-                    d: 'M68,98 C50,96 42,108 38,126 L56,138 C58,126 62,114 68,98 Z',
+                    d: 'M75,85 C60,83 50,92 45,108 L60,118 C62,105 67,93 75,85 Z',
                     region: 'upper-limb'
                 },
                 { 
                     id: 'Upper-Arm-R', 
                     label: '右上臂', 
-                    d: 'M56,138 L38,126 C35,142 32,158 32,174 L48,174 C52,158 54,146 56,138 Z',
+                    d: 'M60,118 L45,108 C42,125 40,142 40,158 L54,158 C56,142 58,128 60,118 Z',
                     region: 'upper-limb'
                 },
                 { 
                     id: 'Elbow-R', 
                     label: '右肘', 
-                    d: 'M48,174 L32,174 C30,184 30,198 34,210 L50,210 C54,198 54,184 48,174 Z',
+                    d: 'M54,158 L40,158 C38,168 38,180 41,190 L55,190 C57,180 57,168 54,158 Z',
                     region: 'upper-limb'
                 },
                 { 
                     id: 'Forearm-R', 
                     label: '右前臂', 
-                    d: 'M50,210 L34,210 C32,228 30,246 30,258 L46,258 C48,246 50,228 50,210 Z',
+                    d: 'M55,190 L41,190 C39,205 38,220 38,232 L52,232 C53,220 54,205 55,190 Z',
                     region: 'upper-limb'
                 },
                 { 
                     id: 'Wrist-R', 
                     label: '右腕', 
-                    d: 'M46,258 L30,258 C28,264 28,272 30,278 L46,278 C48,272 48,264 46,258 Z',
+                    d: 'M52,232 L38,232 C37,238 37,245 38,251 L52,251 C53,245 53,238 52,232 Z',
                     region: 'upper-limb'
                 },
                 { 
                     id: 'Hand-R', 
                     label: '右手', 
-                    d: 'M30,278 L46,278 L50,324 L26,324 Z',
+                    d: 'M38,251 L52,251 L54,285 L34,285 Z',
                     region: 'upper-limb'
                 },
                 
-                // === 左上肢 (L) ===
+                // 左上肢（鏡像對稱）
                 { 
                     id: 'Shoulder-L', 
                     label: '左肩', 
-                    d: 'M132,98 C150,96 158,108 162,126 L144,138 C142,126 138,114 132,98 Z',
+                    d: 'M125,85 C140,83 150,92 155,108 L140,118 C138,105 133,93 125,85 Z',
                     region: 'upper-limb'
                 },
                 { 
                     id: 'Upper-Arm-L', 
                     label: '左上臂', 
-                    d: 'M144,138 L162,126 C165,142 168,158 168,174 L152,174 C148,158 146,146 144,138 Z',
+                    d: 'M140,118 L155,108 C158,125 160,142 160,158 L146,158 C144,142 142,128 140,118 Z',
                     region: 'upper-limb'
                 },
                 { 
                     id: 'Elbow-L', 
                     label: '左肘', 
-                    d: 'M152,174 L168,174 C170,184 170,198 166,210 L150,210 C146,198 146,184 152,174 Z',
+                    d: 'M146,158 L160,158 C162,168 162,180 159,190 L145,190 C143,180 143,168 146,158 Z',
                     region: 'upper-limb'
                 },
                 { 
                     id: 'Forearm-L', 
                     label: '左前臂', 
-                    d: 'M150,210 L166,210 C168,228 170,246 170,258 L154,258 C152,246 150,228 150,210 Z',
+                    d: 'M145,190 L159,190 C161,205 162,220 162,232 L148,232 C147,220 146,205 145,190 Z',
                     region: 'upper-limb'
                 },
                 { 
                     id: 'Wrist-L', 
                     label: '左腕', 
-                    d: 'M154,258 L170,258 C172,264 172,272 170,278 L154,278 C152,272 152,264 154,258 Z',
+                    d: 'M148,232 L162,232 C163,238 163,245 162,251 L148,251 C147,245 147,238 148,232 Z',
                     region: 'upper-limb'
                 },
                 { 
                     id: 'Hand-L', 
                     label: '左手', 
-                    d: 'M170,278 L154,278 L150,324 L174,324 Z',
+                    d: 'M162,251 L148,251 L146,285 L166,285 Z',
                     region: 'upper-limb'
                 },
                 
-                // === 右下肢 (R) ===
+                // 右下肢
                 { 
                     id: 'Hip-R', 
                     label: '右髖', 
-                    d: 'M83,252 L100,252 L100,294 L66,294 C71,272 77,260 83,252 Z',
+                    d: 'M82,220 L100,220 L100,255 L72,255 C75,240 78,228 82,220 Z',
                     region: 'lower-limb'
                 },
                 { 
                     id: 'Thigh-R', 
                     label: '右大腿', 
-                    d: 'M66,294 L100,294 L100,396 L72,396 Z',
+                    d: 'M72,255 L100,255 L100,345 L78,345 Z',
                     region: 'lower-limb'
                 },
                 { 
                     id: 'Knee-R', 
                     label: '右膝', 
-                    d: 'M72,396 L100,396 L100,426 L76,426 Z',
+                    d: 'M78,345 L100,345 L100,370 L80,370 Z',
                     region: 'lower-limb'
                 },
                 { 
                     id: 'Leg-R', 
                     label: '右小腿', 
-                    d: 'M76,426 L100,426 L100,494 L82,494 Z',
+                    d: 'M80,370 L100,370 L100,425 L84,425 Z',
                     region: 'lower-limb'
                 },
                 { 
                     id: 'Ankle-R', 
                     label: '右踝', 
-                    d: 'M82,494 L100,494 L100,510 L84,510 Z',
+                    d: 'M84,425 L100,425 L100,438 L86,438 Z',
                     region: 'lower-limb'
                 },
                 { 
                     id: 'Foot-R', 
                     label: '右足', 
-                    d: 'M84,510 L100,510 L106,540 L74,540 Z',
+                    d: 'M86,438 L100,438 L104,460 L80,460 Z',
                     region: 'lower-limb'
                 },
                 
-                // === 左下肢 (L) ===
+                // 左下肢（鏡像對稱）
                 { 
                     id: 'Hip-L', 
                     label: '左髖', 
-                    d: 'M100,252 L117,252 C123,260 129,272 134,294 L100,294 L100,252 Z',
+                    d: 'M100,220 L118,220 C122,228 125,240 128,255 L100,255 Z',
                     region: 'lower-limb'
                 },
                 { 
                     id: 'Thigh-L', 
                     label: '左大腿', 
-                    d: 'M100,294 L134,294 L128,396 L100,396 Z',
+                    d: 'M100,255 L128,255 L122,345 L100,345 Z',
                     region: 'lower-limb'
                 },
                 { 
                     id: 'Knee-L', 
                     label: '左膝', 
-                    d: 'M100,396 L128,396 L124,426 L100,426 Z',
+                    d: 'M100,345 L122,345 L120,370 L100,370 Z',
                     region: 'lower-limb'
                 },
                 { 
                     id: 'Leg-L', 
                     label: '左小腿', 
-                    d: 'M100,426 L124,426 L118,494 L100,494 Z',
+                    d: 'M100,370 L120,370 L116,425 L100,425 Z',
                     region: 'lower-limb'
                 },
                 { 
                     id: 'Ankle-L', 
                     label: '左踝', 
-                    d: 'M100,494 L118,494 L116,510 L100,510 Z',
+                    d: 'M100,425 L116,425 L114,438 L100,438 Z',
                     region: 'lower-limb'
                 },
                 { 
                     id: 'Foot-L', 
                     label: '左足', 
-                    d: 'M100,510 L116,510 L126,540 L94,540 Z',
+                    d: 'M100,438 L114,438 L120,460 L96,460 Z',
                     region: 'lower-limb'
                 }
             ],
             
             BACK: [
-                // === 中軸結構 (背面) ===
+                // 頭頸部
                 { 
                     id: 'Head-Back', 
                     label: '後頭部', 
-                    d: 'M100,10 C82,10 68,24 68,42 C68,60 82,74 100,74 C118,74 132,60 132,42 C132,24 118,10 100,10 Z',
+                    d: 'M100,15 C85,15 75,25 75,40 C75,55 85,65 100,65 C115,65 125,55 125,40 C125,25 115,15 100,15 Z',
                     region: 'central'
                 },
                 { 
                     id: 'Cervical', 
                     label: '頸椎', 
-                    d: 'M86,74 L114,74 C114,74 117,90 120,96 L80,96 C83,90 86,74 86,74 Z',
+                    d: 'M95,65 L105,65 L108,85 L92,85 Z',
                     region: 'spine'
                 },
+                
+                // 脊椎分段
                 { 
                     id: 'Upper-Thoracic', 
                     label: '上胸椎', 
-                    d: 'M80,96 L120,96 C122,116 120,134 118,148 L82,148 C80,134 78,116 80,96 Z',
+                    d: 'M92,85 L108,85 L106,115 L94,115 Z',
                     region: 'spine'
                 },
                 { 
                     id: 'Mid-Thoracic', 
                     label: '中胸椎', 
-                    d: 'M82,148 L118,148 C116,168 114,186 112,200 L88,200 C86,186 84,168 82,148 Z',
+                    d: 'M94,115 L106,115 L104,145 L96,145 Z',
                     region: 'spine'
                 },
                 { 
                     id: 'Lumbar', 
                     label: '腰椎', 
-                    d: 'M88,200 L112,200 C110,222 108,242 105,256 L95,256 C92,242 90,222 88,200 Z',
+                    d: 'M96,145 L104,145 L102,180 L98,180 Z',
                     region: 'spine'
                 },
                 { 
                     id: 'Sacrum', 
                     label: '薦椎', 
-                    d: 'M95,256 L105,256 C106,268 106,280 105,290 L95,290 C94,280 94,268 95,256 Z',
+                    d: 'M98,180 L102,180 L101,205 L99,205 Z',
                     region: 'spine'
                 },
                 
-                // === 肩胛區域 ===
+                // 肩胛區
                 { 
                     id: 'Scapula-R', 
                     label: '右肩胛', 
-                    d: 'M68,98 C50,96 42,108 38,126 L56,138 C58,126 62,114 68,98 L82,112 L70,140 L56,138 Z',
+                    d: 'M75,85 C60,83 50,92 45,108 L60,118 L72,108 L75,85 Z',
                     region: 'back'
                 },
                 { 
                     id: 'Scapula-L', 
                     label: '左肩胛', 
-                    d: 'M132,98 C150,96 158,108 162,126 L144,138 C142,126 138,114 132,98 L118,112 L130,140 L144,138 Z',
+                    d: 'M125,85 C140,83 150,92 155,108 L140,118 L128,108 L125,85 Z',
                     region: 'back'
                 },
                 
-                // === 上背區 ===
+                // 上背區
                 { 
                     id: 'Upper-Back-R', 
                     label: '右上背', 
-                    d: 'M68,96 L80,96 L82,148 L70,168 C66,154 63,130 68,96 Z',
+                    d: 'M75,85 L92,85 L94,115 L75,130 Z',
                     region: 'back'
                 },
                 { 
                     id: 'Upper-Back-L', 
                     label: '左上背', 
-                    d: 'M132,96 L120,96 L118,148 L130,168 C134,154 137,130 132,96 Z',
+                    d: 'M125,85 L108,85 L106,115 L125,130 Z',
                     region: 'back'
                 },
                 
-                // === 下背區 ===
+                // 下背區
                 { 
                     id: 'Lower-Back-R', 
                     label: '右下背', 
-                    d: 'M70,168 L82,148 L88,200 L83,252 C76,232 73,206 70,168 Z',
+                    d: 'M75,130 L94,115 L96,145 L82,160 Z',
                     region: 'back'
                 },
                 { 
                     id: 'Lower-Back-L', 
                     label: '左下背', 
-                    d: 'M130,168 L118,148 L112,200 L117,252 C124,232 127,206 130,168 Z',
+                    d: 'M125,130 L106,115 L104,145 L118,160 Z',
                     region: 'back'
                 },
                 
-                // === 臀部 ===
+                // 臀部
                 { 
                     id: 'Glute-R', 
                     label: '右臀', 
-                    d: 'M83,252 L100,252 L100,294 L66,294 C62,280 65,265 75,256 Z',
+                    d: 'M82,160 L100,160 L100,205 L72,205 C74,185 77,170 82,160 Z',
                     region: 'lower-limb'
                 },
                 { 
                     id: 'Glute-L', 
                     label: '左臀', 
-                    d: 'M100,252 L117,252 C125,256 128,265 134,280 L134,294 L100,294 Z',
+                    d: 'M100,160 L118,160 C123,170 126,185 128,205 L100,205 Z',
                     region: 'lower-limb'
                 },
                 
-                // === 右上肢後側 ===
+                // 上肢後側
                 { 
                     id: 'Triceps-R', 
                     label: '右三頭肌', 
-                    d: 'M56,138 L38,126 C35,142 32,158 32,174 L48,174 C52,158 54,146 56,138 Z',
+                    d: 'M60,118 L45,108 C42,125 40,142 40,158 L54,158 C56,142 58,128 60,118 Z',
                     region: 'upper-limb'
                 },
                 { 
                     id: 'Posterior-Forearm-R', 
                     label: '右後前臂', 
-                    d: 'M50,210 L34,210 C32,228 30,246 30,258 L46,258 C48,246 50,228 50,210 Z',
+                    d: 'M55,190 L41,190 C39,205 38,220 38,232 L52,232 C53,220 54,205 55,190 Z',
                     region: 'upper-limb'
                 },
-                
-                // === 左上肢後側 ===
                 { 
                     id: 'Triceps-L', 
                     label: '左三頭肌', 
-                    d: 'M144,138 L162,126 C165,142 168,158 168,174 L152,174 C148,158 146,146 144,138 Z',
+                    d: 'M140,118 L155,108 C158,125 160,142 160,158 L146,158 C144,142 142,128 140,118 Z',
                     region: 'upper-limb'
                 },
                 { 
                     id: 'Posterior-Forearm-L', 
                     label: '左後前臂', 
-                    d: 'M150,210 L166,210 C168,228 170,246 170,258 L154,258 C152,246 150,228 150,210 Z',
+                    d: 'M145,190 L159,190 C161,205 162,220 162,232 L148,232 C147,220 146,205 145,190 Z',
                     region: 'upper-limb'
                 },
                 
-                // === 右下肢後側 ===
+                // 下肢後側
                 { 
                     id: 'Hamstring-R', 
                     label: '右後大腿', 
-                    d: 'M66,294 L100,294 L100,396 L72,396 Z',
+                    d: 'M72,205 L100,205 L100,345 L78,345 Z',
                     region: 'lower-limb'
                 },
                 { 
                     id: 'Calf-R', 
                     label: '右小腿肚', 
-                    d: 'M76,426 L100,426 L100,494 L82,494 Z',
+                    d: 'M80,370 L100,370 L100,425 L84,425 Z',
                     region: 'lower-limb'
                 },
-                
-                // === 左下肢後側 ===
                 { 
                     id: 'Hamstring-L', 
                     label: '左後大腿', 
-                    d: 'M100,294 L134,294 L128,396 L100,396 Z',
+                    d: 'M100,205 L128,205 L122,345 L100,345 Z',
                     region: 'lower-limb'
                 },
                 { 
                     id: 'Calf-L', 
                     label: '左小腿肚', 
-                    d: 'M100,426 L124,426 L118,494 L100,494 Z',
+                    d: 'M100,370 L120,370 L116,425 L100,425 Z',
                     region: 'lower-limb'
                 }
             ]
         };
     }
+
     _renderSVG() {
+        if (!this.svgWrapper) return;
+
         this.svgWrapper.innerHTML = '';
         const svgNS = "http://www.w3.org/2000/svg";
         const svg = document.createElementNS(svgNS, "svg");
         
-        // 響應式 viewBox 與比例優化
-        svg.setAttribute("viewBox", "0 0 200 600");
+        // 優化後的 viewBox - 調整為合理比例
+        svg.setAttribute("viewBox", "0 0 200 460");
         svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
         svg.style.width = '100%';
         svg.style.height = 'auto';
-        svg.style.filter = 'drop-shadow(0 2px 4px rgba(0,0,0,0.08))';
+        svg.style.maxHeight = '480px';
+        svg.style.filter = 'drop-shadow(0 2px 4px rgba(0,0,0,0.06))';
 
         const fragment = document.createDocumentFragment();
 
         // 1. 底層輪廓
-        const silhouette = document.createElementNS(svgNS, "path");
-        silhouette.setAttribute("d", BodyMap.SILHOUETTE[this.currentView]);
-        silhouette.setAttribute("fill", "#F3F6F9");
-        silhouette.setAttribute("stroke", "#C7D0D9");
-        fragment.appendChild(silhouette);
+        const silhouettePath = BodyMap.SILHOUETTE[this.currentView];
+        if (silhouettePath) {
+            const silhouette = document.createElementNS(svgNS, "path");
+            silhouette.setAttribute("d", silhouettePath);
+            silhouette.setAttribute("fill", "#F8FAFC");
+            silhouette.setAttribute("stroke", "#CBD5E1");
+            silhouette.setAttribute("stroke-width", "1");
+            fragment.appendChild(silhouette);
+        }
 
         // 2. 解剖分區繪製
         const currentPaths = BodyMap.PATHS[this.currentView] || [];
@@ -706,10 +862,40 @@ static get PATHS() {
 
             if (!this.readOnly) {
                 path.style.cursor = 'pointer';
-                path.onclick = (e) => this._togglePart(part.id, path, e); // 支援 Shift/Alt
-                path.onmouseenter = (e) => this._showTooltip(e, part.label, part.id);
+                path.style.transition = 'all 0.2s ease';
+                
+                // 增強點擊熱區
+                path.setAttribute("stroke-width", isActive ? "2" : "1.5");
+                path.style.pointerEvents = 'visiblePainted';
+                
+                // 事件綁定 - 添加防禦性處理
+                path.onclick = (e) => {
+                    e.stopPropagation();
+                    this._togglePart(part.id, path, e);
+                };
+                
+                path.onmouseenter = (e) => {
+                    if (!isActive) {
+                        path.setAttribute("fill", this._lightenColor(path.getAttribute("fill")));
+                        path.setAttribute("stroke-width", "2");
+                    }
+                    this._showTooltip(e, part.label, part.id);
+                };
+                
                 path.onmousemove = (e) => this._updateTooltip(e);
-                path.onmouseleave = () => this._hideTooltip();
+                
+                path.onmouseleave = () => {
+                    if (!isActive) {
+                        this._applyPartStyle(path, part.id, false);
+                    }
+                    this._hideTooltip();
+                };
+                
+                // 觸控設備支援
+                path.ontouchstart = (e) => {
+                    e.preventDefault();
+                    this._togglePart(part.id, path, e);
+                };
             }
             fragment.appendChild(path);
         });
@@ -719,93 +905,116 @@ static get PATHS() {
     }
 
     _applyPartStyle(element, partId, isActive) {
+        if (!element) return;
+
         if (isActive) {
-            // 症狀配色邏輯
             const symptoms = this.symptomData.get(partId) || [];
             const colorKey = symptoms[0] || this.symptomMode;
             const color = BodyMap.SYMPTOM_COLORS[colorKey] || BodyMap.SYMPTOM_COLORS.active;
             
             element.setAttribute("fill", color);
             element.setAttribute("stroke", this._darkenColor(color));
-            element.setAttribute("stroke-width", "1.5");
+            element.setAttribute("stroke-width", "2");
+            element.style.opacity = "0.9";
         } else {
-            element.setAttribute("fill", "#E9EEF3");
-            element.setAttribute("stroke", "#B8C4D1");
+            element.setAttribute("fill", "#E2E8F0");
+            element.setAttribute("stroke", "#94A3B8");
             element.setAttribute("stroke-width", "1");
+            element.style.opacity = "1";
         }
     }
 
-    _togglePart(partId, element, event) {
-        event.preventDefault();
-        
-        // 復原 Alt (單選) / Shift 或一般點擊 (多選) 邏輯
-        if (event.altKey) {
-            this.selectedParts.clear();
-            this.selectedParts.add(partId);
-        } else {
+    _togglePart(partId, pathElement, event) {
+        if (this.readOnly || !partId) return;
+
+        try {
             if (this.selectedParts.has(partId)) {
                 this.selectedParts.delete(partId);
             } else {
                 this.selectedParts.add(partId);
             }
+            
+            this._applyPartStyle(pathElement, partId, this.selectedParts.has(partId));
+            
+            // 安全調用 onChange
+            if (typeof this.onChange === 'function') {
+                this.onChange(Array.from(this.selectedParts));
+            }
+        } catch (error) {
+            console.error('[BodyMap] 切換部位失敗:', error);
+            Toast?.show('操作失敗，請重試', 'error');
         }
-
-        // 局部樣式更新
-        const allPaths = this.svgWrapper.querySelectorAll('path[data-id]');
-        allPaths.forEach(p => {
-            const id = p.getAttribute('data-id');
-            this._applyPartStyle(p, id, this.selectedParts.has(id));
-        });
-
-        if (this.onChange) this.onChange(Array.from(this.selectedParts));
     }
 
-    // 支援症狀顯示的 Tooltip
-    _showTooltip(e, label, partId) {
+    _showTooltip(event, label, partId) {
+        if (!this.tooltip) return;
+
         const symptoms = this.symptomData.get(partId) || [];
-        const symptomText = symptoms.length > 0 ? ` (${symptoms.join(', ')})` : '';
+        const symptomText = symptoms.length > 0 
+            ? ` (${symptoms.map(s => s.toUpperCase()).join(', ')})` 
+            : '';
+        
         this.tooltip.textContent = label + symptomText;
         this.tooltip.style.opacity = '1';
-        this._updateTooltip(e);
+        this._updateTooltip(event);
     }
 
-    _updateTooltip(e) {
+    _updateTooltip(event) {
+        if (!this.tooltip) return;
+
         const rect = this.svgWrapper.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        this.tooltip.style.transform = `translate(${x + 12}px, ${y - 12}px)`;
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+        
+        this.tooltip.style.left = x + 'px';
+        this.tooltip.style.top = (y - 35) + 'px';
     }
 
-    _hideTooltip() { this.tooltip.style.opacity = '0'; }
-
-    _clearSelection() {
-        this.selectedParts.clear();
-        this._renderSVG();
-        if (this.onChange) this.onChange([]);
+    _hideTooltip() {
+        if (this.tooltip) {
+            this.tooltip.style.opacity = '0';
+        }
     }
 
-    _switchView(view, targetBtn) {
-        this.svgWrapper.style.opacity = '0';
-        setTimeout(() => {
-            this.currentView = view;
-            const btns = targetBtn.parentElement.querySelectorAll('.segment-btn');
-            btns.forEach(b => b.classList.toggle('active', b === targetBtn));
-            this._renderSVG();
-            this.svgWrapper.style.opacity = '1';
-        }, 150);
-    }
-
-    _darkenColor(hex) {
+    // 色彩工具函數
+    _darkenColor(hex, amount = 20) {
+        if (!hex || typeof hex !== 'string') return '#000000';
+        
         const num = parseInt(hex.replace('#', ''), 16);
-        const r = Math.max(0, ((num >> 16) & 0xFF) - 30);
-        const g = Math.max(0, ((num >> 8) & 0xFF) - 30);
-        const b = Math.max(0, (num & 0xFF) - 30);
+        const r = Math.max(0, (num >> 16) - amount);
+        const g = Math.max(0, ((num >> 8) & 0x00FF) - amount);
+        const b = Math.max(0, (num & 0x0000FF) - amount);
         return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
     }
 
-    updateSelection(newParts) {
-        this.selectedParts = new Set(newParts || []);
-        this._renderSVG();
+    _lightenColor(hex, amount = 30) {
+        if (!hex || typeof hex !== 'string') return '#FFFFFF';
+        
+        const num = parseInt(hex.replace('#', ''), 16);
+        const r = Math.min(255, (num >> 16) + amount);
+        const g = Math.min(255, ((num >> 8) & 0x00FF) + amount);
+        const b = Math.min(255, (num & 0x0000FF) + amount);
+        return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
+    }
+
+    // 公開 API：手動更新選取狀態
+    updateSelection(parts) {
+        if (!Array.isArray(parts)) {
+            console.warn('[BodyMap] updateSelection 參數必須是數組');
+            return;
+        }
+        
+        this.selectedParts = new Set(parts);
+        this._renderDebounced();
+    }
+
+    // 公開 API：銷毀組件
+    destroy() {
+        if (this.element && this.element.parentNode) {
+            this.element.parentNode.removeChild(this.element);
+        }
+        this.selectedParts.clear();
+        this.onChange = null;
     }
 }
 
