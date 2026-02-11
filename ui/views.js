@@ -1380,7 +1380,7 @@ export class SettingsView extends BaseView {
             Toast.show('模板建置完成');
         }).open();
     }
-}
+
     // --- Feature: P2P Scan Feedback ---
     _handleScan(btn) {
         console.log('[Settings] Scan button clicked');
