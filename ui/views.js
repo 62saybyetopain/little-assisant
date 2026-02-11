@@ -1049,7 +1049,7 @@ _finalizeAssessmentText(test, polarity) {
         // 3. 執行模糊比對提取相關關節
         const relevantROMs = StandardROM.filter(rom => 
             allClinicalParts.some(part => {
-                const partId = this._getTagName(part).split('-')[0].toLowerCase(); [cite: 16]
+                const partId = this._getTagName(part).split('-')[0].toLowerCase();
                 return rom.id.includes(partId);
             })
         );
