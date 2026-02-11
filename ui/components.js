@@ -148,6 +148,7 @@ export class TagSelector {
     }
 
     _notify() { this.onChange(this.items.filter(i => i.tagId.trim())); }
+}
 
 // --- Body Map (SVG) with Anatomical Segmentation ---
 export class BodyMap {
