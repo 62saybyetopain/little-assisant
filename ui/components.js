@@ -146,7 +146,7 @@ _renderTagRow({ item, index, def }) {
     // 1. [防禦性狀態] 初始化觸控計時器與狀態鎖 
     let pressTimer = null;
     let isLongPress = false;
-    const isReadOnly = this.readOnly || (typeof storageManager !== 'undefined' && storageManager.isEphemeral); [cite: 1, 16]
+    const isReadOnly = this.readOnly || (typeof storageManager !== 'undefined' && storageManager.isEphemeral);
 
     // 2. [視覺邏輯] 根據標籤類型 (ANATOMY) 與部位 hue 值計算背景色 
     let rowStyle = 'display:flex; gap:8px; margin-bottom:12px; align-items:center; padding:8px; border-radius:8px; transition:all 0.2s;';
