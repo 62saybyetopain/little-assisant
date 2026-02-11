@@ -1230,37 +1230,36 @@ _finalizeAssessmentText(test, polarity) {
 
     async _applyTemplate(template) {
     if (!template || !this.data) return;
-    
-    // 0. [防禦檢查] 若已定稿或無痕模式，攔截任何變更
-    if (this.data.status === 'Finalized' || storageManager.isEphemeral) {
+
+    // 0. 定稿或無痕模式攔截
+    const isReadOnly = this.data.status === 'Finalized' || storageManager.isEphemeral;
+    if (isReadOnly) {
         return Toast.show('當前狀態禁止修改病歷', 'warning');
     }
 
     const { templateManager, draftManager } = await import('../modules/record.js');
     const { Toast, el } = await import('./components.js');
 
-    // 1. 策略確認：檢查既有內容 (具備強效提示)
+    // 1. 合併策略確認
     const hasContent = !!(this.data.soap?.s || this.data.soap?.o || this.data.soap?.a || this.data.soap?.p);
     let strategy = 'Append';
 
     if (hasContent) {
-        const confirmMsg = `目前紀錄已有內容。\n\n【確定】：疊加 (Append)\n【取消】：覆蓋 (Override)`;
+        const confirmMsg = '目前紀錄已有內容。\n\n【確定】：疊加 (Append)\n【取消】：覆蓋 (Override)';
         if (!confirm(confirmMsg)) {
             strategy = 'Override';
         }
     }
 
-    // 2. [數據快照] 持久化備份至草稿庫
-    const snapshotTimestamp = Date.now();
-    const backupId = `undo_${this.recordId}_${snapshotTimestamp}`;
+    // 2. 數據快照備份
+    const backupId = `undo_${this.recordId}_${Date.now()}`;
     try {
-        // 使用深度複製確保快照完整性
         await draftManager.save(backupId, JSON.parse(JSON.stringify(this.data)));
     } catch (e) {
         console.error('Snapshot failed:', e);
     }
 
-    // 3. 執行數據合併 (防禦性解析)
+    // 3. 數據合併
     const tplTags = (template.tags || []).map(t => 
         typeof t === 'string' ? { tagId: t, remark: '' } : t
     );
@@ -1270,12 +1269,11 @@ _finalizeAssessmentText(test, polarity) {
     this.data.bodyParts = mergedRecord.bodyParts;
     this.data.rom = mergedRecord.rom;
 
-    // 4. 處理標籤去重合併 (使用 _getTagName 防禦性提取)
+    // 4. 標籤去重合併
     if (strategy === 'Append') {
         const existingTags = Array.isArray(this.data.tags) ? this.data.tags : [];
         const combined = [...existingTags, ...tplTags];
         const seen = new Set();
-        
         this.data.tags = combined.filter(t => {
             const id = this._getTagName(t);
             return (id && !seen.has(id)) ? seen.add(id) : false;
@@ -1284,11 +1282,11 @@ _finalizeAssessmentText(test, polarity) {
         this.data.tags = tplTags;
     }
 
-    // 5. 更新 UI 與啟動同步引擎
+    // 5. 更新 UI
     await this.render();
-    if (this._syncClinicalLogic) await this._syncClinicalLogic(); // 確保聯動組件同步
+    if (this._syncClinicalLogic) await this._syncClinicalLogic();
 
-    // 6. [強效撤銷] 顯示通知並動態掛載撤銷功能
+    // 6. 撤銷功能掛載
     Toast.show(`已套用模板: ${template.title}`, 'success', 6000);
 
     const undoBtn = el('button', {
@@ -1306,7 +1304,7 @@ _finalizeAssessmentText(test, polarity) {
                     await this.render();
                     if (this._syncClinicalLogic) await this._syncClinicalLogic();
                     Toast.show('已還原至套用前狀態', 'info');
-                    await draftManager.discard(backupId); // 清除臨時備份
+                    await draftManager.discard(backupId);
                 }
             } catch (err) {
                 Toast.show('還原失敗', 'error');
@@ -1314,11 +1312,12 @@ _finalizeAssessmentText(test, polarity) {
         }
     }, '撤銷');
 
-    // 防禦性掛載：確保 Toast 已渲染後再插入按鈕
     requestAnimationFrame(() => {
-        const toasts = document.querySelectorAll('.toast-container .toast');
-        const lastToast = toasts[toasts.length - 1];
-        if (lastToast) lastToast.appendChild(undoBtn);
+        const container = document.querySelector('.toast-container') || document.body;
+        const toasts = container.querySelectorAll('.toast');
+        if (toasts.length > 0) {
+            toasts[toasts.length - 1].appendChild(undoBtn);
+        }
     });
 }
   }//結束 RecordEditorView 類別
