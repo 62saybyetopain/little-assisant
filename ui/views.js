@@ -1652,13 +1652,7 @@ export class DraftListView extends BaseView {
     }
 
     _restoreDraft(draft) {
-        // Navigate to Editor. 
-        // If relatedId is customerId (new record), route is record/new?customerId=...
-        // If relatedId is recordId (edit record), route is record/:id
-        // We can infer logic from RecordEditorView handling.
-        
-        // 簡單判斷：若 draft.id 等於 customerId，通常表示是新病歷的草稿 (RecordEditorView 的邏輯)
-        // 但最穩健的方式是直接帶入 ID，讓 Editor 判斷
+
         const customerId = draft.data.customerId;
         
         if (draft.relatedId === customerId) {
@@ -1679,3 +1673,4 @@ export class DraftListView extends BaseView {
             this.render();
         }
     }
+} // DraftListView 結束
