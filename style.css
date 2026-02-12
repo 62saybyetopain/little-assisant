@@ -422,7 +422,6 @@ button:active,
     gap: 12px;
 }
 
-/* === 視圖切換控制 === */
 .body-map-controls.segmented-control {
     display: flex;
     gap: 4px;
@@ -459,7 +458,6 @@ button:active,
     outline-offset: 2px;
 }
 
-/* === 清除按鈕 === */
 .btn-clear-selection {
     padding: 8px 16px;
     background: #F1F5F9;
@@ -487,141 +485,65 @@ button:active,
     outline-offset: 2px;
 }
 
-/* === SVG 容器 === */
-.svg-wrapper {
+/* === 圖片容器 === */
+.body-map-image-container {
     position: relative;
-    max-height: 520px;
-    min-height: 300px;
-    overflow: hidden;
-    transition: opacity 0.2s ease-in-out;
+    width: 100%;
+    max-width: 400px;
+    margin: 0 auto;
+    transition: opacity 0.2s ease;
 }
 
-.svg-wrapper.transition-fade {
-    opacity: 1;
-}
-
-.body-map-svg {
+.body-map-image {
     width: 100%;
     height: auto;
-    max-width: 400px;
-    max-height: 500px;
-    margin: 0 auto;
     display: block;
-    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.06));
+    border-radius: 8px;
 }
 
-/* === 身體輪廓底層 === */
-.body-silhouette {
-    fill: #F8FAFC;
-    stroke: #E2E8F0;
-    stroke-width: 1;
+.body-map-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
     pointer-events: none;
 }
 
-/* === 身體區域樣式 === */
-.body-part {
-    fill: #E2E8F0;
-    stroke: #94A3B8;
-    stroke-width: 1.5;
+.body-map-overlay svg {
+    pointer-events: auto;
+}
+
+/* === 熱區樣式 === */
+.body-hotspot {
     cursor: pointer;
     transition: all 0.2s ease;
-    pointer-events: visiblePainted;
-}
-
-.body-part:hover:not(.active) {
-    fill: #CBD5E1;
-    stroke: #64748B;
     stroke-width: 2;
 }
 
-.body-part.active {
-    fill: #3B82F6;
-    stroke: #2563EB;
-    stroke-width: 2;
-    opacity: 0.9;
-}
-
-/* === 關節樣式（圓圈）=== */
-.body-joint {
-    fill: #E2E8F0;
-    stroke: #64748B;
-    stroke-width: 2;
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.body-joint:hover:not(.active) {
-    fill: #CBD5E1;
-    stroke: #475569;
+.body-hotspot:hover:not(.active) {
+    fill: rgba(203, 213, 225, 0.3) !important;
+    stroke: #94A3B8 !important;
     stroke-width: 2.5;
-    /* 放大效果 */
-    transform: scale(1.1);
-    transform-origin: center;
 }
 
-.body-joint.active {
-    fill: #3B82F6;
-    stroke: #1E40AF;
+.body-hotspot.active {
     stroke-width: 3;
-    /* 脈衝動畫 */
-    animation: joint-pulse 2s ease-in-out infinite;
+    filter: drop-shadow(0 0 4px currentColor);
 }
 
-@keyframes joint-pulse {
-    0%, 100% {
-        opacity: 1;
-        transform: scale(1);
-    }
-    50% {
-        opacity: 0.8;
-        transform: scale(1.05);
-    }
-}
-
-/* === 脊柱樣式 === */
-.body-spine {
-    fill: #E0E7FF;
-    stroke: #6366F1;
-    stroke-width: 1.5;
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.body-spine:hover:not(.active) {
-    fill: #C7D2FE;
-    stroke: #4F46E5;
+/* 脊柱特殊樣式 */
+.body-hotspot.spine {
     stroke-width: 2;
 }
 
-.body-spine.active {
-    fill: #6366F1;
-    stroke: #4338CA;
-    stroke-width: 2;
+.body-hotspot.spine:hover:not(.active) {
+    fill: rgba(224, 231, 255, 0.4) !important;
+    stroke: #6366F1 !important;
 }
 
-/* === 症狀疊加顏色 === */
-.body-part.active[data-symptom="pain"],
-.body-joint.active[data-symptom="pain"] {
-    fill: #EF4444;
-    stroke: #DC2626;
-}
-
-.body-part.active[data-symptom="numbness"],
-.body-joint.active[data-symptom="numbness"] {
-    fill: #F59E0B;
-    stroke: #D97706;
-}
-
-.body-part.active[data-symptom="weakness"],
-.body-joint.active[data-symptom="weakness"] {
-    fill: #8B5CF6;
-    stroke: #7C3AED;
-}
-
-.body-part.active[data-symptom="radiation"],
-.body-joint.active[data-symptom="radiation"] {
-    fill: #10B981;
-    stroke: #059669;
+.body-hotspot.spine.active {
+    stroke-width: 3;
 }
 
 /* === Tooltip === */
@@ -680,14 +602,8 @@ button:active,
         width: 100%;
     }
     
-    .svg-wrapper {
-        max-height: 450px;
-        min-height: 250px;
-    }
-    
-    .body-map-svg {
+    .body-map-image-container {
         max-width: 100%;
-        max-height: 420px;
     }
 }
 
@@ -711,38 +627,18 @@ button:active,
         padding: 6px 10px;
     }
     
-    .svg-wrapper {
-        max-height: 380px;
-    }
-    
-    .body-map-svg {
-        max-height: 360px;
-    }
-    
     /* 移動端增強點擊熱區 */
-    .body-part,
-    .body-spine {
-        stroke-width: 2;
-    }
-    
-    .body-joint {
+    .body-hotspot {
         stroke-width: 3;
     }
     
-    .body-part:hover,
-    .body-part.active,
-    .body-spine:hover,
-    .body-spine.active {
-        stroke-width: 3;
-    }
-    
-    .body-joint:hover,
-    .body-joint.active {
+    .body-hotspot:hover,
+    .body-hotspot.active {
         stroke-width: 4;
     }
 }
 
-/* === 動畫效果 === */
+/* === 載入動畫 === */
 @keyframes fadeIn {
     from {
         opacity: 0;
@@ -758,42 +654,18 @@ button:active,
     animation: fadeIn 0.3s ease;
 }
 
-/* === 輔助樣式 === */
-.body-part[readonly],
-.body-joint[readonly],
-.body-spine[readonly] {
+/* === 只讀模式 === */
+.body-hotspot[readonly] {
     cursor: default !important;
     opacity: 0.6;
 }
 
-.body-part[readonly]:hover,
-.body-joint[readonly]:hover,
-.body-spine[readonly]:hover {
-    fill: #E2E8F0 !important;
-    stroke: #94A3B8 !important;
-    stroke-width: 1.5 !important;
-    transform: none !important;
+.body-hotspot[readonly]:hover {
+    fill: transparent !important;
+    stroke: transparent !important;
 }
 
-.body-map-container.compact {
-    padding: 8px;
-    max-width: 360px;
-}
-
-.body-map-container.compact .body-map-control-bar {
-    margin-bottom: 8px;
-}
-
-.body-map-container.compact .svg-wrapper {
-    max-height: 320px;
-    min-height: 200px;
-}
-
-.body-map-container.compact .body-map-svg {
-    max-height: 300px;
-}
-
-/* === 深色模式支援 === */
+/* === 深色模式 === */
 @media (prefers-color-scheme: dark) {
     .body-map-container {
         background: #1E293B;
@@ -824,31 +696,8 @@ button:active,
         border-color: #475569;
     }
     
-    .body-silhouette {
-        fill: #0F172A;
-        stroke: #334155;
-    }
-    
-    .body-part,
-    .body-joint {
-        fill: #1E293B;
-        stroke: #334155;
-    }
-    
-    .body-part:hover:not(.active),
-    .body-joint:hover:not(.active) {
-        fill: #334155;
-        stroke: #475569;
-    }
-    
-    .body-spine {
-        fill: #1E293B;
-        stroke: #4338CA;
-    }
-    
-    .body-spine:hover:not(.active) {
-        fill: #334155;
-        stroke: #6366F1;
+    .body-map-image {
+        opacity: 0.9;
     }
 }
 
@@ -868,36 +717,24 @@ button:active,
         page-break-inside: avoid;
     }
     
-    .body-part.active,
-    .body-joint.active,
-    .body-spine.active {
-        fill: #3B82F6 !important;
+    .body-hotspot.active {
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
     }
 }
 
-/* === 高對比模式支援 === */
+/* === 高對比模式 === */
 @media (prefers-contrast: high) {
     .body-map-container {
         border: 2px solid currentColor;
     }
     
-    .body-part,
-    .body-joint,
-    .body-spine {
-        stroke-width: 2;
-    }
-    
-    .body-part.active,
-    .body-joint.active,
-    .body-spine.active {
+    .body-hotspot {
         stroke-width: 3;
-        outline: 2px solid currentColor;
     }
     
-    .segment-btn.active {
-        border: 2px solid currentColor;
+    .body-hotspot.active {
+        stroke-width: 4;
     }
 }
 
@@ -912,65 +749,16 @@ button:active,
         min-height: 44px;
     }
     
-    .body-part,
-    .body-spine {
-        stroke-width: 2;
-    }
-    
-    .body-joint {
-        stroke-width: 3;
-    }
-    
-    .body-part.active,
-    .body-spine.active {
-        stroke-width: 3;
-    }
-    
-    .body-joint.active {
+    .body-hotspot {
         stroke-width: 4;
     }
     
-    .body-part:hover:not(.active),
-    .body-joint:hover:not(.active),
-    .body-spine:hover:not(.active) {
-        fill: #E2E8F0;
-        stroke: #94A3B8;
+    .body-hotspot.active {
+        stroke-width: 5;
     }
 }
 
-/* === 動態減弱效果 === */
-@media (prefers-reduced-motion: reduce) {
-    * {
-        animation-duration: 0.01ms !important;
-        animation-iteration-count: 1 !important;
-        transition-duration: 0.01ms !important;
-    }
-    
-    .body-joint.active {
-        animation: none;
-    }
-}
-
-/* === 載入/錯誤狀態 === */
-.body-map-container.loading {
-    opacity: 0.6;
-    pointer-events: none;
-}
-
-.body-map-container.loading::after {
-    content: '載入中...';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: rgba(255, 255, 255, 0.95);
-    padding: 12px 24px;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-    font-size: 14px;
-    color: #64748B;
-}
-
+/* === 錯誤狀態 === */
 .body-map-container.error {
     border: 2px dashed #EF4444;
 }
@@ -984,55 +772,7 @@ button:active,
     font-size: 14px;
 }
 
-/* === 特殊視覺效果 === */
-/* 選中時的光暈效果 */
-.body-part.active,
-.body-joint.active,
-.body-spine.active {
-    filter: drop-shadow(0 0 4px currentColor);
-}
-
-/* 區域類型標識 */
-.body-part[data-region="head"] {
-    stroke: #8B5CF6;
-}
-
-.body-part[data-region="trunk"] {
-    stroke: #3B82F6;
-}
-
-.body-part[data-region="upper-limb"] {
-    stroke: #10B981;
-}
-
-.body-part[data-region="lower-limb"] {
-    stroke: #F59E0B;
-}
-
-.body-part[data-region="back"] {
-    stroke: #6366F1;
-}
-
-/* Hover 時加強區域識別 */
-.body-part:hover:not(.active)[data-region="head"] {
-    stroke: #7C3AED;
-}
-
-.body-part:hover:not(.active)[data-region="trunk"] {
-    stroke: #2563EB;
-}
-
-.body-part:hover:not(.active)[data-region="upper-limb"] {
-    stroke: #059669;
-}
-
-.body-part:hover:not(.active)[data-region="lower-limb"] {
-    stroke: #D97706;
-}
-
-.body-part:hover:not(.active)[data-region="back"] {
-    stroke: #4F46E5;
-}/* =========================================
+/* =========================================
    6. Overlays
    ========================================= */
 
