@@ -275,6 +275,12 @@ export class BodyMap {
         this.readOnly = !!readOnly;
         this.currentView = 'FRONT';
         
+        // 圖片路徑配置（可以自定義）
+        this.imagePaths = options.imagePaths || {
+            FRONT: '/assets/body-front.png',  // 正面圖片路徑
+            BACK: '/assets/body-back.png'     // 背面圖片路徑
+        };
+        
         this.symptomMode = options.symptomMode || 'pain';
         this.symptomData = options.symptomData instanceof Map 
             ? options.symptomData 
@@ -299,6 +305,16 @@ export class BodyMap {
 
     static get SYMPTOM_COLORS() {
         return {
+            pain: 'rgba(239, 68, 68, 0.6)',      // 紅色半透明
+            numbness: 'rgba(245, 158, 11, 0.6)', // 橙色半透明
+            weakness: 'rgba(139, 92, 246, 0.6)', // 紫色半透明
+            radiation: 'rgba(16, 185, 129, 0.6)',// 綠色半透明
+            active: 'rgba(59, 130, 246, 0.5)'    // 藍色半透明
+        };
+    }
+
+    static get SYMPTOM_STROKES() {
+        return {
             pain: '#EF4444',
             numbness: '#F59E0B',
             weakness: '#8B5CF6',
@@ -310,7 +326,7 @@ export class BodyMap {
     setSymptomMode(mode) {
         if (BodyMap.SYMPTOM_COLORS[mode]) {
             this.symptomMode = mode;
-            this._renderSVGDebounced();
+            this._renderOverlayDebounced();
         }
     }
 
@@ -318,12 +334,12 @@ export class BodyMap {
         this.symptomData = dataMap instanceof Map 
             ? dataMap 
             : new Map(Object.entries(dataMap || {}));
-        this._renderSVGDebounced();
+        this._renderOverlayDebounced();
     }
 
-    _renderSVGDebounced() {
+    _renderOverlayDebounced() {
         clearTimeout(this._renderDebounceTimer);
-        this._renderDebounceTimer = setTimeout(() => this._renderSVG(), 16);
+        this._renderDebounceTimer = setTimeout(() => this._renderOverlay(), 16);
     }
 
     _renderContainer() {
@@ -340,12 +356,37 @@ export class BodyMap {
             }, '🗑️ 清除選取') : null
         );
 
-        this.svgWrapper = el('div', { className: 'svg-wrapper transition-fade' });
+        // 圖片容器（使用相對定位）
+        this.imageContainer = el('div', { 
+            className: 'body-map-image-container',
+            style: 'position: relative; width: 100%; max-width: 400px; margin: 0 auto;'
+        });
+
+        // 底圖
+        this.bodyImage = el('img', {
+            className: 'body-map-image',
+            src: this.imagePaths[this.currentView],
+            alt: '人體圖',
+            style: 'width: 100%; height: auto; display: block;'
+        });
+
+        // SVG 疊加層（透明，用於交互）
+        this.svgOverlay = el('div', { 
+            className: 'body-map-overlay',
+            style: 'position: absolute; top: 0; left: 0; width: 100%; height: 100%;'
+        });
+
+        // Tooltip
         this.tooltip = el('div', { className: 'body-map-tooltip' });
 
-        this._renderSVG();
+        this.imageContainer.append(this.bodyImage, this.svgOverlay);
         
-        const children = [controlBar, this.svgWrapper, this.tooltip].filter(Boolean);
+        // 等圖片載入完成後渲染 SVG
+        this.bodyImage.onload = () => {
+            this._renderOverlay();
+        };
+
+        const children = [controlBar, this.imageContainer, this.tooltip].filter(Boolean);
         container.append(...children);
         return container;
     }
@@ -366,10 +407,14 @@ export class BodyMap {
         buttons.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         
-        this.svgWrapper.style.opacity = '0';
+        // 切換圖片
+        this.imageContainer.style.opacity = '0';
         setTimeout(() => {
-            this._renderSVG();
-            this.svgWrapper.style.opacity = '1';
+            this.bodyImage.src = this.imagePaths[this.currentView];
+            this.bodyImage.onload = () => {
+                this._renderOverlay();
+                this.imageContainer.style.opacity = '1';
+            };
         }, 150);
     }
 
@@ -377,7 +422,7 @@ export class BodyMap {
         if (this.selectedParts.size === 0) return;
         
         this.selectedParts.clear();
-        this._renderSVG();
+        this._renderOverlay();
         
         if (typeof this.onChange === 'function') {
             this.onChange([]);
@@ -385,159 +430,26 @@ export class BodyMap {
     }
 
     /**
-     * 專業級人體輪廓 - 流暢的曲線設計
+     * 熱區定義 - 坐標基於 400x600 的標準圖片
+     * 每個區域定義：{id, label, type, coords}
+     * coords: 百分比坐標 [x%, y%, width%, height%] 或多邊形點陣列
      */
-    static get SILHOUETTE() {
-        return {
-            FRONT: `
-                M100,20 
-                C88,20 78,28 78,38 
-                C78,48 88,56 100,56 
-                C112,56 122,48 122,38 
-                C122,28 112,20 100,20 
-                Z
-                M92,56 
-                C92,56 90,58 90,62 
-                L88,70 
-                C85,70 82,72 80,75 
-                L75,85 
-                C72,90 70,96 68,102 
-                L65,115 
-                C64,122 64,129 65,136 
-                L68,155 
-                C70,165 72,175 74,185 
-                L76,200 
-                C77,208 78,216 78,224 
-                L78,260 
-                C78,280 78,300 78,320 
-                L78,360 
-                C78,372 76,384 74,396 
-                L72,420 
-                C71,428 70,436 70,444 
-                L70,460 
-                L82,460 
-                L82,444 
-                C82,436 83,428 84,420 
-                L86,396 
-                C88,384 90,372 90,360 
-                L90,320 
-                C90,300 90,280 90,260 
-                L90,224 
-                C90,216 91,208 92,200 
-                L94,185 
-                C96,175 98,165 100,155 
-                L100,200 
-                L100,260 
-                L100,320 
-                L100,360 
-                L100,396 
-                L100,420 
-                L100,444 
-                L100,460 
-                L118,460 
-                L118,444 
-                C118,436 117,428 116,420 
-                L114,396 
-                C112,384 110,372 110,360 
-                L110,320 
-                C110,300 110,280 110,260 
-                L110,224 
-                C110,216 109,208 108,200 
-                L106,185 
-                C104,175 102,165 100,155 
-                L103,136 
-                C104,129 104,122 103,115 
-                L100,102 
-                C98,96 96,90 93,85 
-                L88,75 
-                C86,72 83,70 80,70 
-                L78,62 
-                C78,58 76,56 76,56 
-                Z
-            `,
-            BACK: `
-                M100,20 
-                C88,20 78,28 78,38 
-                C78,48 88,56 100,56 
-                C112,56 122,48 122,38 
-                C122,28 112,20 100,20 
-                Z
-                M92,56 
-                L90,70 
-                L85,85 
-                C82,92 80,100 78,108 
-                L75,125 
-                L72,145 
-                L70,165 
-                L68,185 
-                L66,205 
-                L65,225 
-                L78,225 
-                L78,260 
-                L78,320 
-                L78,360 
-                L78,396 
-                L76,420 
-                L74,444 
-                L72,460 
-                L82,460 
-                L84,444 
-                L86,420 
-                L88,396 
-                L90,360 
-                L90,320 
-                L90,260 
-                L90,225 
-                L100,225 
-                L100,260 
-                L100,320 
-                L100,360 
-                L100,396 
-                L100,420 
-                L100,444 
-                L100,460 
-                L118,460 
-                L116,444 
-                L114,420 
-                L112,396 
-                L110,360 
-                L110,320 
-                L110,260 
-                L110,225 
-                L122,225 
-                L121,205 
-                L120,185 
-                L118,165 
-                L116,145 
-                L114,125 
-                L112,108 
-                C110,100 108,92 105,85 
-                L100,70 
-                L98,56 
-                Z
-            `
-        };
-    }
-
-    /**
-     * 專業級解剖分區 - 關節用圓圈，區域沿外緣
-     */
-    static get PATHS() {
+    static get HOTSPOTS() {
         return {
             FRONT: [
                 // === 頭頸部 ===
                 {
                     id: 'Head',
                     label: '頭部',
-                    d: 'M100,20 C88,20 78,28 78,38 C78,48 88,56 100,56 C112,56 122,48 122,38 C122,28 112,20 100,20 Z',
-                    type: 'region',
+                    type: 'circle',
+                    coords: [50, 8, 8],  // [centerX%, centerY%, radius%]
                     region: 'head'
                 },
                 {
                     id: 'Neck',
                     label: '頸部',
-                    d: 'M92,56 L108,56 L110,70 L90,70 Z',
-                    type: 'region',
+                    type: 'rect',
+                    coords: [42, 14, 16, 6],  // [x%, y%, width%, height%]
                     region: 'neck'
                 },
 
@@ -545,22 +457,22 @@ export class BodyMap {
                 {
                     id: 'Chest',
                     label: '胸部',
-                    d: 'M80,75 L120,75 L118,115 L82,115 Z',
-                    type: 'region',
+                    type: 'rect',
+                    coords: [35, 20, 30, 15],
                     region: 'trunk'
                 },
                 {
                     id: 'Abdomen',
                     label: '腹部',
-                    d: 'M82,115 L118,115 L116,165 L84,165 Z',
-                    type: 'region',
+                    type: 'rect',
+                    coords: [38, 35, 24, 15],
                     region: 'trunk'
                 },
                 {
                     id: 'Pelvis',
                     label: '骨盆',
-                    d: 'M84,165 L116,165 L114,200 L86,200 Z',
-                    type: 'region',
+                    type: 'rect',
+                    coords: [40, 50, 20, 10],
                     region: 'trunk'
                 },
 
@@ -568,50 +480,43 @@ export class BodyMap {
                 {
                     id: 'Shoulder-R',
                     label: '右肩',
-                    d: 'M68,85 C68,85 60,85 55,90 C50,95 48,102 48,108 L62,115 L75,85 Z',
-                    type: 'region',
-                    region: 'upper-limb'
-                },
-                {
-                    id: 'Shoulder-Joint-R',
-                    label: '右肩關節',
-                    d: 'M65,100 m-8,0 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0',
-                    type: 'joint',
+                    type: 'circle',
+                    coords: [25, 22, 5],
                     region: 'upper-limb'
                 },
                 {
                     id: 'Upper-Arm-R',
                     label: '右上臂',
-                    d: 'M62,115 L48,108 L44,155 L58,155 Z',
-                    type: 'region',
+                    type: 'rect',
+                    coords: [18, 25, 10, 15],
                     region: 'upper-limb'
                 },
                 {
                     id: 'Elbow-R',
                     label: '右肘',
-                    d: 'M51,160 m-7,0 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0',
-                    type: 'joint',
+                    type: 'circle',
+                    coords: [23, 42, 4],
                     region: 'upper-limb'
                 },
                 {
                     id: 'Forearm-R',
                     label: '右前臂',
-                    d: 'M58,155 L44,155 L42,215 L56,215 Z',
-                    type: 'region',
+                    type: 'rect',
+                    coords: [19, 45, 9, 15],
                     region: 'upper-limb'
                 },
                 {
                     id: 'Wrist-R',
                     label: '右腕',
-                    d: 'M49,220 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0',
-                    type: 'joint',
+                    type: 'circle',
+                    coords: [23, 62, 3],
                     region: 'upper-limb'
                 },
                 {
                     id: 'Hand-R',
                     label: '右手',
-                    d: 'M56,215 L42,215 L40,245 L54,245 Z',
-                    type: 'region',
+                    type: 'rect',
+                    coords: [20, 64, 8, 8],
                     region: 'upper-limb'
                 },
 
@@ -619,50 +524,43 @@ export class BodyMap {
                 {
                     id: 'Shoulder-L',
                     label: '左肩',
-                    d: 'M132,85 C132,85 140,85 145,90 C150,95 152,102 152,108 L138,115 L125,85 Z',
-                    type: 'region',
-                    region: 'upper-limb'
-                },
-                {
-                    id: 'Shoulder-Joint-L',
-                    label: '左肩關節',
-                    d: 'M135,100 m-8,0 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0',
-                    type: 'joint',
+                    type: 'circle',
+                    coords: [75, 22, 5],
                     region: 'upper-limb'
                 },
                 {
                     id: 'Upper-Arm-L',
                     label: '左上臂',
-                    d: 'M138,115 L152,108 L156,155 L142,155 Z',
-                    type: 'region',
+                    type: 'rect',
+                    coords: [72, 25, 10, 15],
                     region: 'upper-limb'
                 },
                 {
                     id: 'Elbow-L',
                     label: '左肘',
-                    d: 'M149,160 m-7,0 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0',
-                    type: 'joint',
+                    type: 'circle',
+                    coords: [77, 42, 4],
                     region: 'upper-limb'
                 },
                 {
                     id: 'Forearm-L',
                     label: '左前臂',
-                    d: 'M142,155 L156,155 L158,215 L144,215 Z',
-                    type: 'region',
+                    type: 'rect',
+                    coords: [72, 45, 9, 15],
                     region: 'upper-limb'
                 },
                 {
                     id: 'Wrist-L',
                     label: '左腕',
-                    d: 'M151,220 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0',
-                    type: 'joint',
+                    type: 'circle',
+                    coords: [77, 62, 3],
                     region: 'upper-limb'
                 },
                 {
                     id: 'Hand-L',
                     label: '左手',
-                    d: 'M144,215 L158,215 L160,245 L146,245 Z',
-                    type: 'region',
+                    type: 'rect',
+                    coords: [72, 64, 8, 8],
                     region: 'upper-limb'
                 },
 
@@ -670,50 +568,36 @@ export class BodyMap {
                 {
                     id: 'Hip-R',
                     label: '右髖',
-                    d: 'M86,200 L100,200 L100,235 L80,235 C82,220 84,208 86,200 Z',
-                    type: 'region',
-                    region: 'lower-limb'
-                },
-                {
-                    id: 'Hip-Joint-R',
-                    label: '右髖關節',
-                    d: 'M88,215 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0',
-                    type: 'joint',
+                    type: 'circle',
+                    coords: [42, 58, 4],
                     region: 'lower-limb'
                 },
                 {
                     id: 'Thigh-R',
                     label: '右大腿',
-                    d: 'M80,235 L100,235 L100,330 L82,330 Z',
-                    type: 'region',
+                    type: 'rect',
+                    coords: [38, 60, 10, 18],
                     region: 'lower-limb'
                 },
                 {
                     id: 'Knee-R',
                     label: '右膝',
-                    d: 'M91,335 m-8,0 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0',
-                    type: 'joint',
+                    type: 'circle',
+                    coords: [43, 80, 4],
                     region: 'lower-limb'
                 },
                 {
                     id: 'Leg-R',
                     label: '右小腿',
-                    d: 'M82,330 L100,330 L100,410 L84,410 Z',
-                    type: 'region',
+                    type: 'rect',
+                    coords: [39, 82, 9, 15],
                     region: 'lower-limb'
                 },
                 {
                     id: 'Ankle-R',
                     label: '右踝',
-                    d: 'M91,415 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0',
-                    type: 'joint',
-                    region: 'lower-limb'
-                },
-                {
-                    id: 'Foot-R',
-                    label: '右足',
-                    d: 'M84,410 L100,410 L102,445 L80,445 Z',
-                    type: 'region',
+                    type: 'circle',
+                    coords: [43, 98, 3],
                     region: 'lower-limb'
                 },
 
@@ -721,50 +605,36 @@ export class BodyMap {
                 {
                     id: 'Hip-L',
                     label: '左髖',
-                    d: 'M100,200 L114,200 C116,208 118,220 120,235 L100,235 Z',
-                    type: 'region',
-                    region: 'lower-limb'
-                },
-                {
-                    id: 'Hip-Joint-L',
-                    label: '左髖關節',
-                    d: 'M112,215 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0',
-                    type: 'joint',
+                    type: 'circle',
+                    coords: [58, 58, 4],
                     region: 'lower-limb'
                 },
                 {
                     id: 'Thigh-L',
                     label: '左大腿',
-                    d: 'M100,235 L120,235 L118,330 L100,330 Z',
-                    type: 'region',
+                    type: 'rect',
+                    coords: [52, 60, 10, 18],
                     region: 'lower-limb'
                 },
                 {
                     id: 'Knee-L',
                     label: '左膝',
-                    d: 'M109,335 m-8,0 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0',
-                    type: 'joint',
+                    type: 'circle',
+                    coords: [57, 80, 4],
                     region: 'lower-limb'
                 },
                 {
                     id: 'Leg-L',
                     label: '左小腿',
-                    d: 'M100,330 L118,330 L116,410 L100,410 Z',
-                    type: 'region',
+                    type: 'rect',
+                    coords: [52, 82, 9, 15],
                     region: 'lower-limb'
                 },
                 {
                     id: 'Ankle-L',
                     label: '左踝',
-                    d: 'M109,415 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0',
-                    type: 'joint',
-                    region: 'lower-limb'
-                },
-                {
-                    id: 'Foot-L',
-                    label: '左足',
-                    d: 'M100,410 L116,410 L120,445 L98,445 Z',
-                    type: 'region',
+                    type: 'circle',
+                    coords: [57, 98, 3],
                     region: 'lower-limb'
                 }
             ],
@@ -774,15 +644,15 @@ export class BodyMap {
                 {
                     id: 'Head-Back',
                     label: '後頭部',
-                    d: 'M100,20 C88,20 78,28 78,38 C78,48 88,56 100,56 C112,56 122,48 122,38 C122,28 112,20 100,20 Z',
-                    type: 'region',
+                    type: 'circle',
+                    coords: [50, 8, 8],
                     region: 'head'
                 },
                 {
                     id: 'Neck-Back',
                     label: '後頸',
-                    d: 'M92,56 L108,56 L110,70 L90,70 Z',
-                    type: 'region',
+                    type: 'rect',
+                    coords: [42, 14, 16, 6],
                     region: 'neck'
                 },
 
@@ -790,36 +660,36 @@ export class BodyMap {
                 {
                     id: 'Cervical-Spine',
                     label: '頸椎',
-                    d: 'M96,70 L104,70 L103,90 L97,90 Z',
-                    type: 'spine',
+                    type: 'rect',
+                    coords: [47, 18, 6, 5],
                     region: 'spine'
                 },
                 {
-                    id: 'Upper-Thoracic-Spine',
+                    id: 'Upper-Thoracic',
                     label: '上胸椎',
-                    d: 'M97,90 L103,90 L102,125 L98,125 Z',
-                    type: 'spine',
+                    type: 'rect',
+                    coords: [47, 23, 6, 8],
                     region: 'spine'
                 },
                 {
-                    id: 'Lower-Thoracic-Spine',
+                    id: 'Lower-Thoracic',
                     label: '下胸椎',
-                    d: 'M98,125 L102,125 L101,165 L99,165 Z',
-                    type: 'spine',
+                    type: 'rect',
+                    coords: [47, 31, 6, 10],
                     region: 'spine'
                 },
                 {
-                    id: 'Lumbar-Spine',
+                    id: 'Lumbar',
                     label: '腰椎',
-                    d: 'M99,165 L101,165 L100,195 L100,195 Z',
-                    type: 'spine',
+                    type: 'rect',
+                    coords: [47, 41, 6, 8],
                     region: 'spine'
                 },
                 {
                     id: 'Sacrum',
                     label: '薦椎',
-                    d: 'M100,195 L100,195 L99,215 L101,215 Z',
-                    type: 'spine',
+                    type: 'rect',
+                    coords: [47, 49, 6, 6],
                     region: 'spine'
                 },
 
@@ -827,45 +697,45 @@ export class BodyMap {
                 {
                     id: 'Scapula-R',
                     label: '右肩胛',
-                    d: 'M68,85 L80,75 L85,115 L70,125 C65,110 65,95 68,85 Z',
-                    type: 'region',
+                    type: 'polygon',
+                    coords: [[25, 20], [35, 20], [38, 32], [28, 35]],
                     region: 'back'
                 },
                 {
                     id: 'Scapula-L',
                     label: '左肩胛',
-                    d: 'M132,85 L120,75 L115,115 L130,125 C135,110 135,95 132,85 Z',
-                    type: 'region',
+                    type: 'polygon',
+                    coords: [[75, 20], [65, 20], [62, 32], [72, 35]],
                     region: 'back'
                 },
 
-                // === 背部區域 ===
+                // === 背部 ===
                 {
                     id: 'Upper-Back-R',
                     label: '右上背',
-                    d: 'M80,75 L96,70 L97,125 L85,115 Z',
-                    type: 'region',
+                    type: 'rect',
+                    coords: [35, 22, 12, 15],
                     region: 'back'
                 },
                 {
                     id: 'Upper-Back-L',
                     label: '左上背',
-                    d: 'M120,75 L104,70 L103,125 L115,115 Z',
-                    type: 'region',
+                    type: 'rect',
+                    coords: [53, 22, 12, 15],
                     region: 'back'
                 },
                 {
                     id: 'Lower-Back-R',
                     label: '右下背',
-                    d: 'M85,115 L97,125 L99,195 L84,165 Z',
-                    type: 'region',
+                    type: 'rect',
+                    coords: [38, 37, 9, 12],
                     region: 'back'
                 },
                 {
                     id: 'Lower-Back-L',
                     label: '左下背',
-                    d: 'M115,115 L103,125 L101,195 L116,165 Z',
-                    type: 'region',
+                    type: 'rect',
+                    coords: [53, 37, 9, 12],
                     region: 'back'
                 },
 
@@ -873,189 +743,165 @@ export class BodyMap {
                 {
                     id: 'Glute-R',
                     label: '右臀',
-                    d: 'M84,165 L100,195 L100,225 L78,225 C80,210 82,185 84,165 Z',
-                    type: 'region',
+                    type: 'rect',
+                    coords: [38, 50, 10, 10],
                     region: 'lower-limb'
                 },
                 {
                     id: 'Glute-L',
                     label: '左臀',
-                    d: 'M116,165 L100,195 L100,225 L122,225 C120,210 118,185 116,165 Z',
-                    type: 'region',
+                    type: 'rect',
+                    coords: [52, 50, 10, 10],
                     region: 'lower-limb'
                 },
 
-                // === 右上肢後側 ===
-                {
-                    id: 'Triceps-R',
-                    label: '右三頭肌',
-                    d: 'M70,125 L62,115 L48,108 L44,155 L58,155 Z',
-                    type: 'region',
-                    region: 'upper-limb'
-                },
-                {
-                    id: 'Post-Forearm-R',
-                    label: '右後前臂',
-                    d: 'M58,155 L44,155 L42,215 L56,215 Z',
-                    type: 'region',
-                    region: 'upper-limb'
-                },
-
-                // === 左上肢後側 ===
-                {
-                    id: 'Triceps-L',
-                    label: '左三頭肌',
-                    d: 'M130,125 L138,115 L152,108 L156,155 L142,155 Z',
-                    type: 'region',
-                    region: 'upper-limb'
-                },
-                {
-                    id: 'Post-Forearm-L',
-                    label: '左後前臂',
-                    d: 'M142,155 L156,155 L158,215 L144,215 Z',
-                    type: 'region',
-                    region: 'upper-limb'
-                },
-
-                // === 右下肢後側 ===
+                // === 下肢後側 ===
                 {
                     id: 'Hamstring-R',
                     label: '右後大腿',
-                    d: 'M78,225 L100,225 L100,330 L82,330 Z',
-                    type: 'region',
+                    type: 'rect',
+                    coords: [38, 60, 10, 18],
+                    region: 'lower-limb'
+                },
+                {
+                    id: 'Hamstring-L',
+                    label: '左後大腿',
+                    type: 'rect',
+                    coords: [52, 60, 10, 18],
                     region: 'lower-limb'
                 },
                 {
                     id: 'Calf-R',
                     label: '右小腿肚',
-                    d: 'M82,330 L100,330 L100,410 L84,410 Z',
-                    type: 'region',
-                    region: 'lower-limb'
-                },
-
-                // === 左下肢後側 ===
-                {
-                    id: 'Hamstring-L',
-                    label: '左後大腿',
-                    d: 'M100,225 L122,225 L118,330 L100,330 Z',
-                    type: 'region',
+                    type: 'rect',
+                    coords: [39, 82, 9, 15],
                     region: 'lower-limb'
                 },
                 {
                     id: 'Calf-L',
                     label: '左小腿肚',
-                    d: 'M100,330 L118,330 L116,410 L100,410 Z',
-                    type: 'region',
+                    type: 'rect',
+                    coords: [52, 82, 9, 15],
                     region: 'lower-limb'
                 }
             ]
         };
     }
 
-    _renderSVG() {
-        if (!this.svgWrapper) return;
+    _renderOverlay() {
+        if (!this.svgOverlay) return;
 
-        this.svgWrapper.innerHTML = '';
+        this.svgOverlay.innerHTML = '';
         const svgNS = "http://www.w3.org/2000/svg";
         const svg = document.createElementNS(svgNS, "svg");
         
-        svg.setAttribute("viewBox", "0 0 200 480");
-        svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
-        svg.setAttribute("class", "body-map-svg");
+        // SVG 完全覆蓋圖片
+        svg.setAttribute("viewBox", "0 0 100 100");
+        svg.setAttribute("preserveAspectRatio", "none");
+        svg.style.width = '100%';
+        svg.style.height = '100%';
+        svg.style.position = 'absolute';
+        svg.style.top = '0';
+        svg.style.left = '0';
 
         const fragment = document.createDocumentFragment();
+        const currentHotspots = BodyMap.HOTSPOTS[this.currentView] || [];
 
-        // 1. 底層輪廓（淡灰色，僅作為背景）
-        const silhouettePath = BodyMap.SILHOUETTE[this.currentView];
-        if (silhouettePath) {
-            const silhouette = document.createElementNS(svgNS, "path");
-            silhouette.setAttribute("d", silhouettePath);
-            silhouette.setAttribute("class", "body-silhouette");
-            silhouette.setAttribute("fill", "#F8FAFC");
-            silhouette.setAttribute("stroke", "#E2E8F0");
-            silhouette.setAttribute("stroke-width", "1");
-            fragment.appendChild(silhouette);
-        }
-
-        // 2. 解剖分區和關節
-        const currentPaths = BodyMap.PATHS[this.currentView] || [];
-        currentPaths.forEach(part => {
-            const path = document.createElementNS(svgNS, "path");
-            path.setAttribute("d", part.d);
-            path.setAttribute("data-id", part.id);
-            path.setAttribute("data-type", part.type);
-            path.setAttribute("data-region", part.region);
+        currentHotspots.forEach(spot => {
+            let shape;
             
-            // 設置基礎樣式類
-            if (part.type === 'joint') {
-                path.setAttribute("class", "body-joint");
-            } else if (part.type === 'spine') {
-                path.setAttribute("class", "body-spine");
-            } else {
-                path.setAttribute("class", "body-part");
+            if (spot.type === 'circle') {
+                shape = document.createElementNS(svgNS, "circle");
+                shape.setAttribute("cx", spot.coords[0]);
+                shape.setAttribute("cy", spot.coords[1]);
+                shape.setAttribute("r", spot.coords[2]);
+            } else if (spot.type === 'rect') {
+                shape = document.createElementNS(svgNS, "rect");
+                shape.setAttribute("x", spot.coords[0]);
+                shape.setAttribute("y", spot.coords[1]);
+                shape.setAttribute("width", spot.coords[2]);
+                shape.setAttribute("height", spot.coords[3]);
+            } else if (spot.type === 'polygon') {
+                shape = document.createElementNS(svgNS, "polygon");
+                const points = spot.coords.map(p => p.join(',')).join(' ');
+                shape.setAttribute("points", points);
             }
-            
-            const isActive = this.selectedParts.has(part.id);
-            if (isActive) {
-                path.classList.add('active');
-                
-                // 症狀屬性
-                const symptoms = this.symptomData.get(part.id) || [];
-                if (symptoms.length > 0) {
-                    path.setAttribute("data-symptom", symptoms[0]);
+
+            if (shape) {
+                shape.setAttribute("data-id", spot.id);
+                shape.setAttribute("data-region", spot.region);
+                shape.setAttribute("class", spot.region === 'spine' ? 'body-hotspot spine' : 'body-hotspot');
+
+                const isActive = this.selectedParts.has(spot.id);
+                if (isActive) {
+                    shape.classList.add('active');
+                    
+                    // 設置症狀顏色
+                    const symptoms = this.symptomData.get(spot.id) || [];
+                    const colorKey = symptoms[0] || this.symptomMode;
+                    const fillColor = BodyMap.SYMPTOM_COLORS[colorKey] || BodyMap.SYMPTOM_COLORS.active;
+                    const strokeColor = BodyMap.SYMPTOM_STROKES[colorKey] || BodyMap.SYMPTOM_STROKES.active;
+                    
+                    shape.setAttribute("fill", fillColor);
+                    shape.setAttribute("stroke", strokeColor);
+                } else {
+                    shape.setAttribute("fill", "transparent");
+                    shape.setAttribute("stroke", "transparent");
                 }
-            }
 
-            if (this.readOnly) {
-                path.setAttribute("readonly", "true");
-            } else {
-                path.onclick = (e) => {
-                    e.stopPropagation();
-                    this._togglePart(part.id, path);
-                };
+                if (this.readOnly) {
+                    shape.setAttribute("readonly", "true");
+                } else {
+                    shape.onclick = (e) => {
+                        e.stopPropagation();
+                        this._togglePart(spot.id, shape);
+                    };
+                    
+                    shape.onmouseenter = (e) => {
+                        if (!isActive) {
+                            shape.setAttribute("fill", "rgba(203, 213, 225, 0.3)");
+                            shape.setAttribute("stroke", "#94A3B8");
+                        }
+                        this._showTooltip(e, spot.label, spot.id);
+                    };
+                    
+                    shape.onmousemove = (e) => {
+                        this._updateTooltip(e);
+                    };
+                    
+                    shape.onmouseleave = () => {
+                        if (!isActive) {
+                            shape.setAttribute("fill", "transparent");
+                            shape.setAttribute("stroke", "transparent");
+                        }
+                        this._hideTooltip();
+                    };
+                    
+                    shape.ontouchstart = (e) => {
+                        e.preventDefault();
+                        this._togglePart(spot.id, shape);
+                    };
+                }
                 
-                path.onmouseenter = (e) => {
-                    this._showTooltip(e, part.label, part.id);
-                };
-                
-                path.onmousemove = (e) => {
-                    this._updateTooltip(e);
-                };
-                
-                path.onmouseleave = () => {
-                    this._hideTooltip();
-                };
-                
-                path.ontouchstart = (e) => {
-                    e.preventDefault();
-                    this._togglePart(part.id, path);
-                };
+                fragment.appendChild(shape);
             }
-            
-            fragment.appendChild(path);
         });
 
         svg.appendChild(fragment);
-        this.svgWrapper.appendChild(svg);
+        this.svgOverlay.appendChild(svg);
     }
 
-    _togglePart(partId, pathElement) {
+    _togglePart(partId, shapeElement) {
         if (this.readOnly || !partId) return;
 
         try {
             if (this.selectedParts.has(partId)) {
                 this.selectedParts.delete(partId);
-                pathElement.classList.remove('active');
-                pathElement.removeAttribute('data-symptom');
             } else {
                 this.selectedParts.add(partId);
-                pathElement.classList.add('active');
-                
-                const symptoms = this.symptomData.get(partId) || [];
-                if (symptoms.length > 0) {
-                    pathElement.setAttribute("data-symptom", symptoms[0]);
-                }
             }
+            
+            this._renderOverlay();
             
             if (typeof this.onChange === 'function') {
                 this.onChange(Array.from(this.selectedParts));
@@ -1079,9 +925,9 @@ export class BodyMap {
     }
 
     _updateTooltip(event) {
-        if (!this.tooltip || !this.svgWrapper) return;
+        if (!this.tooltip || !this.imageContainer) return;
 
-        const rect = this.svgWrapper.getBoundingClientRect();
+        const rect = this.imageContainer.getBoundingClientRect();
         const x = event.clientX - rect.left;
         const y = event.clientY - rect.top;
         
@@ -1098,7 +944,7 @@ export class BodyMap {
     updateSelection(parts) {
         if (!Array.isArray(parts)) return;
         this.selectedParts = new Set(parts);
-        this._renderSVGDebounced();
+        this._renderOverlayDebounced();
     }
 
     destroy() {
